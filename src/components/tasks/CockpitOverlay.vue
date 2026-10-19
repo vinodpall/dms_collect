@@ -5,6 +5,7 @@ import { SCEN } from '@/constants'
 import { traj } from '@/components/annotate/motion'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
+import Scene3DView from '@/components/tasks/Scene3DView.vue'
 
 interface CockpitProps {
   task: Task
@@ -70,6 +71,8 @@ const showPose = ref(true)
 const showArm = ref(true)
 const showFrustum = ref(true)
 const showGrid = ref(true)
+const showHandTraj = ref(true)
+const followHead = ref(false)
 
 /* 归一化时间 [0, 1] */
 const u = computed(() => (props.liveT % 20) / 20)
@@ -566,26 +569,19 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 </div>
 
                 <div class="scene-canvas-container">
-                  <svg viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="scene-canvas-svg">
-                    <g v-if="showGrid" :stroke="gridColor" stroke-width="0.75" opacity="0.8">
-                      <line v-for="(g, i) in gridLines" :key="i" :x1="g[0][0]" :y1="g[0][1] - 20" :x2="g[1][0]" :y2="g[1][1] - 20" />
-                    </g>
-                    <polyline v-if="showTraj" :points="allPath" fill="none" :stroke="trajPlannedColor" stroke-width="1.5" stroke-dasharray="3 3" transform="translate(0, -20)" />
-                    <polyline v-if="showTraj" :points="donePath" fill="none" :stroke="trajDoneColor" stroke-width="2.2" stroke-linejoin="round" transform="translate(0, -20)" />
-                    <g v-if="showPose" transform="translate(0, -20)">
-                      <line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[1][0]" :y2="axis[1][1]" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" />
-                      <line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[2][0]" :y2="axis[2][1]" stroke="#10B981" stroke-width="1.8" stroke-linecap="round" />
-                      <line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[3][0]" :y2="axis[3][1]" :stroke="zAxisColor" stroke-width="1.8" stroke-linecap="round" />
-                    </g>
-                    <g transform="translate(0, -20)">
-                      <circle v-if="showArm" :cx="curProj[0]" :cy="curProj[1]" r="4" :fill="cursorFill" />
-                      <circle v-if="showArm" :cx="curProj[0]" :cy="curProj[1]" r="10" :fill="cursorGlow" opacity="0.25" />
-                    </g>
-                  </svg>
-
-                  <div class="scene-legend-footer mono">
-                    <span class="muted">TCP: [{{ pos[0].toFixed(2) }}, {{ pos[1].toFixed(2) }}, {{ pos[2].toFixed(2) }}] m</span>
-                  </div>
+                  <Scene3DView
+                    :task="task"
+                    :live-t="liveT"
+                    :is-dark="isDark"
+                    :has-hands="hasHands"
+                    :show-traj="showTraj"
+                    :show-pose="showPose"
+                    :show-arm="showArm"
+                    :show-frustum="showFrustum"
+                    :show-grid="showGrid"
+                    :show-hand-traj="showHandTraj"
+                    :follow="followHead"
+                  />
                 </div>
               </div>
 
@@ -617,23 +613,19 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
             <div v-else class="scene-3d-deck full-width-deck">
               <div class="scene-head-bar">
                 <div class="sh-left">
-                  <span class="sh-title">世界坐标系 · 3D空间轨迹跟踪</span>
-                  <span class="sh-sub muted">(ISO-9283 空间基准标定)</span>
+                  <span class="sh-title">头部 + 双手 统一 3D 场景 · 世界坐标系</span>
+                  <span class="sh-sub muted">(支持鼠标旋转/平移/缩放)</span>
                 </div>
 
                 <div class="sh-layer-toggles">
-                  <span class="toggle-lbl muted">显示</span>
+                  <span class="toggle-lbl muted">图层</span>
                   <label class="cb-label">
                     <input v-model="showTraj" type="checkbox" class="cb-input" />
-                    <span>轨迹</span>
+                    <span>头部轨迹</span>
                   </label>
                   <label class="cb-label">
                     <input v-model="showPose" type="checkbox" class="cb-input" />
                     <span>位姿轴</span>
-                  </label>
-                  <label class="cb-label">
-                    <input v-model="showArm" type="checkbox" class="cb-input" />
-                    <span>末端探头</span>
                   </label>
                   <label class="cb-label">
                     <input v-model="showFrustum" type="checkbox" class="cb-input" />
@@ -643,56 +635,36 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                     <input v-model="showGrid" type="checkbox" class="cb-input" />
                     <span>地面网格</span>
                   </label>
-                  <label class="cb-label hand-toggle-chip" title="开启双手遥测，切换为左中右对称布局">
+                  <label class="cb-label">
+                    <input v-model="showHandTraj" type="checkbox" class="cb-input" />
+                    <span>手部轨迹</span>
+                  </label>
+                  <label class="cb-label">
+                    <input v-model="followHead" type="checkbox" class="cb-input" />
+                    <span>跟随视角</span>
+                  </label>
+                  <label class="cb-label hand-toggle-chip" title="开启双手遥测卡片，切换为三等分对称对齐">
                     <input v-model="hasHands" type="checkbox" class="cb-input" />
-                    <span class="text-cyan">手部遥测</span>
+                    <span class="text-cyan">双手遥测</span>
                   </label>
                 </div>
               </div>
 
-              <!-- 3D 满宽平铺画布 (自适应撑满到底) -->
+              <!-- 3D 满宽平铺画布 (自适应撑满到底，支持鼠标旋转/平移/缩放) -->
               <div class="scene-canvas-container full-canvas">
-                <svg viewBox="0 0 540 180" preserveAspectRatio="xMidYMid meet" class="scene-canvas-svg">
-                  <!-- 地面网格 -->
-                  <g v-if="showGrid" :stroke="gridColor" stroke-width="0.75" opacity="0.8">
-                    <line v-for="(g, i) in gridLinesWide" :key="i" :x1="g[0][0]" :y1="g[0][1] - 20" :x2="g[1][0]" :y2="g[1][1] - 20" />
-                  </g>
-
-                  <!-- 轨迹 -->
-                  <polyline v-if="showTraj" :points="allPathWide" fill="none" :stroke="trajPlannedColor" stroke-width="1.5" stroke-dasharray="3 3" transform="translate(0, -20)" />
-                  <polyline v-if="showTraj" :points="donePathWide" fill="none" :stroke="trajDoneColor" stroke-width="2.2" stroke-linejoin="round" transform="translate(0, -20)" />
-
-                  <!-- 坐标轴 -->
-                  <g v-if="showPose" transform="translate(0, -20)">
-                    <line :x1="axisWide[0][0]" :y1="axisWide[0][1]" :x2="axisWide[1][0]" :y2="axisWide[1][1]" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" />
-                    <line :x1="axisWide[0][0]" :y1="axisWide[0][1]" :x2="axisWide[2][0]" :y2="axisWide[2][1]" stroke="#10B981" stroke-width="1.8" stroke-linecap="round" />
-                    <line :x1="axisWide[0][0]" :y1="axisWide[0][1]" :x2="axisWide[3][0]" :y2="axisWide[3][1]" :stroke="zAxisColor" stroke-width="1.8" stroke-linecap="round" />
-                    <text :x="axisWide[1][0] + 6" :y="axisWide[1][1] + 3" fill="#EF4444" font-size="9" font-family="monospace">X</text>
-                    <text :x="axisWide[2][0] - 12" :y="axisWide[2][1] + 3" fill="#10B981" font-size="9" font-family="monospace">Y</text>
-                    <text :x="axisWide[3][0] + 6" :y="axisWide[3][1] + 3" :fill="zAxisColor" font-size="9" font-family="monospace">Z</text>
-                  </g>
-
-                  <!-- 末端光标与视锥 -->
-                  <g transform="translate(0, -20)">
-                    <circle v-if="showArm" :cx="curProjWide[0]" :cy="curProjWide[1]" r="4" :fill="cursorFill" />
-                    <circle v-if="showArm" :cx="curProjWide[0]" :cy="curProjWide[1]" r="10" :fill="cursorGlow" opacity="0.25" />
-                    <polygon v-if="showFrustum" :points="`${curProjWide[0]},${curProjWide[1]} ${curProjWide[0]-35},${curProjWide[1]-35} ${curProjWide[0]+35},${curProjWide[1]-35}`" :fill="frustumFill" :stroke="frustumStroke" stroke-width="1" />
-                  </g>
-                </svg>
-
-                <div class="scene-legend-footer mono">
-                  <div class="leg-items">
-                    <span class="leg-it"><span class="leg-line traj" />执行轨迹</span>
-                    <span class="leg-it"><span class="leg-line x" />轴 X</span>
-                    <span class="leg-it"><span class="leg-line y" />轴 Y</span>
-                    <span class="leg-it"><span class="leg-line z" />轴 Z</span>
-                  </div>
-                  <div class="pos-compact-tag">
-                    <span>X: <b>{{ pos[0].toFixed(2) }}</b></span>
-                    <span>Y: <b>{{ pos[1].toFixed(2) }}</b></span>
-                    <span>Z: <b>{{ pos[2].toFixed(2) }}</b> m</span>
-                  </div>
-                </div>
+                <Scene3DView
+                  :task="task"
+                  :live-t="liveT"
+                  :is-dark="isDark"
+                  :has-hands="hasHands"
+                  :show-traj="showTraj"
+                  :show-pose="showPose"
+                  :show-arm="showArm"
+                  :show-frustum="showFrustum"
+                  :show-grid="showGrid"
+                  :show-hand-traj="showHandTraj"
+                  :follow="followHead"
+                />
               </div>
             </div>
           </div>
