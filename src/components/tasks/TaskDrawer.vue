@@ -24,21 +24,28 @@ const task = computed<Task | undefined>(() => (props.id ? tasks.byId(props.id) :
 const tab = ref('overview')
 const open = computed(() => !!task.value)
 
-/* 左侧独立驾驶舱遮罩：采集中或已暂停默认呼出，亦可随时展开/收起 */
+/* 左侧独立驾驶舱遮罩：只有“采集中(running)”状态进入时默认自动呼出，其他状态不自动显示；亦可随时在头部手动展开/收起 */
 const cockpitOpen = ref(false)
+
 watch(
-  () => [props.id, task.value?.status],
-  () => {
-    if (task.value && (task.value.status === 'running' || task.value.status === 'paused')) {
-      cockpitOpen.value = true
+  () => props.id,
+  (newId) => {
+    if (newId) {
+      tab.value = 'overview'
+      const t = tasks.byId(newId)
+      if (t) {
+        tasks.seedLog(t)
+        // 只有采集中状态进去会自动显示，其他状态不自动显示
+        cockpitOpen.value = t.status === 'running'
+      } else {
+        cockpitOpen.value = false
+      }
     } else {
       cockpitOpen.value = false
     }
   },
   { immediate: true },
 )
-
-watch(() => props.id, (v) => { if (v) { tab.value = 'overview'; const t = tasks.byId(v); if (t) tasks.seedLog(t) } })
 
 const mayEdit = computed(() => session.can('tasks'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
