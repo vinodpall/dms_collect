@@ -66,20 +66,20 @@ const timeStr = computed(() => {
   return `${m}:${s}.${ms}`
 })
 
-/* 3D 轨迹计算 */
+/* 3D 轨迹计算 (中间卡片视角) */
 const K = 140
 function proj(x: number, y: number, z: number): [number, number] {
   return [
     160 + (x - y) * K * 0.65,
-    72 + (x + y) * K * 0.28 - z * K * 0.55,
+    65 + (x + y) * K * 0.28 - z * K * 0.55,
   ]
 }
 
-/* 宽屏 3D 投影计算 (满宽模式下居中投影) */
+/* 宽屏 3D 投影计算 (满宽模式下居中投影，舒展纵深) */
 function projWide(x: number, y: number, z: number): [number, number] {
   return [
-    240 + (x - y) * K * 0.95,
-    78 + (x + y) * K * 0.32 - z * K * 0.65,
+    270 + (x - y) * K * 1.05,
+    95 + (x + y) * K * 0.35 - z * K * 0.65,
   ]
 }
 
@@ -612,9 +612,9 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 </div>
               </div>
 
-              <!-- 3D 满宽平铺画布 -->
+              <!-- 3D 满宽平铺画布 (自适应撑满到底) -->
               <div class="scene-canvas-container full-canvas">
-                <svg viewBox="0 0 480 115" preserveAspectRatio="xMidYMid meet" class="scene-canvas-svg">
+                <svg viewBox="0 0 540 180" preserveAspectRatio="xMidYMid meet" class="scene-canvas-svg">
                   <!-- 地面网格 -->
                   <g v-if="showGrid" stroke="#182A40" stroke-width="0.75" opacity="0.8">
                     <line v-for="(g, i) in gridLinesWide" :key="i" :x1="g[0][0]" :y1="g[0][1] - 20" :x2="g[1][0]" :y2="g[1][1] - 20" />
@@ -950,6 +950,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .widescreen-tile {
@@ -1003,6 +1004,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   align-items: center;
   gap: 6px;
   padding: 2px 2px 0;
+  flex-shrink: 0;
 }
 .st-text {
   font-size: 12px;
@@ -1017,8 +1019,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
    4. 底部：世界坐标系与手部遥测布局
    ======================================================== */
 
-/* 【情况 A】有手部数据：左中右三块严格对称对齐 */
+/* 【情况 A】有手部数据：左中右三块严格对称对齐，并自适应撑满到底部 */
 .bottom-symmetric-trio {
+  flex: 1;
+  min-height: 190px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
@@ -1027,6 +1031,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 
 /* 左右手持端遥测卡片 */
 .hand-telemetry-card {
+  height: 100%;
   background: #070C15;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
@@ -1034,7 +1039,6 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 130px;
 }
 .hand-telemetry-card.left-card {
   border-left: 2px solid #38BDF8;
@@ -1047,6 +1051,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 .h-sym {
   width: 16px;
@@ -1076,9 +1081,11 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 }
 
 .h-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  justify-content: space-around;
+  gap: 4px;
   margin-top: 4px;
 }
 .h-row {
@@ -1110,17 +1117,24 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 
 /* 中间 3D 场景卡片 (与两侧手部对称) */
 .scene-3d-card.middle-card {
+  height: 100%;
   background: #070C15;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 130px;
+}
+.scene-3d-card.middle-card .scene-canvas-container {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
-/* 【情况 B】没有手部数据：世界坐标系满宽通栏显示到底 */
+/* 【情况 B】没有手部数据：世界坐标系满宽通栏，flex: 1 真正显示到底！ */
 .scene-3d-deck.full-width-deck {
+  flex: 1;
+  min-height: 200px;
   width: 100%;
   background: #070C15;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1131,6 +1145,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 }
 
 .scene-head-bar {
+  flex-shrink: 0;
   height: 28px;
   padding: 0 10px;
   background: #0C1422;
@@ -1183,15 +1198,23 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   cursor: pointer;
 }
 
-/* 3D 画布容器 */
+/* 3D 画布容器：弹性充满整个卡片高度，真正做到显示到底！ */
 .scene-canvas-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
   position: relative;
-  height: 105px;
   background: radial-gradient(circle at center, #0B1626 0%, #04080F 100%);
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .scene-canvas-container.full-canvas {
-  height: 125px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 .scene-canvas-svg {
   width: 100%;
