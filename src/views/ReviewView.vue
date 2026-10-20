@@ -15,7 +15,8 @@ import { useLogs } from '@/stores/logs'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
-import { SCEN, NO_PERM, type BadgeKind, type ScenKey } from '@/constants'
+import { SCEN, type BadgeKind, type ScenKey } from '@/constants'
+import { clamp } from '@/utils'
 
 const store = useAnnotate()
 const reviewStore = useReview()
@@ -25,6 +26,7 @@ const session = useSession()
 
 const canReview = computed(() => session.can('review') || session.isAdmin)
 const activeTab = ref<'review' | 'vocab'>('review')
+const shortcutGuideOpen = ref(false)
 
 /* 审核任务池过滤 */
 const filter = ref<string>('todo')
@@ -74,10 +76,6 @@ onMounted(() => {
     t.value = Math.min(clip.value.dur, +(t.value + 0.1 * speed.value).toFixed(2))
     if (t.value >= clip.value.dur) playing.value = false
   }, 100)
-})
-
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
 })
 
 function toggle() {
@@ -198,6 +196,83 @@ function approve() {
   })
   toast('已审核通过，数据已归档流转')
 }
+
+/* 快捷键监听 */
+function onKey(e: KeyboardEvent) {
+  if (issueModal.open || rejModal.open || vocabModal.open || shortcutGuideOpen.value) return
+  const el = e.target as HTMLElement, tag = el?.tagName
+  if (
+    tag === 'INPUT' ||
+    tag === 'SELECT' ||
+    tag === 'TEXTAREA' ||
+    el?.closest?.('.ant-select') ||
+    el?.closest?.('.ant-input') ||
+    el?.closest?.('.ant-rate') ||
+    el?.isContentEditable
+  ) {
+    return
+  }
+
+  const k = e.key.toLowerCase()
+  const code = e.code
+
+  // 空格：播放 / 暂停
+  if (code === 'Space' || k === ' ' || k === 'spacebar') {
+    e.preventDefault()
+    toggle()
+    return
+  }
+
+  // 左方向键：后退 0.1s（Shift 2.0s）
+  if ((k === 'arrowleft' || code === 'ArrowLeft') && clip.value) {
+    e.preventDefault()
+    const delta = e.shiftKey ? 2.0 : 0.1
+    t.value = clamp(+(t.value - delta).toFixed(2), 0, clip.value.dur)
+    return
+  }
+
+  // 右方向键：前进 0.1s（Shift 2.0s）
+  if ((k === 'arrowright' || code === 'ArrowRight') && clip.value) {
+    e.preventDefault()
+    const delta = e.shiftKey ? 2.0 : 0.1
+    t.value = clamp(+(t.value + delta).toFixed(2), 0, clip.value.dur)
+    return
+  }
+
+  // T 或 F 键：标记问题
+  if ((k === 't' || k === 'f' || code === 'KeyT' || code === 'KeyF') && !e.ctrlKey && !e.metaKey && !e.altKey && clip.value) {
+    e.preventDefault()
+    let seg = sorted.value.find((s) => s.id === sel.value)
+    if (!seg) seg = sorted.value.find((s) => t.value >= s.s && t.value <= s.e)
+    if (seg) openTagIssue(seg)
+    else toast('请先选中或移动至要标记问题的切片', { type: 'warn' })
+    return
+  }
+
+  // Delete / Backspace：取消当前切片的问题标记
+  if ((k === 'delete' || k === 'backspace' || code === 'KeyD') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    let seg = sorted.value.find((s) => s.id === sel.value)
+    if (!seg) seg = sorted.value.find((s) => t.value >= s.s && t.value <= s.e)
+    if (seg && seg.flag) {
+      e.preventDefault()
+      removeIssue(seg)
+      return
+    }
+  }
+
+  // Esc：取消选中
+  if (k === 'escape' || code === 'Escape') {
+    sel.value = null
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey, true)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey, true)
+  if (timer) clearInterval(timer)
+})
 
 /* 字典管理部分 */
 const vocabFilter = ref<'all' | 'action' | 'object'>('all')
@@ -335,15 +410,18 @@ async function handleDeleteVocab(item: VocabItem) {
 
 <template>
   <PageHead title="审核工作台" desc="质检审核员专用工作台：覆盖 6 维度质检评分卡、时序切片问题标记及具身语义标准字典管理">
-    <div class="row" style="gap:10px">
+    <div class="row" style="gap:8px;align-items:center">
       <div class="seg" role="tablist">
         <button type="button" role="tab" :aria-selected="activeTab === 'review'" @click="activeTab = 'review'">
-          <AppIcon name="check" size="sm" />待审质检任务
+          <AppIcon name="check" size="sm" /><span>待审质检任务</span>
         </button>
         <button type="button" role="tab" :aria-selected="activeTab === 'vocab'" @click="activeTab = 'vocab'">
-          <AppIcon name="tag" size="sm" />标准语义字典管理
+          <AppIcon name="tag" size="sm" /><span>标准语义字典管理</span>
         </button>
       </div>
+      <a-button v-if="activeTab === 'review'" size="small" @click="shortcutGuideOpen = true">
+        <AppIcon name="kbd" size="sm" />快捷键
+      </a-button>
     </div>
   </PageHead>
 
@@ -477,6 +555,24 @@ async function handleDeleteVocab(item: VocabItem) {
               </tr>
             </tbody>
           </table>
+
+          <div class="actbar">
+            <span class="muted grow" style="font-size:12px">
+              <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>Shift+←/→</kbd> 2s　<kbd>T</kbd> 标记问题　<kbd>Esc</kbd> 取消选择
+            </span>
+            <template v-if="clip.status === 'submitted'">
+              <a-button danger :disabled="!canReview" @click="openReject">打回重标</a-button>
+              <a-button type="primary" :disabled="!canReview" @click="approve"><AppIcon name="check" size="sm" />审核通过</a-button>
+            </template>
+            <template v-else-if="clip.status === 'approved'">
+              <span style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px">
+                <AppIcon name="check" size="sm" />已通过审核并归档
+              </span>
+            </template>
+            <template v-else>
+              <span class="muted" style="font-size:12px">已打回给标注员重新标注</span>
+            </template>
+          </div>
         </template>
       </div>
     </div>
@@ -623,10 +719,22 @@ async function handleDeleteVocab(item: VocabItem) {
       </a-form-item>
     </a-form>
   </a-modal>
+
+  <!-- 快捷键指南弹窗 -->
+  <a-modal v-model:open="shortcutGuideOpen" title="审核工作台快捷键指南" width="560px" centered :footer="null">
+    <div class="kbd-guide-grid">
+      <div class="kbd-row"><div class="keys"><kbd>Space</kbd></div><div class="desc">播放 / 暂停视频与时空轨迹播放</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>←</kbd> <kbd>→</kbd></div><div class="desc">微调步进（向左 / 向右前进或后退 0.1 秒，逐帧对齐）</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd></div><div class="desc">快速进退（向左 / 向右跨越 2.0 秒）</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>T</kbd> 或 <kbd>F</kbd></div><div class="desc">对当前选中的切片（或播放头所在切片）标记质检问题</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>Del</kbd> 或 <kbd>Backspace</kbd></div><div class="desc">取消当前切片的问题标记</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>Esc</kbd></div><div class="desc">取消选中当前切片</div></div>
+    </div>
+  </a-modal>
 </template>
 
 <style scoped>
-.ann2 { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 640px; }
+.ann2 { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 640px; }
 .work { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px; }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -645,6 +753,14 @@ async function handleDeleteVocab(item: VocabItem) {
 .score-pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
 .score-pill.good { background: var(--good-soft); color: var(--good-solid); }
 .score-pill.warn { background: var(--warn-soft); color: var(--warn-solid); }
+
+.actbar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; margin-top: 4px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); }
+
+.kbd-guide-grid { display: flex; flex-direction: column; gap: 10px; }
+.kbd-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 6px; background: var(--surface-2); }
+.kbd-row .keys { display: flex; gap: 4px; align-items: center; }
+.kbd-row .desc { font-size: 13px; color: var(--text); }
 
 @media (max-width: 900px) { .ann2 { grid-template-columns: 1fr; } .dim-grid { grid-template-columns: 1fr; } }
 </style>

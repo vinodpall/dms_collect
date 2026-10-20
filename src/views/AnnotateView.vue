@@ -875,7 +875,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 </template>
 
 <style scoped>
-.ann2 { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 620px; }
+.ann2 { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 620px; }
 .work { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
 .hint-row { display: flex; gap: 12px; font-size: 12.5px; flex-wrap: wrap; }

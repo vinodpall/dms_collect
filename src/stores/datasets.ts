@@ -18,7 +18,9 @@ export interface DatasetSample extends Clip {
 export function getDatasetSamples(ds: Dataset): DatasetSample[] {
   const scen = ds.scen
   const isQmd = scen === 'qmd'
-  const names = SUB_NAMES[scen]
+  const names = isQmd
+    ? ['取件上台', '夹紧密封', '充气保压', '读数判定', '取下放回']
+    : ['取防护堵', '对准孔位', '压入到位', '检查确认']
 
   const sampleConfigs = isQmd
     ? [
@@ -39,12 +41,13 @@ export function getDatasetSamples(ds: Dataset): DatasetSample[] {
 
   return sampleConfigs.map((cfg, idx) => {
     const segs: Seg[] = []
-    for (let i = 0; i < names.length; i++) {
+    const count = cfg.cuts.length - 1
+    for (let i = 0; i < count; i++) {
       segs.push({
         id: (idx + 1) * 100 + i + 1,
         s: cfg.cuts[i],
         e: cfg.cuts[i + 1],
-        n: names[i],
+        n: names[i % names.length],
       })
     }
     const epNum = String(idx + 1).padStart(3, '0')

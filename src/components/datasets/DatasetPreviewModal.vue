@@ -108,6 +108,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
     destroy-on-close
     :body-style="{ padding: '16px 22px 20px', maxHeight: '88vh', overflowY: 'auto' }"
     @cancel="emit('close')"
+    @update:open="(v: boolean) => { if (!v) emit('close') }"
   >
     <template #title>
       <div v-if="ds" class="modal-header-row">
