@@ -10,9 +10,11 @@ const loaders: Record<PageKey, () => Promise<unknown>> = {
   monitor: () => import('@/views/MonitorView.vue'),
   pipeline: () => import('@/views/PipelineView.vue'),
   annotate: () => import('@/views/AnnotateView.vue'),
+  review: () => import('@/views/ReviewView.vue'),
   datasets: () => import('@/views/DatasetsView.vue'),
   storage: () => import('@/views/StorageView.vue'),
   devices: () => import('@/views/DevicesView.vue'),
+  logs: () => import('@/views/LogsView.vue'),
   system: () => import('@/views/SystemView.vue'),
 }
 

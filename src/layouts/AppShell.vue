@@ -29,7 +29,8 @@ function badge(id: PageKey): { n: number; soft: boolean } | null {
   let n = 0, soft = false
   if (id === 'monitor') n = alerts.openCount('monitor')
   else if (id === 'pipeline') n = pipeline.failedCount()
-  else if (id === 'annotate') { n = annotate.todoCount(); soft = true }
+  else if (id === 'annotate') { n = annotate.labelTodo(); soft = true }
+  else if (id === 'review') { n = annotate.reviewTodo(); soft = true }
   else if (id === 'tasks') { n = tasks.list.filter((t) => t.status === 'running').length; soft = true }
   else if (id === 'devices') n = alerts.openCount('devices')
   return n ? { n, soft } : null

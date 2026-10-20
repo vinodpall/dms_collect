@@ -1,32 +1,34 @@
 export const TODAY = '20261013'
 
 export type RoleKey = 'admin' | 'op' | 'ann' | 'rev' | 'mt'
-export type PageKey = 'dashboard' | 'tasks' | 'monitor' | 'pipeline' | 'annotate' | 'datasets' | 'storage' | 'devices' | 'system'
+export type PageKey = 'dashboard' | 'tasks' | 'monitor' | 'pipeline' | 'annotate' | 'review' | 'datasets' | 'storage' | 'devices' | 'logs' | 'system'
 
 export const ROLES: Record<RoleKey, { name: string; user: string; init: string; all?: boolean; pages: PageKey[]; can: Record<string, 1> }> = {
-  admin: { name: '系统管理员', user: '周工', init: '周', all: true, pages: ['dashboard', 'tasks', 'monitor', 'pipeline', 'annotate', 'datasets', 'storage', 'devices', 'system'], can: {} },
+  admin: { name: '系统管理员', user: '周工', init: '周', all: true, pages: ['dashboard', 'tasks', 'monitor', 'pipeline', 'annotate', 'review', 'datasets', 'storage', 'devices', 'logs', 'system'], can: {} },
   op: { name: '采集操作员', user: '张杰', init: '张', pages: ['dashboard', 'tasks', 'monitor'], can: { tasks: 1, monitor: 1 } },
-  ann: { name: '标注员', user: '林悦', init: '林', pages: ['dashboard', 'pipeline', 'annotate', 'datasets'], can: { annotate: 1, pipeline: 1 } },
-  rev: { name: '审核员', user: '陈静', init: '陈', pages: ['dashboard', 'pipeline', 'annotate', 'datasets'], can: { review: 1, pipeline: 1, datasets: 1 } },
-  mt: { name: '维护工程师', user: '赵工', init: '赵', pages: ['dashboard', 'monitor', 'devices', 'system'], can: { monitor: 1, devices: 1 } },
+  ann: { name: '标注员', user: '林悦', init: '林', pages: ['dashboard', 'pipeline', 'annotate', 'datasets', 'logs'], can: { annotate: 1, pipeline: 1 } },
+  rev: { name: '审核员', user: '陈静', init: '陈', pages: ['dashboard', 'pipeline', 'annotate', 'review', 'datasets', 'logs'], can: { review: 1, pipeline: 1, datasets: 1 } },
+  mt: { name: '维护工程师', user: '赵工', init: '赵', pages: ['dashboard', 'monitor', 'devices', 'logs', 'system'], can: { monitor: 1, devices: 1 } },
 }
 export const NO_PERM = '当前角色没有此操作权限'
 
 export const NAV_GROUPS: { g: string; items: PageKey[] }[] = [
   { g: '概览', items: ['dashboard'] },
   { g: '采集', items: ['tasks', 'monitor'] },
-  { g: '数据治理', items: ['pipeline', 'annotate', 'datasets'] },
-  { g: '资源与系统', items: ['storage', 'devices', 'system'] },
+  { g: '数据治理', items: ['pipeline', 'annotate', 'review', 'datasets'] },
+  { g: '资源与系统', items: ['storage', 'devices', 'logs', 'system'] },
 ]
 export const PAGE_META: Record<PageKey, { title: string; icon: string }> = {
   dashboard: { title: '数据看板', icon: 'grid' },
   tasks: { title: '采集任务', icon: 'task' },
   monitor: { title: '实时监控', icon: 'activity' },
   pipeline: { title: '处理流水线', icon: 'flow' },
-  annotate: { title: '标注与校验', icon: 'tag' },
+  annotate: { title: '标注工作台', icon: 'tag' },
+  review: { title: '审核工作台', icon: 'check' },
   datasets: { title: '数据集管理', icon: 'db' },
   storage: { title: '存储管理', icon: 'drive' },
   devices: { title: '设备管理', icon: 'cpu' },
+  logs: { title: '操作审计日志', icon: 'file' },
   system: { title: '系统管理', icon: 'settings' },
 }
 
