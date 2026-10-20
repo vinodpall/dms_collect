@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Task } from '@/stores/tasks'
-import { SCEN } from '@/constants'
 import { traj } from '@/components/annotate/motion'
 import { useSession } from '@/stores/session'
-import { toast } from '@/composables/toast'
 import Scene3DView from '@/components/tasks/Scene3DView.vue'
 
 interface CockpitProps {
@@ -32,28 +30,7 @@ const emit = defineEmits<CockpitEmits>()
 const session = useSession()
 const isDark = computed(() => session.dark)
 
-function handleToggleTheme() {
-  session.toggleTheme()
-  toast(`已切换为${session.dark ? '深色' : '浅色'}主题`)
-}
-
-// 随主题自适应的 3D 画布色彩方案
-const gridColor = computed(() => (isDark.value ? '#182A40' : '#CBD5E1'))
-const trajPlannedColor = computed(() => (isDark.value ? '#223E63' : '#94A3B8'))
-const trajDoneColor = computed(() => (isDark.value ? '#38BDF8' : '#0284C7'))
-const zAxisColor = computed(() => (isDark.value ? '#38BDF8' : '#0284C7'))
-const cursorFill = computed(() => (isDark.value ? '#FFFFFF' : '#0284C7'))
-const cursorGlow = computed(() => (isDark.value ? '#38BDF8' : '#0284C7'))
-const frustumFill = computed(() => (isDark.value ? 'rgba(56,189,248,0.06)' : 'rgba(2,132,199,0.08)'))
-const frustumStroke = computed(() => (isDark.value ? 'rgba(56,189,248,0.3)' : 'rgba(2,132,199,0.4)'))
-
 const isFullscreen = ref(false)
-// 视频流模式：'rgb_depth' (RGB三路 + Depth深度三路) 或 'all_rgb' (6路全RGB)
-const streamMode = ref<'rgb_depth' | 'all_rgb'>('rgb_depth')
-
-const isVr = computed(() => props.task.scen === 'qmd')
-const isUmi = computed(() => props.task.scen === 'fhd')
-const scenMeta = computed(() => SCEN[props.task.scen])
 
 // 是否包含手部遥测：默认 UMI (fhd) 模式为 true，VR (qmd) 模式为 false；亦可手动切换
 const hasHands = ref(false)
@@ -187,7 +164,7 @@ const umiRightHand = computed(() => {
 
 /* 模拟运动位移 */
 const armX = computed(() => +(80 + pos.value[0] * 60).toFixed(1))
-const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
+const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
 </script>
 
 <template>
@@ -199,55 +176,84 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 
         <!-- 驾驶舱主窗体 (随全局/系统主题动态响应) -->
         <div class="cockpit-deck" :class="[isDark ? 'cockpit-dark' : 'cockpit-light', { 'deck-fullscreen': isFullscreen }]">
-          <!-- 1. 顶部紧凑导航头 -->
+          <!-- 1. 顶部集成控制条 (合二为一：左侧实时状态与时码，右侧操作按钮与窗口控制) -->
           <header class="deck-topbar">
-            <div class="top-brand">
-              <span class="brand-dot" :class="{ live: task.status === 'running' }" />
-              <span class="brand-title">数采作业驾驶舱 · {{ isVr ? 'VR 遥操作 (6目立体视觉)' : 'UMI 手持双臂' }}</span>
-              <span class="task-id-tag mono">{{ task.id }}</span>
-              <span class="task-desc muted">{{ task.name }}</span>
+            <!-- 左侧：状态与时码 -->
+            <div class="topbar-left">
+              <div class="status-chip" :class="task.status === 'running' ? 'live' : 'paused'">
+                <span class="chip-dot" />
+                <span>{{ task.status === 'running' ? 'LIVE 采集中' : 'PAUSED 已暂停' }}</span>
+              </div>
+              <div class="timer-chip mono">
+                <span class="rec-txt">REC</span>
+                <span>{{ timeStr }}</span>
+              </div>
+              <span class="stream-stat muted mono">30 FPS · 1080P · 0 丢包</span>
             </div>
 
-            <div class="top-controls">
-              <!-- 视频流模式切换 -->
-              <div class="stream-switcher">
+            <!-- 右侧：控制按钮与窗口操作 -->
+            <div class="topbar-right">
+              <div class="act-buttons">
                 <button
                   type="button"
-                  class="switch-btn"
-                  :class="{ active: streamMode === 'rgb_depth' }"
-                  title="RGB彩色三路 + Depth深度三路（对标典型数采多目可视化）"
-                  @click="streamMode = 'rgb_depth'"
+                  class="op-btn pause"
+                  :class="{ 'is-paused': task.status === 'paused' }"
+                  :disabled="!mayEdit"
+                  :title="dis"
+                  @click="task.status === 'running' ? emit('pause') : emit('resume')"
                 >
-                  RGB + Depth
+                  <svg v-if="task.status === 'running'" viewBox="0 0 24 24" class="btn-ic"><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" /><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" /></svg>
+                  <svg v-else viewBox="0 0 24 24" class="btn-ic"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" /></svg>
+                  <span>{{ task.status === 'running' ? '暂停' : '继续' }}</span>
                 </button>
+
                 <button
                   type="button"
-                  class="switch-btn"
-                  :class="{ active: streamMode === 'all_rgb' }"
-                  title="6路全RGB多视角"
-                  @click="streamMode = 'all_rgb'"
+                  class="op-btn stop"
+                  :disabled="!mayEdit"
+                  :title="dis"
+                  @click="emit('end')"
                 >
-                  全路 RGB
+                  <svg viewBox="0 0 24 24" class="btn-ic"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" /></svg>
+                  <span>结束本次</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="op-btn"
+                  :disabled="!mayEdit"
+                  :title="dis"
+                  @click="emit('flag')"
+                >
+                  <svg viewBox="0 0 24 24" class="btn-ic"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <span>标记</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="op-btn"
+                  :disabled="!mayEdit"
+                  :title="dis"
+                  @click="emit('note')"
+                >
+                  <svg viewBox="0 0 24 24" class="btn-ic"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" /><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <span>备注</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="op-btn fail"
+                  :disabled="!mayEdit"
+                  :title="dis"
+                  @click="emit('fail')"
+                >
+                  <svg viewBox="0 0 24 24" class="btn-ic"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none" /><line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+                  <span>标记失败</span>
                 </button>
               </div>
 
-              <!-- 主题切换 (浅色 / 深色，全站与右侧抽屉实时联动) -->
-              <button
-                type="button"
-                class="icon-action-btn theme-btn"
-                :title="isDark ? '当前为深色模式，点击切换为浅色主题' : '当前为浅色模式，点击切换为深色主题'"
-                @click="handleToggleTheme"
-              >
-                <!-- 深色下显示太阳图标提示切浅色 -->
-                <svg v-if="isDark" viewBox="0 0 24 24" class="svg-ic">
-                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" fill="none" />
-                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                </svg>
-                <!-- 浅色下显示月亮图标提示切深色 -->
-                <svg v-else viewBox="0 0 24 24" class="svg-ic">
-                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
+              <!-- 分隔线 -->
+              <span class="top-divider" />
 
               <!-- 全屏与收起 -->
               <button
@@ -271,259 +277,77 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
             </div>
           </header>
 
-          <!-- 2. 操作与时间控制条 -->
-          <div class="deck-action-bar">
-            <div class="act-left">
-              <!-- 采集状态与录制时间 -->
-              <div class="status-chip" :class="task.status === 'running' ? 'live' : 'paused'">
-                <span class="chip-dot" />
-                <span>{{ task.status === 'running' ? 'LIVE 采集中' : 'PAUSED 已暂停' }}</span>
-              </div>
-              <div class="timer-chip mono">
-                <span class="rec-txt">REC</span>
-                <span>{{ timeStr }}</span>
-              </div>
-              <span class="stream-stat muted mono">30 FPS · 1080P · 0 丢包</span>
-            </div>
-
-            <!-- 控制按钮组 -->
-            <div class="act-right">
-              <button
-                type="button"
-                class="op-btn pause"
-                :class="{ 'is-paused': task.status === 'paused' }"
-                :disabled="!mayEdit"
-                :title="dis"
-                @click="task.status === 'running' ? emit('pause') : emit('resume')"
-              >
-                <svg v-if="task.status === 'running'" viewBox="0 0 24 24" class="btn-ic"><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" /><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" /></svg>
-                <svg v-else viewBox="0 0 24 24" class="btn-ic"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" /></svg>
-                <span>{{ task.status === 'running' ? '暂停' : '继续' }}</span>
-              </button>
-
-              <button
-                type="button"
-                class="op-btn stop"
-                :disabled="!mayEdit"
-                :title="dis"
-                @click="emit('end')"
-              >
-                <svg viewBox="0 0 24 24" class="btn-ic"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" /></svg>
-                <span>结束本次</span>
-              </button>
-
-              <button
-                type="button"
-                class="op-btn"
-                :disabled="!mayEdit"
-                :title="dis"
-                @click="emit('flag')"
-              >
-                <svg viewBox="0 0 24 24" class="btn-ic"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                <span>标记</span>
-              </button>
-
-              <button
-                type="button"
-                class="op-btn"
-                :disabled="!mayEdit"
-                :title="dis"
-                @click="emit('note')"
-              >
-                <svg viewBox="0 0 24 24" class="btn-ic"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" /><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                <span>备注</span>
-              </button>
-
-              <button
-                type="button"
-                class="op-btn fail"
-                :disabled="!mayEdit"
-                :title="dis"
-                @click="emit('fail')"
-              >
-                <svg viewBox="0 0 24 24" class="btn-ic"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none" /><line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-                <span>标记失败</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 3. 主体视口区域 -->
+          <!-- 2. 主体视口区域 -->
           <div class="deck-scroll-area">
-            <!-- 模式一：RGB 三路 + Depth 深度三路 -->
-            <template v-if="streamMode === 'rgb_depth'">
-              <!-- 第一排：RGB 三路彩色视频 -->
-              <div class="video-trio-row">
-                <!-- 左侧视 -->
-                <div class="widescreen-tile">
-                  <div class="tile-header">
-                    <span class="v-label">左侧视 RGB</span>
-                    <span class="v-tag mono">CAM-02</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#0C1420" />
-                      <polygon points="10,85 150,85 130,55 30,55" fill="#132236" />
-                      <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="2" stroke-dasharray="4 2" />
-                      <circle cx="80" cy="50" r="8" fill="#1A2D46" />
-                      <line x1="20" y1="80" :x2="armX" :y2="armY" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" />
-                      <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
-                      <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
-                    </svg>
-                  </div>
+            <!-- 第一排：RGB 三路彩色宽屏视频 (释放两行高度后，视频更大更开阔) -->
+            <div class="video-trio-row">
+              <!-- 左侧视 -->
+              <div class="widescreen-tile">
+                <div class="tile-header">
+                  <span class="v-label">左侧视 RGB</span>
+                  <span class="v-tag mono">CAM-02 · 1080P</span>
                 </div>
-
-                <!-- 头部第一视角 -->
-                <div class="widescreen-tile">
-                  <div class="tile-header">
-                    <span class="v-label">头部第一视角 RGB</span>
-                    <span class="v-tag mono text-cyan">CAM-01 主摄</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#0E1826" />
-                      <polygon points="15,88 145,88 125,58 35,58" fill="#16263B" />
-                      <circle cx="80" cy="48" r="28" fill="none" stroke="#294569" stroke-width="1.8" />
-                      <circle cx="80" cy="48" r="10" fill="#1E334E" />
-                      <circle cx="80" cy="48" r="14" fill="none" stroke="rgba(56,189,248,0.5)" stroke-width="1" />
-                      <line x1="80" y1="28" x2="80" y2="38" stroke="rgba(56,189,248,0.6)" stroke-width="1" />
-                      <line x1="80" y1="58" x2="80" y2="68" stroke="rgba(56,189,248,0.6)" stroke-width="1" />
-                      <line x1="60" y1="48" x2="70" y2="48" stroke="rgba(56,189,248,0.6)" stroke-width="1" />
-                      <line x1="90" y1="48" x2="100" y2="48" stroke="rgba(56,189,248,0.6)" stroke-width="1" />
-                      <circle :cx="armX" :cy="armY" r="4" fill="#38bdf8" />
-                    </svg>
-                  </div>
-                </div>
-
-                <!-- 右侧视 -->
-                <div class="widescreen-tile">
-                  <div class="tile-header">
-                    <span class="v-label">右侧视 RGB</span>
-                    <span class="v-tag mono">CAM-03</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#0C1420" />
-                      <polygon points="10,85 150,85 130,55 30,55" fill="#132236" />
-                      <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="2" stroke-dasharray="4 2" />
-                      <circle cx="80" cy="50" r="8" fill="#1A2D46" />
-                      <line x1="140" y1="80" :x2="armX" :y2="armY" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" />
-                      <circle :cx="armX" :cy="armY" r="4.5" fill="#60a5fa" />
-                      <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
-                    </svg>
-                  </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="100" fill="#0C1420" />
+                    <polygon points="8,95 152,95 132,60 28,60" fill="#132236" />
+                    <circle cx="80" cy="55" r="26" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="55" r="9" fill="#1A2D46" />
+                    <line x1="20" y1="90" :x2="armX" :y2="armY" stroke="#38bdf8" stroke-width="2.6" stroke-linecap="round" />
+                    <circle :cx="armX" :cy="armY" r="5" fill="#38bdf8" />
+                    <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
+                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(56,189,248,0.35)" stroke-width="1.2" fill="none" />
+                    <text x="10" y="24" fill="rgba(56,189,248,0.7)" font-size="7" font-family="monospace">● L-EYE 30FPS</text>
+                  </svg>
                 </div>
               </div>
 
-              <!-- 第二排：Depth 三路深度伪彩 (TURBO) -->
-              <div class="section-title-bar">
-                <span class="st-text">Depth 三路</span>
-                <span class="st-hint muted">(TURBO 伪彩，近=蓝/远=红，黑=无效)</span>
-              </div>
-
-              <div class="video-trio-row">
-                <!-- 左手 Depth -->
-                <div class="widescreen-tile depth-tile">
-                  <div class="tile-header">
-                    <span class="v-label">左侧视 Depth</span>
-                    <span class="v-tag mono">D-01</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#040609" />
-                      <ellipse cx="80" cy="54" rx="26" ry="16" fill="#1E40AF" />
-                      <ellipse cx="80" cy="54" rx="18" ry="11" fill="#047857" />
-                      <ellipse cx="80" cy="54" rx="10" ry="6" fill="#D97706" />
-                      <circle cx="72" cy="50" r="1.5" fill="#EF4444" />
-                      <circle cx="88" cy="56" r="1.5" fill="#3B82F6" />
-                      <circle cx="82" cy="46" r="1.5" fill="#10B981" />
-                    </svg>
-                  </div>
+              <!-- 头部第一视角 (主摄) -->
+              <div class="widescreen-tile main-cam-tile">
+                <div class="tile-header">
+                  <span class="v-label">头部第一视角 RGB</span>
+                  <span class="v-tag mono text-cyan">CAM-01 · 主摄</span>
                 </div>
-
-                <!-- 头部 Depth -->
-                <div class="widescreen-tile depth-tile">
-                  <div class="tile-header">
-                    <span class="v-label">头部 Depth</span>
-                    <span class="v-tag mono">D-02 主景</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#040609" />
-                      <polygon points="12,88 148,88 135,48 25,48" fill="#15803D" />
-                      <polygon points="25,48 135,48 128,32 32,32" fill="#B91C1C" />
-                      <polygon points="32,32 128,32 120,24 40,24" fill="#C2410C" />
-                      <rect x="36" y="44" width="88" height="32" rx="3" fill="#22C55E" />
-                      <rect x="44" y="62" width="20" height="26" rx="2" fill="#06B6D4" />
-                      <rect x="96" y="62" width="20" height="26" rx="2" fill="#06B6D4" />
-                      <circle cx="80" cy="56" r="12" fill="#0284C7" />
-                    </svg>
-                  </div>
-                </div>
-
-                <!-- 右手 Depth -->
-                <div class="widescreen-tile depth-tile">
-                  <div class="tile-header">
-                    <span class="v-label">右侧视 Depth</span>
-                    <span class="v-tag mono">D-03</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#040609" />
-                      <ellipse cx="80" cy="54" rx="26" ry="16" fill="#1E40AF" />
-                      <ellipse cx="80" cy="54" rx="18" ry="11" fill="#047857" />
-                      <ellipse cx="80" cy="54" rx="10" ry="6" fill="#D97706" />
-                      <circle cx="76" cy="52" r="1.5" fill="#EF4444" />
-                      <circle cx="84" cy="58" r="1.5" fill="#3B82F6" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- 模式二：6 路全 RGB 视频网格 -->
-            <template v-else>
-              <div class="video-trio-row">
-                <div v-for="c in [
-                  { id: 'CAM-01', name: '头部第一视角 (主摄)' },
-                  { id: 'CAM-02', name: '工件广角 (左侧视)' },
-                  { id: 'CAM-03', name: '工件侧视 (右侧视)' },
-                ]" :key="c.id" class="widescreen-tile">
-                  <div class="tile-header">
-                    <span class="v-label">{{ c.name }}</span>
-                    <span class="v-tag mono">{{ c.id }}</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#0C1522" />
-                      <polygon points="15,85 145,85 125,55 35,55" fill="#132338" />
-                      <circle cx="80" cy="50" r="22" fill="none" stroke="#223B5B" stroke-width="1.8" />
-                      <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
-                    </svg>
-                  </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="100" fill="#0E1826" />
+                    <polygon points="12,98 148,98 126,62 34,62" fill="#16263B" />
+                    <circle cx="80" cy="52" r="30" fill="none" stroke="#294569" stroke-width="1.8" />
+                    <circle cx="80" cy="52" r="10" fill="#1E334E" />
+                    <circle cx="80" cy="52" r="15" fill="none" stroke="rgba(56,189,248,0.55)" stroke-width="1" />
+                    <line x1="80" y1="30" x2="80" y2="42" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="80" y1="62" x2="80" y2="74" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="58" y1="52" x2="70" y2="52" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="90" y1="52" x2="102" y2="52" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
+                    <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
+                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(56,189,248,0.5)" stroke-width="1.2" fill="none" />
+                    <text x="10" y="24" fill="rgba(56,189,248,0.85)" font-size="7" font-family="monospace">● EGO 1080P</text>
+                  </svg>
                 </div>
               </div>
 
-              <div class="video-trio-row" style="margin-top:8px">
-                <div v-for="c in [
-                  { id: 'CAM-04', name: '腕部末端 (左)' },
-                  { id: 'CAM-05', name: '腕部末端 (右)' },
-                  { id: 'CAM-06', name: '工位顶视 (全景)' },
-                ]" :key="c.id" class="widescreen-tile">
-                  <div class="tile-header">
-                    <span class="v-label">{{ c.name }}</span>
-                    <span class="v-tag mono">{{ c.id }}</span>
-                  </div>
-                  <div class="tile-media-box">
-                    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                      <rect width="160" height="90" fill="#0A121D" />
-                      <polygon points="15,85 145,85 125,55 35,55" fill="#111F32" />
-                      <circle cx="80" cy="50" r="22" fill="none" stroke="#1D334E" stroke-width="1.8" />
-                      <circle :cx="armX" :cy="armY" r="4" fill="#60a5fa" />
-                    </svg>
-                  </div>
+              <!-- 右侧视 -->
+              <div class="widescreen-tile">
+                <div class="tile-header">
+                  <span class="v-label">右侧视 RGB</span>
+                  <span class="v-tag mono">CAM-03 · 1080P</span>
+                </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="100" fill="#0C1420" />
+                    <polygon points="8,95 152,95 132,60 28,60" fill="#132236" />
+                    <circle cx="80" cy="55" r="26" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="55" r="9" fill="#1A2D46" />
+                    <line x1="140" y1="90" :x2="armX" :y2="armY" stroke="#60a5fa" stroke-width="2.6" stroke-linecap="round" />
+                    <circle :cx="armX" :cy="armY" r="5" fill="#60a5fa" />
+                    <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
+                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(96,165,250,0.35)" stroke-width="1.2" fill="none" />
+                    <text x="10" y="24" fill="rgba(96,165,250,0.7)" font-size="7" font-family="monospace">● R-EYE 30FPS</text>
+                  </svg>
                 </div>
               </div>
-            </template>
+            </div>
 
             <!-- 4. 底部：世界坐标系与手部遥测 -->
             <!-- 【情况 A】：有手部数据 -> 分左、中、右三块显示，与上方三列视频完美对称对齐！ -->
@@ -828,10 +652,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   z-index: 1005;
 }
 
-/* 1. 顶部紧凑导航头 */
+/* 1. 顶部集成控制条 (合二为一：左侧实时状态与时码，右侧操作按钮与窗口控制) */
 .deck-topbar {
-  height: 42px;
-  padding: 0 14px;
+  height: 40px;
+  padding: 0 12px;
   background: var(--cp-topbar-bg);
   border-bottom: 1px solid var(--cp-border);
   display: flex;
@@ -840,125 +664,13 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   flex-shrink: 0;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
-.top-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.brand-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #64748B;
-}
-.brand-dot.live {
-  background: #10B981;
-  box-shadow: 0 0 6px #10B981;
-}
-.cockpit-light .brand-dot.live {
-  background: #16A34A;
-  box-shadow: 0 0 6px rgba(22, 163, 74, 0.4);
-}
-.brand-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cp-text);
-  white-space: nowrap;
-}
-.task-id-tag {
-  color: var(--cp-accent);
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--cp-accent-soft);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-.task-desc {
-  font-size: 11.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 260px;
-  color: var(--cp-text-muted);
-}
 
-.top-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.stream-switcher {
-  display: flex;
-  background: var(--cp-switcher-bg);
-  border: 1px solid var(--cp-border);
-  border-radius: 4px;
-  padding: 2px;
-}
-.switch-btn {
-  background: none;
-  border: none;
-  color: var(--cp-text-muted);
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.switch-btn.active {
-  background: var(--cp-switcher-active-bg);
-  color: var(--cp-switcher-active-text);
-  font-weight: 600;
-  box-shadow: var(--cp-switcher-active-shadow);
-}
-
-.icon-action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--cp-icon-btn-bg);
-  border: 1px solid var(--cp-icon-btn-border);
-  color: var(--cp-icon-btn-color);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.icon-action-btn:hover {
-  background: var(--cp-icon-btn-hover);
-  color: var(--cp-text);
-}
-.icon-action-btn.theme-btn:hover {
-  color: var(--cp-accent);
-}
-.icon-action-btn.close-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #EF4444;
-}
-.svg-ic {
-  width: 14px;
-  height: 14px;
-}
-
-/* 2. 操作与时间控制条 */
-.deck-action-bar {
-  height: 38px;
-  padding: 0 14px;
-  background: var(--cp-action-bg);
-  border-bottom: 1px solid var(--cp-border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-.act-left {
+.topbar-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .status-chip {
   display: flex;
   align-items: center;
@@ -1012,11 +724,18 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   color: var(--cp-text-faint);
 }
 
-.act-right {
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.act-buttons {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .op-btn {
   display: flex;
   align-items: center;
@@ -1065,18 +784,51 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   color: var(--cp-btn-fail-text);
 }
 
-/* 3. 滚动主体区域 (全宽标准 16:9 横屏) */
+.top-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--cp-border);
+  margin: 0 2px;
+}
+
+.icon-action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cp-icon-btn-bg);
+  border: 1px solid var(--cp-icon-btn-border);
+  color: var(--cp-icon-btn-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-action-btn:hover {
+  background: var(--cp-icon-btn-hover);
+  color: var(--cp-text);
+}
+.icon-action-btn.close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+}
+.svg-ic {
+  width: 14px;
+  height: 14px;
+}
+
+/* 2. 滚动主体区域 (全宽标准 16:10 横屏视口) */
 .deck-scroll-area {
   flex: 1;
   min-height: 0;
-  padding: 10px 14px 14px;
+  padding: 10px 12px 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-/* 一行 3 个标准 16:9 宽屏视口 */
+/* 一行 3 个标准宽屏视口 (释放两行高度后，视频更开阔清晰) */
 .video-trio-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1088,18 +840,19 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 .widescreen-tile {
   background: var(--cp-surface-card);
   border: 1px solid var(--cp-border);
-  border-radius: 5px;
+  border-radius: 6px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .widescreen-tile:hover {
   border-color: var(--cp-hover-border);
 }
 .tile-header {
-  height: 22px;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 10px;
   background: var(--cp-surface-subtle);
   display: flex;
   align-items: center;
@@ -1116,10 +869,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   color: var(--cp-text-faint);
 }
 
-/* 严谨 16:9 横屏比例 */
+/* 16:10 黄金宽屏比例，纵向空间充足，视频大方美观 */
 .tile-media-box {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   background: #030508;
   position: relative;
   overflow: hidden;
@@ -1131,24 +884,6 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   width: 100%;
   height: 100%;
   display: block;
-}
-
-/* Depth 分组标题行 */
-.section-title-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 2px 0;
-  flex-shrink: 0;
-}
-.st-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--cp-text);
-}
-.st-hint {
-  font-size: 11px;
-  color: var(--cp-text-faint);
 }
 
 /* ========================================================
