@@ -24,6 +24,9 @@ const task = computed<Task | undefined>(() => (props.id ? tasks.byId(props.id) :
 const tab = ref('overview')
 const open = computed(() => !!task.value)
 
+// 只有当开始采集 (running / paused) 后才允许使用操作预览
+const isCollecting = computed(() => !!task.value && (task.value.status === 'running' || task.value.status === 'paused'))
+
 /* 左侧独立驾驶舱遮罩：只有“采集中(running)”状态进入时默认自动呼出，其他状态不自动显示；亦可随时在头部手动展开/收起 */
 const cockpitOpen = ref(false)
 
@@ -220,17 +223,26 @@ const epCols = [
             <StatusBadge :kind="TASK_ST[task.status][0]" :text="TASK_ST[task.status][1]" />
           </div>
           <div class="row" style="gap:8px;align-items:center">
-            <!-- 驾驶舱浮窗唤出/收起按钮 -->
+            <!-- 驾驶舱浮窗唤出/收起按钮 (只有当开始采集后才能点击使用) -->
             <button
-              v-if="task.status === 'running' || task.status === 'paused'"
               type="button"
               class="cockpit-trigger-btn"
-              :class="{ active: cockpitOpen }"
-              :title="cockpitOpen ? '收起左侧驾驶舱' : '展开左侧大疆司空驾驶舱'"
-              @click="cockpitOpen = !cockpitOpen"
+              :class="{
+                active: cockpitOpen && isCollecting,
+                disabled: !isCollecting
+              }"
+              :disabled="!isCollecting"
+              :title="!isCollecting ? '只有当开始采集后方可点击使用操作预览' : (cockpitOpen ? '收起操作预览' : '展开操作预览')"
+              @click="isCollecting && (cockpitOpen = !cockpitOpen)"
             >
-              <span class="dot-pulse" />
-              <span>{{ cockpitOpen ? '收起驾驶舱' : '驾驶舱视角' }}</span>
+              <span
+                class="dot-pulse"
+                :class="{
+                  live: task.status === 'running',
+                  paused: task.status === 'paused'
+                }"
+              />
+              <span>操作预览</span>
             </button>
 
             <button type="button" class="icon-btn" aria-label="关闭" @click="emit('close')"><AppIcon name="x" /></button>
@@ -377,7 +389,7 @@ const epCols = [
   gap: 20px;
 }
 
-/* 抽屉头部驾驶舱控制按钮 */
+/* 抽屉头部操作预览控制按钮 */
 .cockpit-trigger-btn {
   display: inline-flex;
   align-items: center;
@@ -390,27 +402,75 @@ const epCols = [
   background: var(--surface-2);
   border: 1px solid var(--line);
   color: var(--text);
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
-.cockpit-trigger-btn:hover {
+.cockpit-trigger-btn:hover:not(:disabled) {
   background: var(--surface-3);
   border-color: var(--accent);
+}
+.cockpit-trigger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
 }
 .cockpit-trigger-btn.active {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* 硬件级呼吸灯指示器 (无抖动、无闪烁，丝滑微晕脉冲) */
 .dot-pulse {
-  width: 6px;
-  height: 6px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
-  animation: dotBlink 1.4s infinite;
+  background: #94a3b8;
+  display: inline-block;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
 }
-@keyframes dotBlink {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.3; transform: scale(0.8); }
+
+/* 采集中状态：翡翠绿柔和呼吸 */
+.dot-pulse.live {
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: smoothBreath 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* 暂停中状态：琥珀色平缓呼吸 */
+.dot-pulse.paused {
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  animation: smoothBreathAmber 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes smoothBreath {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+    opacity: 0.75;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes smoothBreathAmber {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0);
+    opacity: 0.75;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    opacity: 1;
+  }
 }
 </style>

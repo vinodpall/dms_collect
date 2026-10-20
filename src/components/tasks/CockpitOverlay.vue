@@ -164,7 +164,7 @@ const umiRightHand = computed(() => {
 
 /* 模拟运动位移 */
 const armX = computed(() => +(80 + pos.value[0] * 60).toFixed(1))
-const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
+const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 </script>
 
 <template>
@@ -269,7 +269,7 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
               <button
                 type="button"
                 class="icon-action-btn close-btn"
-                title="收起驾驶舱"
+                title="收起操作预览"
                 @click="emit('close')"
               >
                 <svg viewBox="0 0 24 24" class="svg-ic"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" /></svg>
@@ -279,7 +279,7 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
 
           <!-- 2. 主体视口区域 -->
           <div class="deck-scroll-area">
-            <!-- 第一排：RGB 三路彩色宽屏视频 (释放两行高度后，视频更大更开阔) -->
+            <!-- 第一排：RGB 三路彩色宽屏视频 -->
             <div class="video-trio-row">
               <!-- 左侧视 -->
               <div class="widescreen-tile">
@@ -288,16 +288,16 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
                   <span class="v-tag mono">CAM-02 · 1080P</span>
                 </div>
                 <div class="tile-media-box">
-                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="100" fill="#0C1420" />
-                    <polygon points="8,95 152,95 132,60 28,60" fill="#132236" />
-                    <circle cx="80" cy="55" r="26" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
-                    <circle cx="80" cy="55" r="9" fill="#1A2D46" />
-                    <line x1="20" y1="90" :x2="armX" :y2="armY" stroke="#38bdf8" stroke-width="2.6" stroke-linecap="round" />
-                    <circle :cx="armX" :cy="armY" r="5" fill="#38bdf8" />
-                    <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
-                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(56,189,248,0.35)" stroke-width="1.2" fill="none" />
-                    <text x="10" y="24" fill="rgba(56,189,248,0.7)" font-size="7" font-family="monospace">● L-EYE 30FPS</text>
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#0C1420" />
+                    <polygon points="8,85 152,85 132,54 28,54" fill="#132236" />
+                    <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="50" r="8" fill="#1A2D46" />
+                    <line x1="20" y1="80" :x2="armX" :y2="armY" stroke="#38bdf8" stroke-width="2.6" stroke-linecap="round" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
+                    <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
+                    <path d="M 12 12 L 6 12 L 6 18 M 148 12 L 154 12 L 154 18 M 12 78 L 6 78 L 6 72 M 148 78 L 154 78 L 154 72" stroke="rgba(56,189,248,0.35)" stroke-width="1.2" fill="none" />
+                    <text x="8" y="20" fill="rgba(56,189,248,0.7)" font-size="6.5" font-family="monospace">● L-EYE 30FPS</text>
                   </svg>
                 </div>
               </div>
@@ -309,20 +309,20 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
                   <span class="v-tag mono text-cyan">CAM-01 · 主摄</span>
                 </div>
                 <div class="tile-media-box">
-                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="100" fill="#0E1826" />
-                    <polygon points="12,98 148,98 126,62 34,62" fill="#16263B" />
-                    <circle cx="80" cy="52" r="30" fill="none" stroke="#294569" stroke-width="1.8" />
-                    <circle cx="80" cy="52" r="10" fill="#1E334E" />
-                    <circle cx="80" cy="52" r="15" fill="none" stroke="rgba(56,189,248,0.55)" stroke-width="1" />
-                    <line x1="80" y1="30" x2="80" y2="42" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
-                    <line x1="80" y1="62" x2="80" y2="74" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
-                    <line x1="58" y1="52" x2="70" y2="52" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
-                    <line x1="90" y1="52" x2="102" y2="52" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#0E1826" />
+                    <polygon points="12,88 148,88 126,56 34,56" fill="#16263B" />
+                    <circle cx="80" cy="48" r="28" fill="none" stroke="#294569" stroke-width="1.8" />
+                    <circle cx="80" cy="48" r="10" fill="#1E334E" />
+                    <circle cx="80" cy="48" r="14" fill="none" stroke="rgba(56,189,248,0.55)" stroke-width="1" />
+                    <line x1="80" y1="28" x2="80" y2="38" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="80" y1="58" x2="80" y2="68" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="58" y1="48" x2="68" y2="48" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
+                    <line x1="92" y1="48" x2="102" y2="48" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
                     <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
                     <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
-                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(56,189,248,0.5)" stroke-width="1.2" fill="none" />
-                    <text x="10" y="24" fill="rgba(56,189,248,0.85)" font-size="7" font-family="monospace">● EGO 1080P</text>
+                    <path d="M 12 12 L 6 12 L 6 18 M 148 12 L 154 12 L 154 18 M 12 78 L 6 78 L 6 72 M 148 78 L 154 78 L 154 72" stroke="rgba(56,189,248,0.5)" stroke-width="1.2" fill="none" />
+                    <text x="8" y="20" fill="rgba(56,189,248,0.85)" font-size="6.5" font-family="monospace">● EGO 1080P</text>
                   </svg>
                 </div>
               </div>
@@ -334,16 +334,89 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
                   <span class="v-tag mono">CAM-03 · 1080P</span>
                 </div>
                 <div class="tile-media-box">
-                  <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="100" fill="#0C1420" />
-                    <polygon points="8,95 152,95 132,60 28,60" fill="#132236" />
-                    <circle cx="80" cy="55" r="26" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
-                    <circle cx="80" cy="55" r="9" fill="#1A2D46" />
-                    <line x1="140" y1="90" :x2="armX" :y2="armY" stroke="#60a5fa" stroke-width="2.6" stroke-linecap="round" />
-                    <circle :cx="armX" :cy="armY" r="5" fill="#60a5fa" />
-                    <circle :cx="armX" :cy="armY" r="2" fill="#fff" />
-                    <path d="M 12 14 L 6 14 L 6 20 M 148 14 L 154 14 L 154 20 M 12 86 L 6 86 L 6 80 M 148 86 L 154 86 L 154 80" stroke="rgba(96,165,250,0.35)" stroke-width="1.2" fill="none" />
-                    <text x="10" y="24" fill="rgba(96,165,250,0.7)" font-size="7" font-family="monospace">● R-EYE 30FPS</text>
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#0C1420" />
+                    <polygon points="8,85 152,85 132,54 28,54" fill="#132236" />
+                    <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="50" r="8" fill="#1A2D46" />
+                    <line x1="140" y1="80" :x2="armX" :y2="armY" stroke="#60a5fa" stroke-width="2.6" stroke-linecap="round" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#60a5fa" />
+                    <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
+                    <path d="M 12 12 L 6 12 L 6 18 M 148 12 L 154 12 L 154 18 M 12 78 L 6 78 L 6 72 M 148 78 L 154 78 L 154 72" stroke="rgba(96,165,250,0.35)" stroke-width="1.2" fill="none" />
+                    <text x="8" y="20" fill="rgba(96,165,250,0.7)" font-size="6.5" font-family="monospace">● R-EYE 30FPS</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- 第二排：Depth 三路深度伪彩视频 (直接排布紧随第一排，不占冗余标题高度) -->
+            <div class="video-trio-row depth-trio-row">
+              <!-- 左侧视 Depth -->
+              <div class="widescreen-tile depth-tile">
+                <div class="tile-header">
+                  <span class="v-label">左侧视 Depth</span>
+                  <span class="v-tag mono">D-01 · 深度伪彩</span>
+                </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#040609" />
+                    <polygon points="10,85 150,85 130,55 30,55" fill="#0D1B2A" />
+                    <ellipse cx="80" cy="54" rx="28" ry="17" fill="#1E40AF" />
+                    <ellipse cx="80" cy="54" rx="20" ry="12" fill="#047857" />
+                    <ellipse cx="80" cy="54" rx="12" ry="7" fill="#D97706" />
+                    <line x1="20" y1="80" :x2="armX" :y2="armY" stroke="#0284C7" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 1.5" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#EF4444" />
+                    <circle :cx="armX" :cy="armY" r="2" fill="#FDE047" />
+                    <circle cx="72" cy="50" r="1.5" fill="#EF4444" />
+                    <circle cx="88" cy="56" r="1.5" fill="#3B82F6" />
+                    <circle cx="82" cy="46" r="1.5" fill="#10B981" />
+                    <text x="8" y="15" fill="rgba(147,197,253,0.7)" font-size="6.5" font-family="monospace">● D-01 TURBO</text>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- 头部 Depth -->
+              <div class="widescreen-tile depth-tile">
+                <div class="tile-header">
+                  <span class="v-label">头部 Depth</span>
+                  <span class="v-tag mono text-cyan">D-02 · 主景深度</span>
+                </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#040609" />
+                    <polygon points="12,88 148,88 135,48 25,48" fill="#15803D" />
+                    <polygon points="25,48 135,48 128,32 32,32" fill="#B91C1C" />
+                    <polygon points="32,32 128,32 120,24 40,24" fill="#C2410C" />
+                    <rect x="36" y="44" width="88" height="32" rx="3" fill="#22C55E" />
+                    <rect x="44" y="62" width="20" height="26" rx="2" fill="#06B6D4" />
+                    <rect x="96" y="62" width="20" height="26" rx="2" fill="#06B6D4" />
+                    <circle cx="80" cy="56" r="12" fill="#0284C7" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#EF4444" />
+                    <circle :cx="armX" :cy="armY" r="1.8" fill="#FFF" />
+                    <text x="8" y="15" fill="rgba(56,189,248,0.75)" font-size="6.5" font-family="monospace">● D-02 主景</text>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- 右侧视 Depth -->
+              <div class="widescreen-tile depth-tile">
+                <div class="tile-header">
+                  <span class="v-label">右侧视 Depth</span>
+                  <span class="v-tag mono">D-03 · 深度伪彩</span>
+                </div>
+                <div class="tile-media-box">
+                  <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
+                    <rect width="160" height="90" fill="#040609" />
+                    <polygon points="10,85 150,85 130,55 30,55" fill="#0D1B2A" />
+                    <ellipse cx="80" cy="54" rx="28" ry="17" fill="#1E40AF" />
+                    <ellipse cx="80" cy="54" rx="20" ry="12" fill="#047857" />
+                    <ellipse cx="80" cy="54" rx="12" ry="7" fill="#D97706" />
+                    <line x1="140" y1="80" :x2="armX" :y2="armY" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 1.5" />
+                    <circle :cx="armX" :cy="armY" r="4.5" fill="#EF4444" />
+                    <circle :cx="armX" :cy="armY" r="2" fill="#FDE047" />
+                    <circle cx="76" cy="52" r="1.5" fill="#EF4444" />
+                    <circle cx="84" cy="58" r="1.5" fill="#3B82F6" />
+                    <text x="8" y="15" fill="rgba(147,197,253,0.7)" font-size="6.5" font-family="monospace">● D-03 TURBO</text>
                   </svg>
                 </div>
               </div>
@@ -697,11 +770,55 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
   color: #B45309;
 }
 .chip-dot {
-  width: 6px;
-  height: 6px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
   background: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
 }
+.status-chip.live .chip-dot {
+  background: #10B981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: smoothBreath 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.status-chip.paused .chip-dot {
+  background: #F59E0B;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  animation: smoothBreathAmber 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes smoothBreath {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+    opacity: 0.75;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes smoothBreathAmber {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0);
+    opacity: 0.75;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    opacity: 1;
+  }
+}
+
 .timer-chip {
   display: flex;
   align-items: center;
@@ -817,22 +934,22 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
   height: 14px;
 }
 
-/* 2. 滚动主体区域 (全宽标准 16:10 横屏视口) */
+/* 2. 滚动主体区域 (全宽标准 16:9 横屏视口) */
 .deck-scroll-area {
   flex: 1;
   min-height: 0;
-  padding: 10px 12px 12px;
+  padding: 8px 12px 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-/* 一行 3 个标准宽屏视口 (释放两行高度后，视频更开阔清晰) */
+/* 一行 3 个标准宽屏视口 */
 .video-trio-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   flex-shrink: 0;
 }
@@ -851,8 +968,8 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
   border-color: var(--cp-hover-border);
 }
 .tile-header {
-  height: 24px;
-  padding: 0 10px;
+  height: 23px;
+  padding: 0 8px;
   background: var(--cp-surface-subtle);
   display: flex;
   align-items: center;
@@ -869,10 +986,10 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
   color: var(--cp-text-faint);
 }
 
-/* 16:10 黄金宽屏比例，纵向空间充足，视频大方美观 */
+/* 16:9 标准宽屏比例 */
 .tile-media-box {
   width: 100%;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 16 / 9;
   background: #030508;
   position: relative;
   overflow: hidden;
@@ -884,6 +1001,15 @@ const armY = computed(() => +(50 - pos.value[2] * 40).toFixed(1))
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.widescreen-tile.depth-tile {
+  background: #050911;
+  border-color: rgba(56, 189, 248, 0.18);
+}
+.cockpit-light .widescreen-tile.depth-tile {
+  background: #F8FAFC;
+  border-color: #E2E8F0;
 }
 
 /* ========================================================
