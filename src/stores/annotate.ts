@@ -15,12 +15,33 @@ export interface Clip {
   reject?: { reason: string; by: string; t: string }
 }
 
-/** 初始子任务标签体系（按场景） */
-export const DEFAULT_SUB_NAMES: Record<ScenKey, string[]> = {
-  qmd: ['取件上台', '夹紧密封', '充气保压', '读数判定', '取下放回'],
-  fhd: ['取防护堵', '对准孔位', '压入到位', '检查'],
-}
-export const SUB_NAMES = DEFAULT_SUB_NAMES
+/** 统一通用子任务标签体系（所有场景通用） */
+export const DEFAULT_SUB_NAMES: string[] = [
+  '取件上台',
+  '夹紧密封',
+  '充气保压',
+  '读数判定',
+  '取下放回',
+  '取防护堵',
+  '对准孔位',
+  '压入到位',
+  '检查确认',
+]
+
+/** 兼容旧代码按场景索引 SUB_NAMES[scen] 的访问方式 */
+export const SUB_NAMES: Record<string, string[]> & string[] = new Proxy(DEFAULT_SUB_NAMES as any, {
+  get(target, prop) {
+    if (prop === 'qmd' || prop === 'fhd') {
+      try {
+        const store = useAnnotate()
+        return store.subNames
+      } catch {
+        return DEFAULT_SUB_NAMES
+      }
+    }
+    return (target as any)[prop]
+  },
+})
 
 export const SUB_COLORS = ['#2F6FD1', '#2C8F7B', '#B86E1A', '#8A5CC9', '#C2476B', '#4A8FB8', '#D97706', '#059669', '#7C3AED', '#DB2777']
 
@@ -30,8 +51,15 @@ function hashStr(s: string) {
   return Math.abs(h)
 }
 
-export const colorOf = (scen: ScenKey, name: string) => {
-  let idx = DEFAULT_SUB_NAMES[scen]?.indexOf(name) ?? -1
+export const colorOf = (_scen: unknown, name: string) => {
+  let idx = -1
+  try {
+    const store = useAnnotate()
+    idx = store?.subNames?.indexOf(name) ?? -1
+  } catch {
+    idx = DEFAULT_SUB_NAMES.indexOf(name)
+  }
+  if (idx < 0) idx = DEFAULT_SUB_NAMES.indexOf(name)
   if (idx < 0) idx = hashStr(name)
   return SUB_COLORS[idx % SUB_COLORS.length]
 }
@@ -75,27 +103,20 @@ export interface ValidationReport {
 export const useAnnotate = defineStore('annotate', () => {
   const { nameFile } = useSettings()
 
-  // 响应式子任务标签字典
-  const subNames = ref<Record<ScenKey, string[]>>({
-    qmd: [...DEFAULT_SUB_NAMES.qmd],
-    fhd: [...DEFAULT_SUB_NAMES.fhd],
-  })
+  // 通用响应式子任务标签字典（所有场景通用）
+  const subNames = ref<string[]>([...DEFAULT_SUB_NAMES])
 
-  // 子任务描述元数据
-  const subtaskMeta = ref<Record<ScenKey, Record<string, SubtaskMeta>>>({
-    qmd: {
-      取件上台: { name: '取件上台', desc: '抓取铝合金轮毂移送至气密检测台并安放平稳', required: true },
-      夹紧密封: { name: '夹紧密封', desc: '气动夹具闭合压紧，密封胶垫完全压实气阀孔', required: true },
-      充气保压: { name: '充气保压', desc: '向轮毂充入高压测试气体并持续保持稳定', required: true },
-      读数判定: { name: '读数判定', desc: '观察精密微压表压降波动，判定气密是否合格', required: true },
-      取下放回: { name: '取下放回', desc: '松开气动夹具，取出轮毂工件移送至传输托盘', required: false },
-    },
-    fhd: {
-      取防护堵: { name: '取防护堵', desc: '从零件料盒中精准抓取特制硅胶防护堵塞', required: true },
-      对准孔位: { name: '对准孔位', desc: '将防护堵中心轴线与轮毂装配孔同轴对齐', required: true },
-      压入到位: { name: '压入到位', desc: '施加推力垂直压入孔槽，确保边缘平整卡紧', required: true },
-      检查: { name: '检查', desc: '轻触并目视确认防护堵安装平齐无翘曲遗漏', required: false },
-    },
+  // 通用子任务元数据
+  const subtaskMeta = ref<Record<string, SubtaskMeta>>({
+    取件上台: { name: '取件上台', desc: '抓取工件移送至检测工位并安放平稳', required: true },
+    夹紧密封: { name: '夹紧密封', desc: '气动机构闭合压紧，密封胶垫完全压实气阀孔', required: true },
+    充气保压: { name: '充气保压', desc: '向工件充入高压测试气体并持续保持稳定', required: true },
+    读数判定: { name: '读数判定', desc: '观察精密微压表压降波动，判定气密是否合格', required: true },
+    取下放回: { name: '取下放回', desc: '松开夹具，取出工件移送至传输托盘', required: false },
+    取防护堵: { name: '取防护堵', desc: '从零件料盒中精准抓取特制硅胶防护堵塞', required: true },
+    对准孔位: { name: '对准孔位', desc: '将防护堵中心轴线与轮毂装配孔同轴对齐', required: true },
+    压入到位: { name: '压入到位', desc: '施加推力垂直压入孔槽，确保边缘平整卡紧', required: true },
+    检查确认: { name: '检查确认', desc: '轻触并目视确认工件安装平齐无翘曲遗漏', required: false },
   })
 
   // 撤销历史栈（按片段 ID）
@@ -103,10 +124,8 @@ export const useAnnotate = defineStore('annotate', () => {
 
   function pushHistory(clipId: string, currentSegs: Seg[]) {
     if (!undoHistory.value[clipId]) undoHistory.value[clipId] = []
-    // 保存深拷贝
     undoHistory.value[clipId].push(JSON.parse(JSON.stringify(currentSegs)))
-    // 最多保留 20 步
-    if (undoHistory.value[clipId].length > 20) undoHistory.value[clipId].shift()
+    if (undoHistory.value[clipId].length > 25) undoHistory.value[clipId].shift()
   }
 
   function popHistory(clipId: string): Seg[] | null {
@@ -118,13 +137,12 @@ export const useAnnotate = defineStore('annotate', () => {
     return !!(undoHistory.value[clipId] && undoHistory.value[clipId].length > 0)
   }
 
-  // 子任务管理 CRUD
-  function addSubName(scen: ScenKey, name: string, desc = '', required = false) {
+  // 通用子任务 CRUD
+  function addSubName(name: string, desc = '', required = false) {
     const trimmed = name.trim()
-    if (!trimmed || subNames.value[scen].includes(trimmed)) return false
-    subNames.value[scen].push(trimmed)
-    if (!subtaskMeta.value[scen]) subtaskMeta.value[scen] = {}
-    subtaskMeta.value[scen][trimmed] = { name: trimmed, desc, required }
+    if (!trimmed || subNames.value.includes(trimmed)) return false
+    subNames.value.push(trimmed)
+    subtaskMeta.value[trimmed] = { name: trimmed, desc, required }
 
     useLogs().addLog({
       user: '林悦',
@@ -132,36 +150,33 @@ export const useAnnotate = defineStore('annotate', () => {
       module: 'annotate',
       moduleName: '标注工作台',
       action: '新增子任务',
-      target: `${SCEN[scen].name} · ${trimmed}`,
-      summary: `标注员在场景 [${SCEN[scen].short}] 中新增子任务：${trimmed}`,
-      after: { scen, name: trimmed, desc, required },
+      target: trimmed,
+      summary: `标注员新增通用子任务：${trimmed}`,
+      after: { name: trimmed, desc, required },
     })
     return true
   }
 
-  function updateSubName(scen: ScenKey, oldName: string, newName: string, desc?: string, required?: boolean) {
+  function updateSubName(oldName: string, newName: string, desc?: string, required?: boolean) {
     const trimmed = newName.trim()
-    const idx = subNames.value[scen].indexOf(oldName)
+    const idx = subNames.value.indexOf(oldName)
     if (idx < 0 || !trimmed) return false
 
-    if (trimmed !== oldName && !subNames.value[scen].includes(trimmed)) {
-      subNames.value[scen][idx] = trimmed
-      // 同步更新元数据
-      const meta = subtaskMeta.value[scen]?.[oldName] ?? { name: trimmed, desc: desc ?? '', required: !!required }
-      delete subtaskMeta.value[scen][oldName]
-      subtaskMeta.value[scen][trimmed] = { ...meta, name: trimmed, desc: desc ?? meta.desc, required: required ?? meta.required }
+    if (trimmed !== oldName && !subNames.value.includes(trimmed)) {
+      subNames.value[idx] = trimmed
+      const meta = subtaskMeta.value[oldName] ?? { name: trimmed, desc: desc ?? '', required: !!required }
+      delete subtaskMeta.value[oldName]
+      subtaskMeta.value[trimmed] = { ...meta, name: trimmed, desc: desc ?? meta.desc, required: required ?? meta.required }
 
-      // 同步更新使用该子任务的切片
+      // 同步更新所有片段中引用的名称
       clips.value.forEach((c) => {
-        if (c.scen === scen) {
-          c.segs.forEach((s) => {
-            if (s.n === oldName) s.n = trimmed
-          })
-        }
+        c.segs.forEach((s) => {
+          if (s.n === oldName) s.n = trimmed
+        })
       })
-    } else if (trimmed === oldName && subtaskMeta.value[scen]?.[oldName]) {
-      if (desc !== undefined) subtaskMeta.value[scen][oldName].desc = desc
-      if (required !== undefined) subtaskMeta.value[scen][oldName].required = required
+    } else if (trimmed === oldName && subtaskMeta.value[oldName]) {
+      if (desc !== undefined) subtaskMeta.value[oldName].desc = desc
+      if (required !== undefined) subtaskMeta.value[oldName].required = required
     }
 
     useLogs().addLog({
@@ -170,19 +185,19 @@ export const useAnnotate = defineStore('annotate', () => {
       module: 'annotate',
       moduleName: '标注工作台',
       action: '修改子任务',
-      target: `${SCEN[scen].name} · ${trimmed}`,
-      summary: `标注员更新子任务名称或元信息：${oldName} → ${trimmed}`,
+      target: trimmed,
+      summary: `标注员更新通用子任务：${oldName} → ${trimmed}`,
       before: { name: oldName },
       after: { name: trimmed, desc, required },
     })
     return true
   }
 
-  function deleteSubName(scen: ScenKey, name: string) {
-    const idx = subNames.value[scen].indexOf(name)
+  function deleteSubName(name: string) {
+    const idx = subNames.value.indexOf(name)
     if (idx < 0) return false
-    subNames.value[scen].splice(idx, 1)
-    if (subtaskMeta.value[scen]?.[name]) delete subtaskMeta.value[scen][name]
+    subNames.value.splice(idx, 1)
+    if (subtaskMeta.value[name]) delete subtaskMeta.value[name]
 
     useLogs().addLog({
       user: '林悦',
@@ -190,22 +205,25 @@ export const useAnnotate = defineStore('annotate', () => {
       module: 'annotate',
       moduleName: '标注工作台',
       action: '删除子任务',
-      target: `${SCEN[scen].name} · ${name}`,
-      summary: `标注员在场景 [${SCEN[scen].short}] 中删除了子任务：${name}`,
+      target: name,
+      summary: `标注员删除了通用子任务：${name}`,
     })
     return true
   }
 
-  function resetSubNames(scen: ScenKey) {
-    subNames.value[scen] = [...DEFAULT_SUB_NAMES[scen]]
+  function resetSubNames() {
+    subNames.value = [...DEFAULT_SUB_NAMES]
   }
 
   function mkSegs(i: number, scen: ScenKey, dur: number, parts: number): Seg[] {
-    const r = rng(900 + i), names = subNames.value[scen]
+    const r = rng(900 + i)
+    const preset = scen === 'qmd'
+      ? ['取件上台', '夹紧密封', '充气保压', '读数判定', '取下放回']
+      : ['取防护堵', '对准孔位', '压入到位', '检查确认']
     const cuts = [0]
-    for (let k = 1; k < parts; k++) cuts.push(+((dur * k) / names.length + (r() - 0.5)).toFixed(1))
-    cuts.push(parts === names.length ? dur : +((dur * parts) / names.length).toFixed(1))
-    return Array.from({ length: parts }, (_, k) => ({ id: newSegId(), s: cuts[k], e: cuts[k + 1], n: names[k % names.length] }))
+    for (let k = 1; k < parts; k++) cuts.push(+((dur * k) / preset.length + (r() - 0.5)).toFixed(1))
+    cuts.push(parts === preset.length ? dur : +((dur * parts) / preset.length).toFixed(1))
+    return Array.from({ length: parts }, (_, k) => ({ id: newSegId(), s: cuts[k], e: cuts[k + 1], n: preset[k % preset.length] }))
   }
 
   function mk(i: number, scen: ScenKey, batch: string, status: ClipStatus, parts: number): Clip {
@@ -351,17 +369,21 @@ export const useAnnotate = defineStore('annotate', () => {
       })
     }
 
-    // 5. 核心必选子任务完整性检测
-    const metaMap = subtaskMeta.value[c.scen] || {}
+    // 5. 核心关键子任务完整性检测
     const usedNames = new Set(segs.map((s) => s.n))
-    Object.values(metaMap).forEach((m) => {
-      if (m.required && !usedNames.has(m.name)) {
+    const scenReqs: Record<ScenKey, string[]> = {
+      qmd: ['夹紧密封', '充气保压', '读数判定'],
+      fhd: ['压入到位'],
+    }
+    const requiredList = scenReqs[c.scen] || []
+    requiredList.forEach((reqName) => {
+      if (!usedNames.has(reqName)) {
         issues.push({
-          id: `iss-req-${m.name}`,
+          id: `iss-req-${reqName}`,
           severity: 'warn',
           rule: '核心子任务缺失',
-          desc: `当前场景必选子任务 [${m.name}] 尚未标注，请确认视频中是否包含此操作步骤`,
-          segName: m.name,
+          desc: `当前场景关键步骤 [${reqName}] 尚未标注，请确认视频中是否包含此操作流程`,
+          segName: reqName,
         })
       }
     })

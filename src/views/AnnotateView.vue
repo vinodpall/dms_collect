@@ -21,7 +21,7 @@ import {
 } from '@/stores/annotate'
 import { usePipeline } from '@/stores/pipeline'
 import { useLogs } from '@/stores/logs'
-import { NO_PERM, SCEN, type BadgeKind, type ScenKey } from '@/constants'
+import { NO_PERM, SCEN, type BadgeKind } from '@/constants'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
@@ -35,7 +35,6 @@ const route = useRoute()
 const router = useRouter()
 
 const canLabel = computed(() => session.can('annotate'))
-const canReview = computed(() => session.can('review'))
 
 const batchFilter = computed(() => (typeof route.query.batch === 'string' ? route.query.batch : ''))
 const FILTERS = computed<[string, string, number][]>(() => {
@@ -101,11 +100,8 @@ function toggle() {
 const editable = computed(() => canLabel.value && !!clip.value && ['todo', 'rejected'].includes(clip.value.status))
 const sorted = computed(() => (clip.value ? clip.value.segs.slice().sort((a, b) => a.s - b.s) : []))
 const coverage = computed(() => (clip.value ? Math.min(100, Math.round((sorted.value.reduce((a, s) => a + (s.e - s.s), 0) / clip.value.dur) * 100)) : 0))
-const currentSubNames = computed(() => (clip.value ? store.subNames[clip.value.scen] || [] : []))
-const missing = computed(() => (clip.value ? currentSubNames.value.filter((n) => !clip.value!.segs.some((s) => s.n === n)) : []))
 const nowSeg = computed(() => sorted.value.find((s) => t.value >= s.s && t.value < s.e))
-const flagged = computed(() => sorted.value.filter((s) => s.flag))
-const nextName = (c: Clip) => currentSubNames.value.find((n) => !c.segs.some((s) => s.n === n)) ?? currentSubNames.value[0] ?? '未命名'
+const nextName = (c: Clip) => store.subNames.find((n) => !c.segs.some((s) => s.n === n)) ?? store.subNames[0] ?? '未命名'
 
 /* 撤销管理 */
 const hasUndo = computed(() => (clip.value ? store.canUndo(clip.value.id) : false))
@@ -130,26 +126,56 @@ function changed() {
   recordHistory()
 }
 
-function split() {
+/** 切分或在当前播放头新增切片 (快捷键 A / S) */
+function splitOrAdd() {
   const c = clip.value
   if (!c || !editable.value) return
+
+  // 1. 如果播放头位于某个切片内部，切分该切片
   const seg = c.segs.find((s) => t.value - s.s >= 0.3 && s.e - t.value >= 0.3)
-  if (!seg) {
-    toast('播放头需位于某个切片内部（距边缘至少 0.3s）才能切分', { type: 'warn' })
+  if (seg) {
+    recordHistory()
+    const cut = Math.round(t.value * 10) / 10
+    const n: Seg = { id: newSegId(), s: cut, e: seg.e, n: nextName(c) }
+    seg.e = cut
+    c.segs.push(n)
+    sel.value = n.id
+    toast(`已在 ${cut}s 处切分切片 [${n.n}]`)
     return
   }
+
+  // 2. 如果播放头位于空白处，在当前位置创建新切片
+  const sortedSegs = c.segs.slice().sort((a, b) => a.s - b.s)
+  const nextSeg = sortedSegs.find((s) => s.s > t.value)
+  const maxEnd = nextSeg ? nextSeg.s : c.dur
+  const curStart = Math.round(t.value * 10) / 10
+
+  if (maxEnd - curStart < 0.3) {
+    toast('当前位置可用时长过短（小于 0.3s），无法创建切片', { type: 'warn' })
+    return
+  }
+
+  const curEnd = Math.round(Math.min(curStart + 2.5, maxEnd) * 10) / 10
   recordHistory()
-  const cut = Math.round(t.value * 10) / 10
-  const n: Seg = { id: newSegId(), s: cut, e: seg.e, n: nextName(c) }
-  seg.e = cut
-  c.segs.push(n)
-  sel.value = n.id
-  toast(`在 ${cut}s 处切分出新切片 [${n.n}]`)
+  const newSeg: Seg = { id: newSegId(), s: curStart, e: curEnd, n: nextName(c) }
+  c.segs.push(newSeg)
+  sel.value = newSeg.id
+  toast(`已在 ${curStart}s 处新增切片 [${newSeg.n}]`)
 }
 
+/** 删除当前选中的切片，或删除播放头所在的切片 (快捷键 D / Del / Backspace) */
 function remove(id?: number) {
-  const c = clip.value, k = id ?? sel.value
-  if (!c || !editable.value || k == null) return
+  const c = clip.value
+  if (!c || !editable.value) return
+  let k = id ?? sel.value
+  if (k == null) {
+    const atHead = c.segs.find((s) => t.value >= s.s && t.value <= s.e)
+    if (atHead) k = atHead.id
+  }
+  if (k == null) {
+    toast('请先选中或移动至要删除的切片', { type: 'warn' })
+    return
+  }
   const seg = c.segs.find((s) => s.id === k)
   recordHistory()
   c.segs.splice(c.segs.findIndex((s) => s.id === k), 1)
@@ -157,22 +183,27 @@ function remove(id?: number) {
   toast(`已删除切片 [${seg?.n ?? ''}]`)
 }
 
+/** 向下合并切片 (快捷键 M) */
 function mergeWithNext() {
   const c = clip.value
-  if (!c || !editable.value || sel.value == null) {
-    toast('请先选择要合并的切片', { type: 'warn' })
+  if (!c || !editable.value) return
+  let curSeg = c.segs.find((s) => s.id === sel.value)
+  if (!curSeg) {
+    curSeg = c.segs.find((s) => t.value >= s.s && t.value <= s.e)
+  }
+  if (!curSeg) {
+    toast('请先选中或移动至要合并的切片', { type: 'warn' })
     return
   }
-  const curSeg = c.segs.find((s) => s.id === sel.value)
-  if (!curSeg) return
-  const nextSeg = sorted.value.find((s) => s.s >= curSeg.e - 0.05 && s.id !== curSeg.id)
+  const nextSeg = sorted.value.find((s) => s.s >= curSeg!.e - 0.05 && s.id !== curSeg!.id)
   if (!nextSeg) {
-    toast('未找到紧邻的下一个切片，无法合并', { type: 'warn' })
+    toast('未找到紧邻的下一个切片，无法向下合并', { type: 'warn' })
     return
   }
   recordHistory()
   curSeg.e = nextSeg.e
   c.segs.splice(c.segs.findIndex((s) => s.id === nextSeg.id), 1)
+  sel.value = curSeg.id
   toast(`已将 [${nextSeg.n}] 合并入 [${curSeg.n}]`)
 }
 
@@ -302,73 +333,113 @@ async function withdraw() {
   toast('已撤回，可继续修改' + batchNote(c.batch, before))
 }
 
-/* 键盘快捷键监听 */
+/* 快捷键指南弹窗与子任务字典弹窗状态 */
+const shortcutGuideOpen = ref(false)
+const subModal = reactive({
+  open: false,
+  editingName: null as string | null,
+  form: { name: '', desc: '', required: false },
+})
+
+/* 键盘快捷键监听器 */
 function onKey(e: KeyboardEvent) {
-  if (document.querySelector('.ant-modal-wrap, .ant-drawer-open')) return
+  // 1. 如果弹窗处于打开状态，不响应页面快捷键
+  if (valModal.open || subModal.open || shortcutGuideOpen.value) return
+
+  // 2. 如果输入框、下拉框正在输入，不拦截按键
   const el = e.target as HTMLElement, tag = el?.tagName
-  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el?.closest?.('.ant-select') || el?.isContentEditable) return
+  if (
+    tag === 'INPUT' ||
+    tag === 'SELECT' ||
+    tag === 'TEXTAREA' ||
+    el?.closest?.('.ant-select') ||
+    el?.closest?.('.ant-input-number') ||
+    el?.closest?.('.ant-input') ||
+    el?.isContentEditable
+  ) {
+    return
+  }
 
   // Ctrl+Z: 撤销
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.code === 'KeyZ')) {
     e.preventDefault()
     undo()
     return
   }
 
   // Ctrl+S: 保存草稿
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 's' || e.code === 'KeyS')) {
     e.preventDefault()
     saveDraft()
     return
   }
 
+  // 避免其他 Ctrl / Alt 组合键干扰
   if (e.ctrlKey || e.metaKey || e.altKey) return
 
   const k = e.key.toLowerCase()
-  if (k === ' ' && tag !== 'BUTTON') {
+  const code = e.code
+
+  // 空格：播放 / 暂停
+  if (code === 'Space' || k === ' ' || k === 'spacebar') {
     e.preventDefault()
     toggle()
-  } else if (k === 'a' || k === 's') {
+    return
+  }
+
+  // A 或 S：切分 / 新增切片
+  if (k === 'a' || k === 's' || code === 'KeyA' || code === 'KeyS') {
     e.preventDefault()
-    split()
-  } else if (k === 'd' || k === 'delete' || k === 'backspace') {
+    splitOrAdd()
+    return
+  }
+
+  // D 或 Del / Backspace：删除切片
+  if (k === 'd' || code === 'KeyD' || k === 'delete' || k === 'backspace') {
     e.preventDefault()
     remove()
-  } else if (k === 'm') {
+    return
+  }
+
+  // M：向下合并切片
+  if (k === 'm' || code === 'KeyM') {
     e.preventDefault()
     mergeWithNext()
-  } else if (k === 'arrowleft' && clip.value) {
+    return
+  }
+
+  // 左方向键：后退 0.1s（Shift 2.0s）
+  if ((k === 'arrowleft' || code === 'ArrowLeft') && clip.value) {
     e.preventDefault()
     const delta = e.shiftKey ? 2.0 : 0.1
-    t.value = clamp(t.value - delta, 0, clip.value.dur)
-  } else if (k === 'arrowright' && clip.value) {
+    t.value = clamp(+(t.value - delta).toFixed(2), 0, clip.value.dur)
+    return
+  }
+
+  // 右方向键：前进 0.1s（Shift 2.0s）
+  if ((k === 'arrowright' || code === 'ArrowRight') && clip.value) {
     e.preventDefault()
     const delta = e.shiftKey ? 2.0 : 0.1
-    t.value = clamp(t.value + delta, 0, clip.value.dur)
-  } else if (k === 'escape') {
+    t.value = clamp(+(t.value + delta).toFixed(2), 0, clip.value.dur)
+    return
+  }
+
+  // Esc：取消选中
+  if (k === 'escape' || code === 'Escape') {
     sel.value = null
   }
 }
 
-onMounted(() => document.addEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey, true)
+})
 onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKey)
+  window.removeEventListener('keydown', onKey, true)
   if (timer) clearInterval(timer)
 })
 
-/* 快捷键指南弹窗 */
-const shortcutGuideOpen = ref(false)
-
-/* 子任务字典管理弹窗 */
-const subModal = reactive({
-  open: false,
-  scen: 'qmd' as ScenKey,
-  editingName: null as string | null,
-  form: { name: '', desc: '', required: false },
-})
-
+/* 通用子任务字典管理操作 */
 function openSubModal() {
-  subModal.scen = clip.value?.scen ?? 'qmd'
   subModal.editingName = null
   subModal.form = { name: '', desc: '', required: false }
   subModal.open = true
@@ -381,15 +452,15 @@ function handleSaveSubtask() {
     return
   }
   if (subModal.editingName) {
-    store.updateSubName(subModal.scen, subModal.editingName, name, subModal.form.desc, subModal.form.required)
-    toast(`已更新子任务 [${name}]`)
+    store.updateSubName(subModal.editingName, name, subModal.form.desc, subModal.form.required)
+    toast(`已更新通用子任务 [${name}]`)
   } else {
-    const ok = store.addSubName(subModal.scen, name, subModal.form.desc, subModal.form.required)
+    const ok = store.addSubName(name, subModal.form.desc, subModal.form.required)
     if (!ok) {
       toast('该子任务名称已存在或无效', { type: 'warn' })
       return
     }
-    toast(`已添加子任务 [${name}]`)
+    toast(`已添加通用子任务 [${name}]`)
   }
   subModal.editingName = null
   subModal.form = { name: '', desc: '', required: false }
@@ -397,19 +468,20 @@ function handleSaveSubtask() {
 
 function startEditSubtask(n: string) {
   subModal.editingName = n
-  const meta = store.subtaskMeta[subModal.scen]?.[n]
+  const meta = store.subtaskMeta[n]
   subModal.form = { name: n, desc: meta?.desc ?? '', required: !!meta?.required }
 }
 
 async function handleDeleteSubtask(n: string) {
-  const inUse = store.clips.filter((c) => c.scen === subModal.scen && c.segs.some((s) => s.n === n)).length
-  const msg = inUse
-    ? `当前已有 ${inUse} 个标注片段使用了该子任务，删除后历史片段仍会保留此名称，但下拉列表中将不再显示。确定删除？`
-    : `确定删除子任务 [${n}]？`
-  const ok = await confirmDlg({ title: '确认删除子任务', msg, ok: '删除', danger: true })
+  const ok = await confirmDlg({
+    title: '确认删除通用子任务',
+    msg: `确定删除子任务 [${n}]？删除后下拉选项中将不再显示。`,
+    ok: '确认删除',
+    danger: true,
+  })
   if (ok) {
-    store.deleteSubName(subModal.scen, n)
-    toast(`已删除子任务 [${n}]`)
+    store.deleteSubName(n)
+    toast(`已删除通用子任务 [${n}]`)
   }
 }
 
@@ -418,7 +490,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 </script>
 
 <template>
-  <PageHead title="标注工作台" desc="时序多视角视频切片标注；支持丰富键盘快捷键、子任务字典实时维护与提交前质量自检拦截">
+  <PageHead title="标注工作台" desc="时序多视角视频切片标注；支持丰富键盘快捷键、通用子任务字典实时维护与提交前质量自检拦截">
     <div class="row" style="gap:8px">
       <a-button @click="openSubModal"><AppIcon name="tag" size="sm" />子任务字典管理</a-button>
       <a-button @click="shortcutGuideOpen = true"><AppIcon name="kbd" size="sm" />快捷键指南</a-button>
@@ -477,7 +549,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
           </span>
           <span class="grow" />
           <template v-if="editable">
-            <a-button size="small" @click="split"><AppIcon name="more" size="sm" />切分切片 <kbd>A</kbd></a-button>
+            <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增切片 <kbd>A</kbd></a-button>
             <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />向下合并 <kbd>M</kbd></a-button>
             <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除切片 <kbd>D</kbd></a-button>
           </template>
@@ -487,18 +559,18 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <div class="muted hint-row">
           <template v-if="editable">
-            <span>💡 提示：在时间轴空白处拖拽创建新切片；拖拽端点调整起止边界；支持键盘快捷键高效精修</span>
+            <span>💡 快捷提示：播放中按 <kbd>A</kbd> 切分或新增切片；按 <kbd>M</kbd> 合并；按 <kbd>D</kbd> 删除；按 <kbd>←</kbd><kbd>→</kbd> 逐帧微调 0.1s（Shift 2s）；按 <kbd>Space</kbd> 播放暂停</span>
           </template>
           <template v-else>
             <span>只读模式：当前数据处于【{{ CLIP_ST[clip.status][1] }}】状态，如需修改请点击下方“撤回提交”</span>
           </template>
           <span class="grow" />
-          <span>覆盖率 <b>{{ coverage }}%</b><template v-if="missing.length"> · 待标注项：{{ missing.join('、') }}</template></span>
+          <span>覆盖率 <b>{{ coverage }}%</b></span>
         </div>
 
         <div class="row between" style="margin-top:6px">
           <span style="font-weight:600;font-size:13.5px">子任务切片明细 ({{ sorted.length }})</span>
-          <a-button size="small" type="link" @click="openSubModal"><AppIcon name="settings" size="sm" />管理场景子任务标签</a-button>
+          <a-button size="small" type="link" @click="openSubModal"><AppIcon name="settings" size="sm" />管理通用子任务标签</a-button>
         </div>
 
         <table class="stbl" aria-label="子任务切片列表">
@@ -522,7 +594,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
                   size="small"
                   style="width:100%"
                   aria-label="子任务名称"
-                  :options="currentSubNames.map((n) => ({ value: n }))"
+                  :options="store.subNames.map((n) => ({ value: n }))"
                   @change="changed"
                 />
                 <span v-else>{{ s.n }}</span>
@@ -565,7 +637,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
             </tr>
             <tr v-if="!sorted.length">
               <td colspan="6" class="muted" style="text-align:center;padding:24px">
-                暂无切片数据{{ editable ? '，可在时间轴上拖拽或按 A/S 键切分' : '' }}
+                暂无切片数据{{ editable ? '，可在时间轴上拖拽或直接按 A 键新增切片' : '' }}
               </td>
             </tr>
           </tbody>
@@ -573,7 +645,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <div class="actbar">
           <span class="muted grow" style="font-size:12px">
-            <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>Shift+←/→</kbd> 2s　<kbd>A</kbd> 切分　<kbd>M</kbd> 合并　<kbd>D</kbd> 删除　<kbd>Ctrl+Z</kbd> 撤销
+            <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>Shift+←/→</kbd> 2s　<kbd>A</kbd> 切分/新增　<kbd>M</kbd> 合并　<kbd>D</kbd> 删除　<kbd>Ctrl+Z</kbd> 撤销
           </span>
           <template v-if="clip.status === 'submitted'">
             <span class="muted" style="font-size:12.5px;margin-right:8px">已提交审核员审核，等待质检结果</span>
@@ -714,24 +786,17 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
     </template>
   </a-modal>
 
-  <!-- 子任务字典管理弹窗 -->
+  <!-- 通用子任务字典管理弹窗（无场景分类、去掉当前使用列） -->
   <a-modal
     v-model:open="subModal.open"
-    title="标注子任务字典管理"
+    title="标注子任务字典管理 (通用)"
     width="680px"
     centered
     :footer="null"
   >
-    <div style="margin-bottom:14px">
-      <a-radio-group v-model:value="subModal.scen" button-style="solid" size="small">
-        <a-radio-button value="qmd">{{ SCEN.qmd.short }} (VR)</a-radio-button>
-        <a-radio-button value="fhd">{{ SCEN.fhd.short }} (UMI)</a-radio-button>
-      </a-radio-group>
-    </div>
-
     <div class="card" style="padding:12px;background:var(--surface-2);margin-bottom:16px">
       <div style="font-weight:600;margin-bottom:8px">
-        {{ subModal.editingName ? '✏️ 编辑子任务: ' + subModal.editingName : '➕ 添加新子任务' }}
+        {{ subModal.editingName ? '✏️ 编辑通用子任务: ' + subModal.editingName : '➕ 添加通用子任务' }}
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <a-input
@@ -756,30 +821,26 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
       </div>
     </div>
 
-    <table class="stbl" aria-label="子任务定义表">
+    <table class="stbl" aria-label="通用子任务定义表">
       <thead>
         <tr>
-          <th style="width:30px">颜色</th>
-          <th style="width:110px">子任务名称</th>
-          <th>标准操作说明</th>
-          <th style="width:75px">属性</th>
-          <th style="width:90px">当前使用</th>
+          <th style="width:36px">颜色</th>
+          <th style="width:140px">子任务名称</th>
+          <th>标准操作说明与规范释义</th>
+          <th style="width:80px">属性</th>
           <th style="width:100px">操作</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="n in store.subNames[subModal.scen]" :key="n">
-          <td><i class="dot" :style="{ background: colorOf(subModal.scen, n) }" /></td>
+        <tr v-for="n in store.subNames" :key="n">
+          <td><i class="dot" :style="{ background: colorOf(null, n) }" /></td>
           <td><b>{{ n }}</b></td>
-          <td class="muted" style="font-size:12px">
-            {{ store.subtaskMeta[subModal.scen]?.[n]?.desc || '暂无说明' }}
+          <td class="muted" style="font-size:12.5px">
+            {{ store.subtaskMeta[n]?.desc || '通用标准作业步骤' }}
           </td>
           <td>
-            <a-tag v-if="store.subtaskMeta[subModal.scen]?.[n]?.required" color="red">必选</a-tag>
+            <a-tag v-if="store.subtaskMeta[n]?.required" color="red">必选</a-tag>
             <a-tag v-else color="default">可选</a-tag>
-          </td>
-          <td class="num muted">
-            {{ store.clips.filter((c) => c.scen === subModal.scen && c.segs.some((s) => s.n === n)).length }} 片段
           </td>
           <td>
             <div class="row" style="gap:4px">
@@ -792,8 +853,8 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
     </table>
 
     <div class="row between" style="margin-top:14px">
-      <span class="muted" style="font-size:12px">添加或编辑后实时同步至当前标注切片下拉菜单</span>
-      <a-button size="small" @click="store.resetSubNames(subModal.scen); toast('已重置为场景初始默认子任务')">恢复场景默认</a-button>
+      <span class="muted" style="font-size:12px">所有场景通用字典；添加或编辑后实时同步至当前切片下拉选项</span>
+      <a-button size="small" @click="store.resetSubNames(); toast('已重置为通用预设子任务')">恢复预设子任务</a-button>
     </div>
   </a-modal>
 
@@ -803,10 +864,10 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
       <div class="kbd-row"><div class="keys"><kbd>Space</kbd></div><div class="desc">播放 / 暂停视频与时空轨迹播放</div></div>
       <div class="kbd-row"><div class="keys"><kbd>←</kbd> <kbd>→</kbd></div><div class="desc">微调步进（向左 / 向右前进或后退 0.1 秒，逐帧对准）</div></div>
       <div class="kbd-row"><div class="keys"><kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd></div><div class="desc">快速进退（向左 / 向右跨越 2.0 秒）</div></div>
-      <div class="kbd-row"><div class="keys"><kbd>A</kbd> 或 <kbd>S</kbd></div><div class="desc">在当前播放头位置切分现有切片或新增切片</div></div>
-      <div class="kbd-row"><div class="keys"><kbd>M</kbd></div><div class="desc">将当前选中的切片与相邻下一切片合并</div></div>
-      <div class="kbd-row"><div class="keys"><kbd>D</kbd> 或 <kbd>Del</kbd></div><div class="desc">删除当前选中的切片</div></div>
-      <div class="kbd-row"><div class="keys"><kbd>Ctrl</kbd> + <kbd>Z</kbd></div><div class="desc">撤销上一步切片操作（支持连续多步撤销）</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>A</kbd> 或 <kbd>S</kbd></div><div class="desc">在当前播放头切分已有切片，或在空白处新增切片</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>M</kbd></div><div class="desc">将当前选中的切片与紧邻的下一切片合并</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>D</kbd> 或 <kbd>Del</kbd></div><div class="desc">删除当前选中或播放头所在切片</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>Ctrl</kbd> + <kbd>Z</kbd></div><div class="desc">撤销上一步切片操作（支持多步撤销）</div></div>
       <div class="kbd-row"><div class="keys"><kbd>Ctrl</kbd> + <kbd>S</kbd></div><div class="desc">即时保存标注草稿至缓存</div></div>
       <div class="kbd-row"><div class="keys"><kbd>Esc</kbd></div><div class="desc">取消选中当前切片</div></div>
     </div>
