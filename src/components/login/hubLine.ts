@@ -47,17 +47,24 @@ function sample(segs: Seg[], s: number): { p: V2; d: V2 } {
 const total = (segs: Seg[]) => segs.reduce((n, g) => n + segLen(g), 0)
 
 const R = 1.7, TOP = 0.82, W = 1.0
-/** 全流程单线：上料(右上) → 气密检测 → 左侧回转 → 转向 → 防护堵安装 → 下线入库 */
-const R2 = 1.0, BX = 0.6, PITCH = 1.55, NH = 14
-const PRE = 9.6 + Math.PI * R + (BX - R2 + 2.6) + (Math.PI / 2) * R2
-const END_Z = R + R2 + (NH * PITCH - PRE) // 使总长恰为节距整数倍，工位停靠对齐
+/** 输送线造型（U 形主线 + 支线）；方向：上料(右上) → 检测 → 回转 → 分流 */
 const MAIN: Seg[] = [
-  { k: 'l', a: v2(7.0, -R), b: v2(-2.6, -R) },
+  { k: 'l', a: v2(5.6, -R), b: v2(-2.6, -R) },
   { k: 'a', c: v2(-2.6, 0), r: R, a0: Math.PI * 1.5, a1: Math.PI / 2 },
-  { k: 'l', a: v2(-2.6, R), b: v2(BX - R2, R) },
-  { k: 'a', c: v2(BX - R2, R + R2), r: R2, a0: -Math.PI / 2, a1: 0 },
-  { k: 'l', a: v2(BX, R + R2), b: v2(BX, END_Z) },
+  { k: 'l', a: v2(-2.6, R), b: v2(3.2, R) },
 ]
+const BRANCH: Seg[] = [{ k: 'l', a: v2(0.6, R + W / 2 + 0.05), b: v2(0.6, R + 3.6) }]
+/** 轮毂流转路径：合格件在 x=0.6 处转入支线装防护堵后下线；NG 件沿主线直行至返修 */
+const BX = 0.6, BEND = R + 3.6, PITCH = 1.25, NH = 16
+const PRE = 8.2 + Math.PI * R + (BX + 2.6) + (BEND - R)
+const SX = 5.6 - (PRE - NH * PITCH) // 起点微调，使总长恰为节距整数倍，工位停靠对齐
+const OKP: Seg[] = [
+  { k: 'l', a: v2(SX, -R), b: v2(-2.6, -R) }, MAIN[1],
+  { k: 'l', a: v2(-2.6, R), b: v2(BX, R) },
+  { k: 'l', a: v2(BX, R), b: v2(BX, BEND) },
+]
+const NGP: Seg[] = [OKP[0], MAIN[1], { k: 'l', a: v2(-2.6, R), b: v2(3.2, R) }]
+const S_DIV = (SX + 2.6) + Math.PI * R + (BX + 2.6)
 
 /* ---------------- 合批 ---------------- */
 class Batch {
@@ -279,12 +286,12 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
 
   /* 平台 + 网格 */
   const b = new Batch(), lines = new THREE.Group()
-  b.add(new THREE.BoxGeometry(14.6, 0.16, 11.8), M(2, -0.08, 1.3), 0x061524, C.edge, 0.5)
+  b.add(new THREE.BoxGeometry(14.6, 0.16, 10.8), M(2, -0.08, 0.8), 0x061524, C.edge, 0.5)
   const grid = new THREE.GridHelper(14.6, 29, C.edgeDim, C.edgeDim)
   ;(grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.14
-  grid.scale.z = 11.8 / 14.6; grid.position.set(2, 0.002, 1.3); scene.add(grid)
+  grid.scale.z = 10.8 / 14.6; grid.position.set(2, 0.002, 0.8); scene.add(grid)
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShaderMaterial({
-    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(2, 1.3) }, uTime },
+    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(2, 0.8) }, uTime },
     vertexShader: 'varying vec2 vP; void main(){ vec4 w = modelMatrix*vec4(position,1.); vP = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec3 uBase; uniform vec3 uLine; uniform vec2 uC; uniform float uTime; varying vec2 vP;
       float grid(vec2 p, float s){ vec2 q = p/s; vec2 g = abs(fract(q-.5)-.5)/fwidth(q); return 1.-min(min(g.x,g.y),1.); }
@@ -303,8 +310,9 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
 
   conveyor(b, MAIN, lines)
   // 首尾端板（封口）
-  b.add(new THREE.BoxGeometry(0.06, 0.19, W + 0.04), M(7.03, TOP - 0.035, -R), C.frameHi, C.edge, 0.9)
-  b.add(new THREE.BoxGeometry(W + 0.04, 0.19, 0.06), M(BX, TOP - 0.035, END_Z + 0.03), C.frameHi, C.edge, 0.9)
+  conveyor(b, BRANCH, lines)
+  // 返修料箱（NG）
+  b.add(new THREE.BoxGeometry(0.7, 0.36, 0.8), M(3.7, 0.18, R), 0x14283a, 0xff8a80, 0.55)
 
   /* 气密检测工位：工作台 + 检测腔 */
   const TX = 4.3, TZ = -R - 1.55
@@ -322,7 +330,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   for (const [dx, dz] of [[-0.4, -0.3], [0.4, -0.3], [-0.4, 0.3], [0.4, 0.3]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(2.75 + dx, 0.35, R + 3.35 + dz), C.frame, C.edgeDim, 0.7)
   b.add(new THREE.BoxGeometry(0.24, 0.16, 0.24), M(2.6, 0.83, R + 3.3, 0.3), 0x184463, C.edge, 0.7) // 防护堵料盒
   // 上料托盘 / 成品托盘
-  const LX = 7.85, LZ = -R, FX = BX, FZ = END_Z + 0.72
+  const LX = 6.3, LZ = -R, FX = BX, FZ = BEND + 0.72
   for (const [x, z] of [[LX, LZ], [FX, FZ]]) {
     b.add(new THREE.BoxGeometry(0.95, 0.04, 0.95), M(x, 0.11, z), 0x13344d, C.edgeDim, 0.8)
     for (const dz of [-0.4, 0, 0.4]) b.add(new THREE.BoxGeometry(0.95, 0.08, 0.12), M(x, 0.045, z + dz), C.frame, C.edgeDim, 0.6)
@@ -352,11 +360,11 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   for (const a of op.arms) gloveMarkers(a.hand)
 
   /* UMI 操作员：停靠在 03 工位的轮毂上安装防护堵 */
-  const BZ = END_Z - PITCH
+  const BZ = BEND - PITCH
   const um = person(); um.root.position.set(BX + 1.05, 0, BZ + 0.15); um.root.rotation.y = -Math.PI / 2 + 0.25; scene.add(um.root)
   const umi = umiDevice(); um.arms[1].hand.add(umi.g); umi.g.rotation.x = Math.PI; umi.g.position.y = -0.02
   /* 上料工人 */
-  const wk = person(); wk.root.position.set(LX + 0.85, 0, LZ + 0.1); wk.root.rotation.y = -Math.PI / 2; scene.add(wk.root)
+  const wk = person(); wk.root.position.set(LX + 0.85, 0, LZ + 0.15); wk.root.rotation.y = -Math.PI / 2; scene.add(wk.root)
 
   /* 轮毂：带工序状态（合格标记 / 防护堵） */
   type FH = { g: THREE.Group; ok: THREE.Object3D; plugs: THREE.Object3D[] }
@@ -370,14 +378,16 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     }
     return { g, ok, plugs }
   }
-  const LM = total(MAIN)
+  const LM = total(OKP), LNG = total(NGP)
   const flow = Array.from({ length: NH }, () => { const h = mkHub(); scene.add(h.g); return h })
   // 托盘堆垛：上料（毛坯）/ 成品（已检测 + 已装堵）
   for (let k = 0; k < 3; k++) {
     const raw = mkHub(); raw.ok.visible = false; raw.plugs.forEach((q) => (q.visible = false)); raw.g.position.set(LX, 0.13 + k * 0.27, LZ); raw.g.rotation.y = k; scene.add(raw.g)
     if (k < 2) { const fin = mkHub(); fin.g.position.set(FX, 0.13 + k * 0.27, FZ); fin.g.rotation.y = k * 0.7; scene.add(fin.g) }
   }
-  const S_TEST = 7.0 - TX + 0.6, S_UMI = LM - PITCH
+  const S_TEST = SX - TX + 0.6, S_UMI = LM - PITCH
+  const isNG = (i: number) => i % 8 === 5
+  const OKM = new THREE.MeshBasicMaterial({ color: C.ok }), NGM = new THREE.MeshBasicMaterial({ color: 0xff6e6e })
 
   /* 遥操作数据流：手套 → 机械臂 */
   const PN = 28
@@ -393,16 +403,18 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     let g = c.getContext('2d')!; g.font = FT
     c.width = Math.ceil(130 + g.measureText(text).width); c.height = 96; g = c.getContext('2d')!
     const w = c.width * 0.0056
-    g.strokeStyle = 'rgba(77,208,225,.9)'; g.lineWidth = 4; g.strokeRect(4, 14, 92, 68)
-    g.fillStyle = 'rgba(77,208,225,.95)'; g.font = '600 44px "Noto Sans SC", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(no, 50, 50)
+    const ac = no === 'NG' ? 'rgba(255,138,128,.95)' : 'rgba(77,208,225,.95)'
+    g.strokeStyle = ac; g.lineWidth = 4; g.strokeRect(4, 14, 92, 68)
+    g.fillStyle = ac; g.font = '600 44px "Noto Sans SC", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(no, 50, 50)
     g.textAlign = 'left'; g.fillStyle = 'rgba(190,236,248,.92)'; g.font = FT; g.fillText(text, 118, 50)
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, (w * 96) / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0.85 }))
     m.rotation.x = -Math.PI / 2; m.position.set(x + w / 2, 0.012, z); scene.add(m)
   }
-  label('01', '上料', 5.9, -R + 1.0)
-  label('02', '气密检测 · VR 遥操作', 1.6, -R + 1.0)
-  label('03', '防护堵安装 · UMI', 1.25, R + 0.7)
+  label('01', '上料', 5.2, -R + 0.95)
+  label('02', '气密检测 · VR 遥操作', 1.0, -R + 0.95)
+  label('03', '防护堵安装 · UMI', 1.15, R + 0.88)
+  label('NG', '返修', 4.2, R - 0.1)
   label('04', '下线入库', 1.35, FZ + 0.1)
 
   /* 后期：泛光 */
@@ -413,8 +425,8 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   composer.addPass(new OutputPass())
 
   /* 布局：正交视锥适配场景，居中到左侧可用区域 */
-  const BOX = new THREE.Box3(new THREE.Vector3(-5.0, -0.16, -4.6), new THREE.Vector3(9.0, 1.6, 7.2))
-  const anchorsW: Record<Anchor, THREE.Vector3> = { test: v3(TX, 1.7, TZ), teleop: v3(OX, 2.0, OZ), umi: v3(BX + 0.5, 1.5, END_Z - PITCH) }
+  const BOX = new THREE.Box3(new THREE.Vector3(-5.0, -0.16, -4.6), new THREE.Vector3(9.0, 1.6, 6.6))
+  const anchorsW: Record<Anchor, THREE.Vector3> = { test: v3(TX, 1.7, TZ), teleop: v3(OX, 2.0, OZ), umi: v3(BX + 0.5, 1.5, BEND - PITCH) }
   function layout() {
     const w = canvas.clientWidth, h = canvas.clientHeight
     if (!w || !h) return
@@ -445,14 +457,14 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     const off = (cyc + ease(Math.min(1, f / MV))) * PITCH
     const dw = f < MV ? -1 : (f - MV) / (P - MV) // 停靠作业进度
     flow.forEach((h, i) => {
-      const s = (i * PITCH + off) % LM
-      const { p } = sample(MAIN, s)
-      let sc = Math.min(1, (LM - s) / 0.5) // 末端下线
+      const s = (i * PITCH + off) % LM, ng = isNG(i) && s > S_DIV
+      const { p } = sample(ng ? NGP : OKP, s)
+      let sc = ng ? Math.min(1, Math.max(0, (LNG - 0.2 - s) / 0.4)) : Math.min(1, (LM - s) / 0.5) // 末端下线 / 落入返修箱
       if (s < 0.05) sc = dw < 0 ? 0 : ease(Math.min(1, dw * 3)) // 上料
       h.g.position.set(p.x, TOP, p.y); h.g.scale.setScalar(Math.max(0.001, sc)); h.g.rotation.y = i * 1.3
-      h.ok.visible = s > S_TEST
+      h.ok.visible = s > S_TEST; (h.ok as THREE.Mesh).material = isNG(i) ? NGM : OKM
       const atUmi = Math.abs(s - S_UMI) < 0.02 && dw >= 0
-      const np = s > S_UMI + 0.02 ? 5 : atUmi ? Math.min(5, Math.floor(dw * 6)) : 0
+      const np = ng ? 0 : s > S_UMI + 0.02 ? 5 : atUmi ? Math.min(5, Math.floor(dw * 6)) : 0
       h.plugs.forEach((q, k) => (q.visible = k < np))
     })
     // 遥操作：人手与机械臂同相
