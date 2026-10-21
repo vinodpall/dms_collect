@@ -25,25 +25,6 @@
 .lg-caption h2::before { content: ''; width: 3px; height: 16px; border-radius: 2px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
 .lg-caption p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
 
-/* 场景卡片 + 引线 */
-.lg-leaders { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: visible; }
-.lg-leaders path { fill: none; stroke: var(--cyan); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .85; animation: lg-dash 1.2s linear infinite; }
-.lg-leaders circle { fill: #9FF7FF; filter: drop-shadow(0 0 6px #4DD0E1); }
-.lg-leaders circle.ping { fill: none; stroke: #9FF7FF; stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: lg-ping 2s ease-out infinite; }
-.lg-scene { position: absolute; z-index: 3; padding: 14px 16px 12px 18px; border-radius: 6px; border: 1px solid rgba(77,208,225,.28);
-  background: linear-gradient(135deg, rgba(14,40,62,.86), rgba(8,26,42,.78)); backdrop-filter: blur(6px);
-  box-shadow: 0 12px 32px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.02); animation: lg-in .8s .6s both; transition: opacity .3s; }
-.lg-scene::before { content: ''; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; background: linear-gradient(var(--cyan), #2F6BFF); box-shadow: 0 0 10px rgba(77,208,225,.7); }
-.lg-scene header { display: flex; align-items: center; gap: 10px; }
-.lg-scene header b { font: 600 12px var(--mono); color: var(--cyan); opacity: .9; }
-.lg-scene h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 1px; color: #fff; }
-.lg-scene .rec { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ok); }
-.lg-scene .rec i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: lg-blink 1.6s ease-in-out infinite; }
-.lg-scene p { margin: 8px 0 10px; color: #A9C4D4; font-size: 12.5px; line-height: 1.75; }
-.lg-scene footer { display: flex; flex-wrap: wrap; gap: 6px; }
-.lg-scene footer span { padding: 2px 8px; border-radius: 4px; background: rgba(77,208,225,.08); border: 1px solid rgba(77,208,225,.16); color: var(--muted); font-size: 11.5px; }
-.lg-scene footer span:first-child { color: var(--cyan); }
-.lg-scene footer em { font: normal 500 11.5px var(--mono); color: #fff; }
 
 /* 右侧登录 */
 .lg-side { grid-column: 2; position: relative; z-index: 4; display: flex; flex-direction: column; justify-content: center; padding: 40px 72px 56px 8px; }

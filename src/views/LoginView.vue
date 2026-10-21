@@ -5,7 +5,6 @@ import AppIcon from '@/components/AppIcon.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { DEMO_PASSWORD } from '@/constants'
 import { useSession } from '@/stores/session'
-import type { Anchor } from '@/components/login/hubLine'
 import '@/styles/login.css'
 
 const session = useSession()
@@ -37,82 +36,28 @@ const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? ''
 /* ---------- 主视觉 ---------- */
 const canvas = ref<HTMLCanvasElement>()
 const root = ref<HTMLElement>()
-const pos = ref<Record<Anchor, { x: number; y: number }> | null>(null)
 const failed = ref(false)
 let api: { dispose(): void } | null = null
-const wide = ref(true)
-
-/** 场景卡片：锚点 → 卡片位置（相对锚点偏移） */
-const CARDS = [
-  { key: 'test' as Anchor, no: '01', title: '轮毂气密性检测', tag: 'VR 遥操作 · 双臂灵巧手', desc: '操作员佩戴 VR 设备和动捕手套，远程操控两台配备灵巧手的机械臂，对轮毂进行高精度气密性检测。', dx: -340, dy: -235, side: 'r' },
-  { key: 'umi' as Anchor, no: '02', title: '防护堵安装', tag: 'UMI 手持采集', desc: '操作员通过手持 UMI 设备，对轮毂进行快速、精准的防护堵安装作业。', dx: 330, dy: 90, side: 'l' },
-]
-const CARD_W = 300
-const cardStyle = (c: (typeof CARDS)[number]) => {
-  const a = pos.value?.[c.key]; if (!a) return { opacity: 0 }
-  return { left: `${a.x + c.dx}px`, top: `${a.y + c.dy}px`, width: `${CARD_W}px` }
-}
-/** 引线：锚点 → 卡片近侧中点 */
-const leader = (c: (typeof CARDS)[number]) => {
-  const a = pos.value?.[c.key]; if (!a) return ''
-  const ex = c.side === 'r' ? a.x + c.dx + CARD_W : a.x + c.dx, ey = a.y + c.dy + 34
-  const mx = c.side === 'r' ? ex + 24 : ex - 24
-  return `M${a.x} ${a.y} L${mx} ${ey} L${ex} ${ey}`
-}
-
-/* 实时数据（演示） */
-const pressure = ref(0.352), leak = ref(0.018), plugs = ref(3), clock = ref(0)
-let timer = 0
-const recTime = computed(() => { const s = 2 * 3600 + 14 * 60 + clock.value; return [s / 3600, (s / 60) % 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, '0')).join(':') })
 
 onMounted(async () => {
-  const mq = window.matchMedia('(max-width: 960px)')
-  wide.value = !mq.matches
-  timer = window.setInterval(() => {
-    clock.value++
-    pressure.value = +(0.35 + Math.random() * 0.006).toFixed(3)
-    leak.value = +(0.015 + Math.random() * 0.008).toFixed(3)
-    plugs.value = Math.floor(((Date.now() / 1000) % 7.5) / 7.5 * 6)
-  }, 1000)
   if (!canvas.value) return
   try {
     const { createHubLine } = await import('@/components/login/hubLine')
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     api = createHubLine(canvas.value, {
       reserve: () => (root.value && root.value.clientWidth > 960 ? Math.min(560, root.value.clientWidth * 0.36) : 0),
-      onLayout: (p) => { pos.value = p; wide.value = (root.value?.clientWidth ?? 0) > 960 },
+      onLayout: () => {},
       still,
     })
   } catch (e) { console.warn('[login] 3D 场景初始化失败', e); failed.value = true }
 })
-onBeforeUnmount(() => { api?.dispose(); clearInterval(timer) })
+onBeforeUnmount(() => { api?.dispose() })
 </script>
 
 <template>
   <div ref="root" class="lg">
     <canvas ref="canvas" class="lg-canvas" aria-hidden="true" />
     <div class="lg-fx" aria-hidden="true" />
-
-    <!-- 场景标注 -->
-    <template v-if="wide && pos && !failed">
-      <svg class="lg-leaders" aria-hidden="true">
-        <g v-for="c in CARDS" :key="c.key">
-          <path :d="leader(c)" />
-          <circle :cx="pos[c.key].x" :cy="pos[c.key].y" r="4" />
-          <circle class="ping" :cx="pos[c.key].x" :cy="pos[c.key].y" r="4" />
-        </g>
-      </svg>
-      <article v-for="c in CARDS" :key="c.key" class="lg-scene" :style="cardStyle(c)">
-        <header><b>{{ c.no }}</b><h3>{{ c.title }}</h3><span class="rec"><i />采集中</span></header>
-        <p>{{ c.desc }}</p>
-        <footer v-if="c.key === 'test'">
-          <span>{{ c.tag }}</span><span>保压 <em>{{ pressure.toFixed(3) }}</em> MPa</span><span>泄漏率 <em>{{ leak.toFixed(3) }}</em>%</span>
-        </footer>
-        <footer v-else>
-          <span>{{ c.tag }}</span><span>防护堵 <em>{{ plugs }}</em>/5</span><span>录制 <em>{{ recTime }}</em></span>
-        </footer>
-      </article>
-    </template>
 
     <header class="lg-brand">
       <BrandMark />
