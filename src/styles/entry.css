@@ -1,41 +1,8 @@
-/* 登录页 / 模块选择页 */
+/* 模块选择页（登录页样式见 login.css） */
 .entry { min-height: 100%; position: relative; overflow: hidden; background: var(--bg); }
 .ent-brand { display: flex; align-items: center; gap: 12px; }
 .ent-brand b { display: block; font-size: 17px; letter-spacing: .5px; }
 .ent-brand span { display: block; font-size: 11.5px; opacity: .7; letter-spacing: 1.5px; }
-
-/* ---------- 登录 ---------- */
-.login { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr); min-height: 100vh; }
-.login-hero { position: relative; color: #E8F1FF; padding: 44px 56px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
-  background: radial-gradient(900px 500px at 15% 10%, #1B4F94 0%, transparent 60%), radial-gradient(700px 500px at 90% 95%, #0E6C86 0%, transparent 55%), linear-gradient(160deg, #081D38, #0B2747 55%, #0A1F3A); }
-.login-hero::before { content: ''; position: absolute; inset: 0; background-image: linear-gradient(rgba(120,170,230,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,230,.09) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(ellipse at 40% 45%, #000 20%, transparent 75%); }
-.login-hero > * { position: relative; }
-.hero-copy h1 { font-size: 40px; line-height: 1.25; font-weight: 700; letter-spacing: 1px; margin-bottom: 14px; }
-.hero-copy h1 em { font-style: normal; background: linear-gradient(90deg, #6DB2FF, #4FE3C1); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero-copy p { max-width: 460px; color: #A9BEDA; font-size: 15px; line-height: 1.8; }
-.hero-art { position: absolute !important; right: -30px; top: 70px; width: 440px; max-width: 56%; opacity: .95; pointer-events: none; }
-.hero-mods { display: flex; flex-wrap: wrap; gap: 10px; }
-.hero-mods span { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border: 1px solid rgba(140,185,240,.28); border-radius: 20px; background: rgba(14,40,76,.55); backdrop-filter: blur(6px); font-size: 13px; color: #CFE0F7; }
-.hero-mods i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
-.login-side { display: grid; place-items: center; padding: 32px; background: var(--bg); position: relative; }
-.login-theme { position: absolute; top: 20px; right: 24px; }
-.login-card { width: 100%; max-width: 400px; }
-.login-card h2 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-.login-card .sub { color: var(--muted); margin-bottom: 28px; }
-.login-card .ant-input-affix-wrapper { height: 46px; border-radius: 10px; }
-.login-card .ant-form-item { margin-bottom: 18px; }
-.login-card .ant-btn-primary.go { height: 46px; width: 100%; border-radius: 10px; font-weight: 600; font-size: 15px; }
-.login-err { display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 16px; border-radius: 8px; background: var(--crit-soft); color: var(--crit); font-size: 13px; }
-.login-err.shake { animation: shake .35s; }
-@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-.login-row { display: flex; justify-content: space-between; align-items: center; margin: -4px 0 20px; font-size: 13px; color: var(--muted); }
-.demo-box { margin-top: 26px; padding: 14px 16px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface); }
-.demo-box > small { display: block; color: var(--muted); margin-bottom: 10px; font-size: 12px; }
-.demo-box > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.demo-chip { padding: 4px 11px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); font-size: 12.5px; color: var(--text); }
-.demo-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
-.login-foot a { color: var(--accent-text); }
-.login-foot { position: absolute; bottom: 18px; color: var(--faint); font-size: 12px; }
 
 /* ---------- 模块选择 ---------- */
 .portal { min-height: 100vh; display: flex; flex-direction: column; }
@@ -65,9 +32,8 @@
 .mod:not(.lock):hover .mod-go .ic { transform: translateX(4px); }
 .mod-go .ic { transition: transform .18s; }
 .portal-note { margin-top: 28px; text-align: center; color: var(--faint); font-size: 12.5px; }
-@media (max-width: 1020px) { .mod { grid-column: span 3 !important; } .mod:nth-child(5) { grid-column: 2 / span 4 !important; } .hero-art { display: none; } }
+@media (max-width: 1020px) { .mod { grid-column: span 3 !important; } .mod:nth-child(5) { grid-column: 2 / span 4 !important; } }
 @media (max-width: 860px) {
-  .login { grid-template-columns: 1fr; } .login-hero { display: none; }
   .mod-grid { grid-template-columns: 1fr; } .mod, .mod:nth-child(4), .mod:nth-child(5) { grid-column: auto !important; min-height: 0; }
   .portal-top, .portal-main { padding-left: 18px; padding-right: 18px; } .portal-hello h1 { font-size: 24px; }
 }
