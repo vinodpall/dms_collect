@@ -31,7 +31,6 @@ async function submit() {
   router.replace(r && r.startsWith('/') ? r : { name: 'dashboard' })
 }
 document.title = '登录 · 数采管理平台'
-const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? ''
 
 /* ---------- 主视觉 ---------- */
 const canvas = ref<HTMLCanvasElement>()
@@ -92,7 +91,6 @@ onBeforeUnmount(() => { api?.dispose() })
         <div class="lg-row"><label class="lg-check"><input v-model="f.remember" type="checkbox" />记住登录</label><span>忘记密码请联系管理员</span></div>
         <button type="submit" class="lg-go" :disabled="loading">{{ loading ? '验证中…' : '登 录' }}</button>
       </form>
-      <div class="lg-foot"><template v-if="PORTAL_URL"><a :href="PORTAL_URL">← 返回训练场入口</a>　·　</template>© 2026 帝蛮神（上海）科技有限公司</div>
     </section>
   </div>
 </template>

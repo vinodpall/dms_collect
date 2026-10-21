@@ -62,8 +62,6 @@
 .lg-go:disabled { opacity: .7; cursor: progress; }
 .lg-err { display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin: -10px 0 18px; border-radius: 4px; border-left: 2px solid var(--bad); background: rgba(255,107,107,.1); color: #FFD0D0; font-size: 13px; }
 .lg-err.shake { animation: lg-shake .35s; }
-.lg-foot { position: absolute; left: 8px; right: 72px; bottom: 22px; text-align: center; color: var(--dim); font-size: 12px; }
-.lg-foot a { color: var(--cyan); }
 
 @keyframes lg-down { from { opacity: 0; transform: translateY(-12px); } }
 @keyframes lg-up { from { opacity: 0; transform: translateY(12px); } }
@@ -82,5 +80,4 @@
   .lg-brand { left: 20px; top: 18px; } .lg-brand h1 { font-size: 20px; letter-spacing: 3px; } .lg-brand svg { width: 36px; height: 36px; }
   .lg-side { grid-column: 1; padding: 96px 16px 64px; justify-content: flex-start; align-items: center; }
   .lg-card { width: 100%; max-width: 440px; padding: 32px 22px 24px; }
-  .lg-foot { position: static; margin-top: 20px; }
 }

@@ -284,14 +284,16 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   const dir = new THREE.Vector3(0.62, 0.78, 1).normalize()
   cam.position.copy(target).addScaledVector(dir, 30); cam.lookAt(target); cam.updateMatrixWorld()
 
-  /* 平台 + 网格 */
+  /* 平台 + 网格：按场景内容外包 + 四周等宽留边，保证对称 */
+  const PAD = 0.7, X0 = -4.8 - PAD, X1 = 8.9 + PAD, Z0 = -R - 2.6 - PAD, Z1 = BEND + 1.2 + PAD
+  const PW = X1 - X0, PD = Z1 - Z0, PCX = (X0 + X1) / 2, PCZ = (Z0 + Z1) / 2
   const b = new Batch(), lines = new THREE.Group()
-  b.add(new THREE.BoxGeometry(14.6, 0.16, 10.8), M(2, -0.08, 0.8), 0x061524, C.edge, 0.5)
-  const grid = new THREE.GridHelper(14.6, 29, C.edgeDim, C.edgeDim)
+  b.add(new THREE.BoxGeometry(PW, 0.16, PD), M(PCX, -0.08, PCZ), 0x061524, C.edge, 0.5)
+  const grid = new THREE.GridHelper(PW, 30, C.edgeDim, C.edgeDim)
   ;(grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.14
-  grid.scale.z = 10.8 / 14.6; grid.position.set(2, 0.002, 0.8); scene.add(grid)
+  grid.scale.z = PD / PW; grid.position.set(PCX, 0.002, PCZ); scene.add(grid)
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShaderMaterial({
-    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(2, 0.8) }, uTime },
+    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(PCX, PCZ) }, uTime },
     vertexShader: 'varying vec2 vP; void main(){ vec4 w = modelMatrix*vec4(position,1.); vP = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec3 uBase; uniform vec3 uLine; uniform vec2 uC; uniform float uTime; varying vec2 vP;
       float grid(vec2 p, float s){ vec2 q = p/s; vec2 g = abs(fract(q-.5)-.5)/fwidth(q); return 1.-min(min(g.x,g.y),1.); }
@@ -404,26 +406,6 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   const curves: THREE.QuadraticBezierCurve3[] = []
   const tmp = new THREE.Vector3()
 
-  /* 工序地标 */
-  const label = (no: string, text: string, x: number, z: number) => {
-    const c = document.createElement('canvas'), FT = '500 46px "Noto Sans SC", sans-serif'
-    let g = c.getContext('2d')!; g.font = FT
-    c.width = Math.ceil(130 + g.measureText(text).width); c.height = 96; g = c.getContext('2d')!
-    const w = c.width * 0.0056
-    const ac = no === 'NG' ? 'rgba(255,138,128,.95)' : 'rgba(77,208,225,.95)'
-    g.strokeStyle = ac; g.lineWidth = 4; g.strokeRect(4, 14, 92, 68)
-    g.fillStyle = ac; g.font = '600 44px "Noto Sans SC", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(no, 50, 50)
-    g.textAlign = 'left'; g.fillStyle = 'rgba(190,236,248,.92)'; g.font = FT; g.fillText(text, 118, 50)
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, (w * 96) / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0.85 }))
-    m.rotation.x = -Math.PI / 2; m.position.set(x + w / 2, 0.012, z); scene.add(m)
-  }
-  label('01', '上料', 5.2, -R + 0.95)
-  label('02', '气密检测 · VR 遥操作', 1.0, -R + 0.95)
-  label('03', '防护堵安装 · UMI', 1.15, R + 0.88)
-  label('NG', '返修', 4.2, R - 0.1)
-  label('04', '下线入库', 1.35, FZ + 0.1)
-
   /* 后期：泛光 */
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, cam))
@@ -432,7 +414,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   composer.addPass(new OutputPass())
 
   /* 布局：正交视锥适配场景，居中到左侧可用区域 */
-  const BOX = new THREE.Box3(new THREE.Vector3(-5.0, -0.16, -4.6), new THREE.Vector3(9.0, 1.6, 6.6))
+  const BOX = new THREE.Box3(new THREE.Vector3(PCX - PW / 2, -0.16, PCZ - PD / 2), new THREE.Vector3(PCX + PW / 2, 1.6, PCZ + PD / 2))
   const anchorsW: Record<Anchor, THREE.Vector3> = { test: v3(TX, 1.7, TZ), teleop: v3(OX, 2.0, OZ), umi: v3(BX + 0.5, 1.5, BEND - PITCH) }
   function layout() {
     const w = canvas.clientWidth, h = canvas.clientHeight
