@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import BrandMark from '@/components/BrandMark.vue'
-import { DEMO_ACCOUNTS, DEMO_PASSWORD, ROLES } from '@/constants'
+import { DEMO_PASSWORD } from '@/constants'
 import { useSession } from '@/stores/session'
 import type { Anchor } from '@/components/login/hubLine'
 import '@/styles/login.css'
@@ -11,7 +11,7 @@ import '@/styles/login.css'
 const session = useSession()
 const router = useRouter()
 const route = useRoute()
-const f = reactive({ u: '', p: '', remember: true })
+const f = reactive({ u: 'admin', p: DEMO_PASSWORD, remember: true }) // 演示环境默认填充管理员账号
 const touched = reactive({ u: false, p: false })
 const err = ref('')
 const shake = ref(false)
@@ -31,7 +31,6 @@ async function submit() {
   const r = typeof route.query.redirect === 'string' ? route.query.redirect : ''
   router.replace(r && r.startsWith('/') ? r : { name: 'dashboard' })
 }
-function fill(u: string) { f.u = u; f.p = DEMO_PASSWORD; err.value = ''; touched.u = touched.p = false }
 document.title = '登录 · 数采管理平台'
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? ''
 
@@ -46,7 +45,7 @@ const wide = ref(true)
 /** 场景卡片：锚点 → 卡片位置（相对锚点偏移） */
 const CARDS = [
   { key: 'test' as Anchor, no: '01', title: '轮毂气密性检测', tag: 'VR 遥操作 · 双臂灵巧手', desc: '操作员佩戴 VR 设备和动捕手套，远程操控两台配备灵巧手的机械臂，对轮毂进行高精度气密性检测。', dx: -340, dy: -235, side: 'r' },
-  { key: 'umi' as Anchor, no: '02', title: '防护堵安装', tag: 'UMI 手持采集', desc: '操作员通过手持 UMI 设备，对轮毂进行快速、精准的防护堵安装作业。', dx: 140, dy: 70, side: 'l' },
+  { key: 'umi' as Anchor, no: '02', title: '防护堵安装', tag: 'UMI 手持采集', desc: '操作员通过手持 UMI 设备，对轮毂进行快速、精准的防护堵安装作业。', dx: 330, dy: 90, side: 'l' },
 ]
 const CARD_W = 300
 const cardStyle = (c: (typeof CARDS)[number]) => {
@@ -147,10 +146,6 @@ onBeforeUnmount(() => { api?.dispose(); clearInterval(timer) })
         </label>
         <div class="lg-row"><label class="lg-check"><input v-model="f.remember" type="checkbox" />记住登录</label><span>忘记密码请联系管理员</span></div>
         <button type="submit" class="lg-go" :disabled="loading">{{ loading ? '验证中…' : '登 录' }}</button>
-        <div class="lg-demo">
-          <small>演示账号（密码均为 {{ DEMO_PASSWORD }}），点击自动填入</small>
-          <div><button v-for="a in DEMO_ACCOUNTS" :key="a.u" type="button" @click="fill(a.u)">{{ a.u }} · {{ ROLES[a.role].name }}</button></div>
-        </div>
       </form>
       <div class="lg-foot"><template v-if="PORTAL_URL"><a :href="PORTAL_URL">← 返回训练场入口</a>　·　</template>© 2026 帝蛮神（上海）科技有限公司</div>
     </section>
