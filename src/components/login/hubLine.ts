@@ -329,6 +329,9 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   b.add(new THREE.BoxGeometry(0.9, 0.06, 0.7), M(2.75, 0.72, R + 3.35), C.table, C.edge, 0.8)
   for (const [dx, dz] of [[-0.4, -0.3], [0.4, -0.3], [-0.4, 0.3], [0.4, 0.3]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(2.75 + dx, 0.35, R + 3.35 + dz), C.frame, C.edgeDim, 0.7)
   b.add(new THREE.BoxGeometry(0.24, 0.16, 0.24), M(2.6, 0.83, R + 3.3, 0.3), 0x184463, C.edge, 0.7) // 防护堵料盒
+  // 左侧目检位小桌
+  b.add(new THREE.BoxGeometry(0.8, 0.06, 0.8), M(-3.2, 0.72, R + 1.5), C.table, C.edge, 0.7)
+  for (const [dx, dz] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(-3.2 + dx, 0.35, R + 1.5 + dz), C.frame, C.edgeDim, 0.7)
   // 上料托盘 / 成品托盘
   const LX = 6.3, LZ = -R, FX = BX, FZ = BEND + 0.72
   for (const [x, z] of [[LX, LZ], [FX, FZ]]) {
@@ -366,6 +369,10 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   /* 上料工人 */
   const wk = person(); wk.root.position.set(LX + 0.85, 0, LZ + 0.15); wk.root.rotation.y = -Math.PI / 2; scene.add(wk.root)
 
+  // 左侧目检位（第一版布局）
+  const qc = person(); qc.root.position.set(-3.9, 0, R + 1.0); qc.root.rotation.y = Math.PI * 0.75; scene.add(qc.root)
+  qc.arms.forEach((a) => { a.sh.rotation.x = -0.7; a.el.rotation.x = -0.6 })
+
   /* 轮毂：带工序状态（合格标记 / 防护堵） */
   type FH = { g: THREE.Group; ok: THREE.Object3D; plugs: THREE.Object3D[] }
   const mkHub = (): FH => {
@@ -379,14 +386,14 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     return { g, ok, plugs }
   }
   const LM = total(OKP), LNG = total(NGP)
-  const flow = Array.from({ length: NH }, () => { const h = mkHub(); scene.add(h.g); return h })
+  const flow = Array.from({ length: NH / 2 }, () => { const h = mkHub(); scene.add(h.g); return h })
   // 托盘堆垛：上料（毛坯）/ 成品（已检测 + 已装堵）
   for (let k = 0; k < 3; k++) {
     const raw = mkHub(); raw.ok.visible = false; raw.plugs.forEach((q) => (q.visible = false)); raw.g.position.set(LX, 0.13 + k * 0.27, LZ); raw.g.rotation.y = k; scene.add(raw.g)
     if (k < 2) { const fin = mkHub(); fin.g.position.set(FX, 0.13 + k * 0.27, FZ); fin.g.rotation.y = k * 0.7; scene.add(fin.g) }
   }
   const S_TEST = SX - TX + 0.6, S_UMI = LM - PITCH
-  const isNG = (i: number) => i % 8 === 5
+  const isNG = (i: number) => i === 3 // 每圈一件 NG
   const OKM = new THREE.MeshBasicMaterial({ color: C.ok }), NGM = new THREE.MeshBasicMaterial({ color: 0xff6e6e })
 
   /* 遥操作数据流：手套 → 机械臂 */
@@ -457,7 +464,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     const off = (cyc + ease(Math.min(1, f / MV))) * PITCH
     const dw = f < MV ? -1 : (f - MV) / (P - MV) // 停靠作业进度
     flow.forEach((h, i) => {
-      const s = (i * PITCH + off) % LM, ng = isNG(i) && s > S_DIV
+      const s = (i * 2 * PITCH + off) % LM, ng = isNG(i) && s > S_DIV // 隔位放置，保持第一版的稀疏节奏
       const { p } = sample(ng ? NGP : OKP, s)
       let sc = ng ? Math.min(1, Math.max(0, (LNG - 0.2 - s) / 0.4)) : Math.min(1, (LM - s) / 0.5) // 末端下线 / 落入返修箱
       if (s < 0.05) sc = dw < 0 ? 0 : ease(Math.min(1, dw * 3)) // 上料
