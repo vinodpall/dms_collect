@@ -47,12 +47,17 @@ function sample(segs: Seg[], s: number): { p: V2; d: V2 } {
 const total = (segs: Seg[]) => segs.reduce((n, g) => n + segLen(g), 0)
 
 const R = 1.7, TOP = 0.82, W = 1.0
+/** 全流程单线：上料(右上) → 气密检测 → 左侧回转 → 转向 → 防护堵安装 → 下线入库 */
+const R2 = 1.0, BX = 0.6, PITCH = 1.55, NH = 14
+const PRE = 9.6 + Math.PI * R + (BX - R2 + 2.6) + (Math.PI / 2) * R2
+const END_Z = R + R2 + (NH * PITCH - PRE) // 使总长恰为节距整数倍，工位停靠对齐
 const MAIN: Seg[] = [
-  { k: 'l', a: v2(3.2, R), b: v2(-2.6, R) },
-  { k: 'a', c: v2(-2.6, 0), r: R, a0: Math.PI / 2, a1: Math.PI * 1.5 },
-  { k: 'l', a: v2(-2.6, -R), b: v2(5.6, -R) },
+  { k: 'l', a: v2(7.0, -R), b: v2(-2.6, -R) },
+  { k: 'a', c: v2(-2.6, 0), r: R, a0: Math.PI * 1.5, a1: Math.PI / 2 },
+  { k: 'l', a: v2(-2.6, R), b: v2(BX - R2, R) },
+  { k: 'a', c: v2(BX - R2, R + R2), r: R2, a0: -Math.PI / 2, a1: 0 },
+  { k: 'l', a: v2(BX, R + R2), b: v2(BX, END_Z) },
 ]
-const BRANCH: Seg[] = [{ k: 'l', a: v2(0.6, R + W / 2 + 0.05), b: v2(0.6, R + 3.6) }]
 
 /* ---------------- 合批 ---------------- */
 class Batch {
@@ -186,9 +191,8 @@ function holoMat(base: number, rim: number, op = 0.9) {
     vertexShader: 'varying vec3 vN; varying float vY; void main(){ vec4 w = modelMatrix*vec4(position,1.); vY = w.y; vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec3 uBase; uniform vec3 uRim; uniform float uOp; uniform float uTime; varying vec3 vN; varying float vY;
       void main(){ float f = pow(1.-abs(normalize(vN).z), 2.0);
-        float sl = .8 + .2*step(.5, fract(vY*46. - uTime*1.5));
-        float sw = smoothstep(.05, 0., abs(fract(vY*.4 - uTime*.3) - .5) - .45);
-        gl_FragColor = vec4(mix(uBase, uRim, f)*sl + uRim*sw*.7, uOp*(.6+.4*f)); }`,
+        float sh = .75 + .25*clamp(normalize(vN).y*.5+.5, 0., 1.);
+        gl_FragColor = vec4(mix(uBase*sh, uRim, f*.8), uOp*(.6+.4*f)); }`,
   })
 }
 /** 导轨流光：沿 uv.x（路径长度）流动 */
@@ -198,7 +202,7 @@ function flowMat(color: number, speed = 1.1, period = 2.4) {
     uniforms: { uC: { value: new THREE.Color(color) }, uTime, uS: { value: speed }, uP: { value: period } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
     fragmentShader: `uniform vec3 uC; uniform float uTime; uniform float uS; uniform float uP; varying vec2 vUv;
-      void main(){ float k = fract(vUv.x/uP - uTime*uS/uP); float a = .18 + pow(smoothstep(0.,.85,k)*smoothstep(1.,.85,k), 1.4)*1.5; gl_FragColor = vec4(uC*a, 1.); }`,
+      void main(){ float k = fract(vUv.x/uP - uTime*uS/uP); float a = .1 + pow(smoothstep(0.,.85,k)*smoothstep(1.,.85,k), 1.4)*.6; gl_FragColor = vec4(uC*a, 1.); }`,
   })
 }
 const FLOW = flowMat(0x4dd0e1)
@@ -275,18 +279,17 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
 
   /* 平台 + 网格 */
   const b = new Batch(), lines = new THREE.Group()
-  b.add(new THREE.BoxGeometry(14.6, 0.16, 10.8), M(2, -0.08, 0.8), 0x061524, C.edge, 0.5)
+  b.add(new THREE.BoxGeometry(14.6, 0.16, 11.8), M(2, -0.08, 1.3), 0x061524, C.edge, 0.5)
   const grid = new THREE.GridHelper(14.6, 29, C.edgeDim, C.edgeDim)
   ;(grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.14
-  grid.scale.z = 10.8 / 14.6; grid.position.set(2, 0.002, 0.8); scene.add(grid)
+  grid.scale.z = 11.8 / 14.6; grid.position.set(2, 0.002, 1.3); scene.add(grid)
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShaderMaterial({
-    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(2, 0.8) }, uTime },
+    uniforms: { uBase: { value: new THREE.Color(BG).convertSRGBToLinear() }, uLine: { value: new THREE.Color(C.edge) }, uC: { value: v2(2, 1.3) }, uTime },
     vertexShader: 'varying vec2 vP; void main(){ vec4 w = modelMatrix*vec4(position,1.); vP = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec3 uBase; uniform vec3 uLine; uniform vec2 uC; uniform float uTime; varying vec2 vP;
       float grid(vec2 p, float s){ vec2 q = p/s; vec2 g = abs(fract(q-.5)-.5)/fwidth(q); return 1.-min(min(g.x,g.y),1.); }
       void main(){ float d = length((vP-uC)*vec2(.75,1.)); float fade = smoothstep(15., 6., d);
-        float wave = smoothstep(.3, 0., abs(d - 6. - mod(uTime*1.4, 10.)))*fade;
-        gl_FragColor = vec4(uBase + uLine*(grid(vP,.5)*.02 + grid(vP,2.)*.06 + wave*.018)*fade, 1.); }`,
+        gl_FragColor = vec4(uBase + uLine*(grid(vP,.5)*.02 + grid(vP,2.)*.06 )*fade, 1.); }`,
   }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = -0.17; scene.add(floor)
   // 作业区地标线
@@ -299,7 +302,9 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   zone(-0.6, R + 1.2, 3.6, R + 4.2, C.amber)
 
   conveyor(b, MAIN, lines)
-  conveyor(b, BRANCH, lines)
+  // 首尾端板（封口）
+  b.add(new THREE.BoxGeometry(0.06, 0.19, W + 0.04), M(7.03, TOP - 0.035, -R), C.frameHi, C.edge, 0.9)
+  b.add(new THREE.BoxGeometry(W + 0.04, 0.19, 0.06), M(BX, TOP - 0.035, END_Z + 0.03), C.frameHi, C.edge, 0.9)
 
   /* 气密检测工位：工作台 + 检测腔 */
   const TX = 4.3, TZ = -R - 1.55
@@ -316,10 +321,12 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   b.add(new THREE.BoxGeometry(0.9, 0.06, 0.7), M(2.75, 0.72, R + 3.35), C.table, C.edge, 0.8)
   for (const [dx, dz] of [[-0.4, -0.3], [0.4, -0.3], [-0.4, 0.3], [0.4, 0.3]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(2.75 + dx, 0.35, R + 3.35 + dz), C.frame, C.edgeDim, 0.7)
   b.add(new THREE.BoxGeometry(0.24, 0.16, 0.24), M(2.6, 0.83, R + 3.3, 0.3), 0x184463, C.edge, 0.7) // 防护堵料盒
-  // 左侧上料位小桌
-  b.add(new THREE.BoxGeometry(0.8, 0.06, 0.8), M(-3.2, 0.72, R + 1.5), C.table, C.edge, 0.7)
-  for (const [dx, dz] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(-3.2 + dx, 0.35, R + 1.5 + dz), C.frame, C.edgeDim, 0.7)
-
+  // 上料托盘 / 成品托盘
+  const LX = 7.85, LZ = -R, FX = BX, FZ = END_Z + 0.72
+  for (const [x, z] of [[LX, LZ], [FX, FZ]]) {
+    b.add(new THREE.BoxGeometry(0.95, 0.04, 0.95), M(x, 0.11, z), 0x13344d, C.edgeDim, 0.8)
+    for (const dz of [-0.4, 0, 0.4]) b.add(new THREE.BoxGeometry(0.95, 0.08, 0.12), M(x, 0.045, z + dz), C.frame, C.edgeDim, 0.6)
+  }
   scene.add(b.build(), lines)
 
   /* 检测腔内轮毂 + 脉冲环 */
@@ -330,15 +337,8 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     r.rotation.x = -Math.PI / 2; r.position.set(TX, 0.93, TZ + 0.08); scene.add(r); rings.push(r)
   }
   const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.5, 48, 1, true), holoMat(0x0a2a3a, 0x7ff3ff, 0.28)); glass.position.set(TX, 1.15, TZ + 0.08); scene.add(glass)
-  const scan = new THREE.Mesh(new THREE.TorusGeometry(0.475, 0.006, 6, 72), GLOW); scan.rotation.x = Math.PI / 2; scan.position.set(TX, 1.0, TZ + 0.08); scene.add(scan)
-  const ring = (r0: number, r1: number, c: number, op: number, theta = Math.PI * 2) => { const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 72, 1, 0, theta), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); m.rotation.x = -Math.PI / 2; return m }
-  const padRing = ring(0.5, 0.52, 0x9ff7ff, 0.9); padRing.position.set(OX, 0.065, OZ); scene.add(padRing)
-  const dash = new THREE.Group(); dash.position.set(OX, 0.02, OZ); scene.add(dash)
-  for (let i = 0; i < 26; i++) { const sgm = ring(0.78, 0.81, C.edge, 0.75, (Math.PI * 2 / 26) * 0.55); sgm.rotation.z = (i / 26) * Math.PI * 2; dash.add(sgm) }
-  const beamM = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Color(C.edge) }, uTime },
-    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-    fragmentShader: 'uniform vec3 uC; uniform float uTime; varying vec2 vUv; void main(){ float a = pow(1.-vUv.y, 2.)*.5 + smoothstep(.04,0.,abs(fract(vUv.y*2.-uTime*.5)-.5)-.44)*(1.-vUv.y)*.6; gl_FragColor = vec4(uC*a, 1.); }' })
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 24, 1, true), beamM); beam.position.set(TX + 2.0, 1.3 + 1.3, TZ - 0.15); scene.add(beam)
+  const ring = (r0: number, r1: number, c: number, op: number) => { const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 72), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; return m }
+  const padRing = ring(0.5, 0.52, C.edge, 0.55); padRing.position.set(OX, 0.065, OZ); scene.add(padRing)
   // 两台灵巧手机械臂
   const arms = [arm(), arm()]
   arms[0].root.position.set(TX - 0.95, 0.82, TZ - 0.25)
@@ -351,50 +351,70 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.02, 0.005), GLOW); visor.position.set(0, 0.0, 0.163); op.head.add(visor)
   for (const a of op.arms) gloveMarkers(a.hand)
 
-  /* UMI 操作员 */
-  const BX = 0.6, BZ = R + 2.35
-  const branchHub = hub(); branchHub.position.set(BX, TOP, BZ); scene.add(branchHub)
-  const plugs: THREE.Mesh[] = []
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + Math.PI / 5
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 12), AMBER); p.position.set(Math.sin(a) * 0.2, 0.25, Math.cos(a) * 0.2); p.visible = false
-    branchHub.add(p); plugs.push(p)
-  }
+  /* UMI 操作员：停靠在 03 工位的轮毂上安装防护堵 */
+  const BZ = END_Z - PITCH
   const um = person(); um.root.position.set(BX + 1.05, 0, BZ + 0.15); um.root.rotation.y = -Math.PI / 2 + 0.25; scene.add(um.root)
   const umi = umiDevice(); um.arms[1].hand.add(umi.g); umi.g.rotation.x = Math.PI; umi.g.position.y = -0.02
-  // 上料工人（静态）
-  const wk = person(); wk.root.position.set(-3.9, 0, R + 1.0); wk.root.rotation.y = Math.PI * 0.75; scene.add(wk.root)
-  wk.arms.forEach((a) => { a.sh.rotation.x = -0.7; a.el.rotation.x = -0.6 })
+  /* 上料工人 */
+  const wk = person(); wk.root.position.set(LX + 0.85, 0, LZ + 0.1); wk.root.rotation.y = -Math.PI / 2; scene.add(wk.root)
 
-  /* 流转轮毂 */
-  const LM = total(MAIN), N = 6
-  const flow = Array.from({ length: N }, () => { const h = hub(); scene.add(h); return h })
+  /* 轮毂：带工序状态（合格标记 / 防护堵） */
+  type FH = { g: THREE.Group; ok: THREE.Object3D; plugs: THREE.Object3D[] }
+  const mkHub = (): FH => {
+    const g = hub()
+    const ok = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.05), new THREE.MeshBasicMaterial({ color: C.ok })); ok.position.set(0, 0.272, 0.315); g.add(ok)
+    const plugs: THREE.Object3D[] = []
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + Math.PI / 5
+      const q = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 12), AMBER); q.position.set(Math.sin(a) * 0.2, 0.25, Math.cos(a) * 0.2); g.add(q); plugs.push(q)
+    }
+    return { g, ok, plugs }
+  }
+  const LM = total(MAIN)
+  const flow = Array.from({ length: NH }, () => { const h = mkHub(); scene.add(h.g); return h })
+  // 托盘堆垛：上料（毛坯）/ 成品（已检测 + 已装堵）
+  for (let k = 0; k < 3; k++) {
+    const raw = mkHub(); raw.ok.visible = false; raw.plugs.forEach((q) => (q.visible = false)); raw.g.position.set(LX, 0.13 + k * 0.27, LZ); raw.g.rotation.y = k; scene.add(raw.g)
+    if (k < 2) { const fin = mkHub(); fin.g.position.set(FX, 0.13 + k * 0.27, FZ); fin.g.rotation.y = k * 0.7; scene.add(fin.g) }
+  }
+  const S_TEST = 7.0 - TX + 0.6, S_UMI = LM - PITCH
 
-  /* 数据流粒子：手套 → 机械臂；UMI → 上方 */
-  const PN = 40
+  /* 遥操作数据流：手套 → 机械臂 */
+  const PN = 28
   const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(PN * 3), 3))
-  const pts = new THREE.Points(pGeo, new THREE.PointsMaterial({ map: dotTex(), color: 0x9ff7ff, size: 7, sizeAttenuation: false, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }))
+  const pts = new THREE.Points(pGeo, new THREE.PointsMaterial({ map: dotTex(), color: 0x9ff7ff, size: 5, sizeAttenuation: false, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }))
   scene.add(pts)
-  const DN = 140, dust = new Float32Array(DN * 3), seed = Array.from({ length: DN }, () => [Math.random() * 14 - 5, Math.random() * 3.5, Math.random() * 10 - 4, 0.08 + Math.random() * 0.2])
-  const dGeo = new THREE.BufferGeometry(); dGeo.setAttribute('position', new THREE.BufferAttribute(dust, 3))
-  scene.add(new THREE.Points(dGeo, new THREE.PointsMaterial({ map: dotTex(), color: 0x7fdcff, size: 3, sizeAttenuation: false, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })))
-  const TRN = 60, trail = new Float32Array(TRN * 3), trailC = new Float32Array(TRN * 3)
-  const trailGeo = new THREE.BufferGeometry(); trailGeo.setAttribute('position', new THREE.BufferAttribute(trail, 3)); trailGeo.setAttribute('color', new THREE.BufferAttribute(trailC, 3))
-  scene.add(new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })))
-  let trailInit = false
   const curves: THREE.QuadraticBezierCurve3[] = []
   const tmp = new THREE.Vector3()
+
+  /* 工序地标 */
+  const label = (no: string, text: string, x: number, z: number) => {
+    const c = document.createElement('canvas'), FT = '500 46px "Noto Sans SC", sans-serif'
+    let g = c.getContext('2d')!; g.font = FT
+    c.width = Math.ceil(130 + g.measureText(text).width); c.height = 96; g = c.getContext('2d')!
+    const w = c.width * 0.0056
+    g.strokeStyle = 'rgba(77,208,225,.9)'; g.lineWidth = 4; g.strokeRect(4, 14, 92, 68)
+    g.fillStyle = 'rgba(77,208,225,.95)'; g.font = '600 44px "Noto Sans SC", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(no, 50, 50)
+    g.textAlign = 'left'; g.fillStyle = 'rgba(190,236,248,.92)'; g.font = FT; g.fillText(text, 118, 50)
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, (w * 96) / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0.85 }))
+    m.rotation.x = -Math.PI / 2; m.position.set(x + w / 2, 0.012, z); scene.add(m)
+  }
+  label('01', '上料', 5.9, -R + 1.0)
+  label('02', '气密检测 · VR 遥操作', 1.6, -R + 1.0)
+  label('03', '防护堵安装 · UMI', 1.25, R + 0.7)
+  label('04', '下线入库', 1.35, FZ + 0.1)
 
   /* 后期：泛光 */
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, cam))
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.35, 0.62)
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.3, 0.7)
   composer.addPass(bloom)
   composer.addPass(new OutputPass())
 
   /* 布局：正交视锥适配场景，居中到左侧可用区域 */
-  const BOX = new THREE.Box3(new THREE.Vector3(-5.3, -0.16, -4.6), new THREE.Vector3(9.3, 1.6, 6.2))
-  const anchorsW: Record<Anchor, THREE.Vector3> = { test: v3(TX, 1.7, TZ), teleop: v3(OX, 2.0, OZ), umi: v3(BX + 0.5, 1.5, BZ) }
+  const BOX = new THREE.Box3(new THREE.Vector3(-5.0, -0.16, -4.6), new THREE.Vector3(9.0, 1.6, 7.2))
+  const anchorsW: Record<Anchor, THREE.Vector3> = { test: v3(TX, 1.7, TZ), teleop: v3(OX, 2.0, OZ), umi: v3(BX + 0.5, 1.5, END_Z - PITCH) }
   function layout() {
     const w = canvas.clientWidth, h = canvas.clientHeight
     if (!w || !h) return
@@ -417,18 +437,23 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
 
   /* 动画 */
   const ease = (x: number) => x * x * (3 - 2 * x)
+  const P = 3.4, MV = 1.4 // 节拍：移动 1.4s，停靠作业 2s
   function update(t: number) {
     uTime.value = t
-    scan.position.y = 0.95 + (Math.sin(t * 1.4) * 0.5 + 0.5) * 0.4
-    dash.rotation.y = t * 0.25; padRing.scale.setScalar(1 + Math.sin(t * 2) * 0.03)
-    for (let i = 0; i < DN; i++) { const q = seed[i]; dust[i * 3] = q[0] + Math.sin(t * 0.3 + i) * 0.15; dust[i * 3 + 1] = (q[1] + t * q[3]) % 3.5; dust[i * 3 + 2] = q[2] }
-    dGeo.attributes.position.needsUpdate = true
-    // 流转轮毂（两端缩放淡入淡出）
+    // 节拍式输送：所有轮毂同步前进一个节距后停靠
+    const cyc = Math.floor(t / P), f = t - cyc * P
+    const off = (cyc + ease(Math.min(1, f / MV))) * PITCH
+    const dw = f < MV ? -1 : (f - MV) / (P - MV) // 停靠作业进度
     flow.forEach((h, i) => {
-      const s = (t * 0.42 + (i * LM) / N) % LM
+      const s = (i * PITCH + off) % LM
       const { p } = sample(MAIN, s)
-      const e = Math.min(1, s / 0.6, (LM - s) / 0.6)
-      h.position.set(p.x, TOP, p.y); h.scale.setScalar(Math.max(0.001, ease(Math.max(0, e)))); h.rotation.y = s * 0.3
+      let sc = Math.min(1, (LM - s) / 0.5) // 末端下线
+      if (s < 0.05) sc = dw < 0 ? 0 : ease(Math.min(1, dw * 3)) // 上料
+      h.g.position.set(p.x, TOP, p.y); h.g.scale.setScalar(Math.max(0.001, sc)); h.g.rotation.y = i * 1.3
+      h.ok.visible = s > S_TEST
+      const atUmi = Math.abs(s - S_UMI) < 0.02 && dw >= 0
+      const np = s > S_UMI + 0.02 ? 5 : atUmi ? Math.min(5, Math.floor(dw * 6)) : 0
+      h.plugs.forEach((q, k) => (q.visible = k < np))
     })
     // 遥操作：人手与机械臂同相
     const ph = t * 1.25
@@ -445,32 +470,27 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     })
     op.head.rotation.y = Math.sin(t * 0.6) * 0.12
     // 气密检测脉冲
-    rings.forEach((r, i) => { const k = ((t * 0.5 + i / 3) % 1); r.scale.setScalar(1 + k * 0.9); (r.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.75 })
-    // UMI：靠近-安装-复位循环
-    const cyc = (t % 7.5) / 7.5, n = Math.floor(cyc * 6)
-    plugs.forEach((p, i) => { p.visible = i < n })
+    rings.forEach((r, i) => { const k = ((t * 0.4 + i / 3) % 1); r.scale.setScalar(1 + k * 0.6); (r.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.4 })
+    // UMI：停靠时逐个按压安装，移动时收回
+    const press = dw >= 0 ? Math.abs(Math.sin(dw * Math.PI * 5)) : 0
     const ua = um.arms[1]
-    ua.sh.rotation.x = -1.15 - Math.sin(t * 2.4) * 0.08; ua.el.rotation.x = -0.35 + Math.sin(t * 2.4) * 0.12; ua.sh.rotation.z = 0.15
+    ua.sh.rotation.x = -1.05 - press * 0.18; ua.el.rotation.x = -0.4 + press * 0.15; ua.sh.rotation.z = 0.15
     um.arms[0].sh.rotation.x = -0.5; um.arms[0].el.rotation.x = -0.9
-    umi.jaws.forEach((j, i) => { j.position.x = (i ? 1 : -1) * (0.03 + Math.abs(Math.sin(t * 2.4)) * 0.025) })
+    umi.jaws.forEach((j, i) => { j.position.x = (i ? 1 : -1) * (0.03 + press * 0.025) })
+    // 上料工人：停靠时搬运
+    const lift = dw >= 0 ? Math.sin(Math.min(1, dw * 1.5) * Math.PI) : 0
+    wk.arms.forEach((a) => { a.sh.rotation.x = -0.5 - lift * 0.5; a.el.rotation.x = -0.7 + lift * 0.2 })
     // 数据流
     scene.updateMatrixWorld()
-    umi.g.localToWorld(tmp.set(0, -0.11, 0.26))
-    if (!trailInit) { for (let i = 0; i < TRN; i++) trail.set([tmp.x, tmp.y, tmp.z], i * 3); trailInit = true }
-    trail.copyWithin(3, 0, (TRN - 1) * 3); trail[0] = tmp.x; trail[1] = tmp.y; trail[2] = tmp.z
-    for (let i = 0; i < TRN; i++) { const k = 1 - i / TRN; trailC[i * 3] = k; trailC[i * 3 + 1] = 0.72 * k; trailC[i * 3 + 2] = 0.3 * k }
-    trailGeo.attributes.position.needsUpdate = true; trailGeo.attributes.color.needsUpdate = true
     if (!curves.length) {
       for (let i = 0; i < 2; i++) {
         const a = op.arms[i].hand.getWorldPosition(new THREE.Vector3()), z = arms[i].tip.getWorldPosition(new THREE.Vector3())
-        curves.push(new THREE.QuadraticBezierCurve3(a, a.clone().lerp(z, 0.5).setY(Math.max(a.y, z.y) + 1.1), z))
+        curves.push(new THREE.QuadraticBezierCurve3(a, a.clone().lerp(z, 0.5).setY(Math.max(a.y, z.y) + 0.9), z))
       }
-      const u = umi.g.getWorldPosition(new THREE.Vector3())
-      curves.push(new THREE.QuadraticBezierCurve3(u, u.clone().add(v3(0.5, 0.9, 0.2)), u.clone().add(v3(0.9, 2.2, 0.4))))
     }
     const arr = pGeo.attributes.position.array as Float32Array
     for (let i = 0; i < PN; i++) {
-      const c = curves[i % 3], k = ((t * (i % 3 === 2 ? 0.35 : 0.45)) + (Math.floor(i / 3) / Math.ceil(PN / 3))) % 1
+      const c = curves[i % 2], k = (t * 0.4 + Math.floor(i / 2) / (PN / 2)) % 1
       c.getPoint(k, tmp); arr[i * 3] = tmp.x; arr[i * 3 + 1] = tmp.y; arr[i * 3 + 2] = tmp.z
     }
     pGeo.attributes.position.needsUpdate = true
