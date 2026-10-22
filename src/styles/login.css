@@ -81,3 +81,36 @@
   .lg-side { grid-column: 1; padding: 96px 16px 64px; justify-content: flex-start; align-items: center; }
   .lg-card { width: 100%; max-width: 440px; padding: 32px 22px 24px; }
 }
+
+/* ---------- 动效：与「具身智能训练场」首页一致（扫描光束 / 卡片流光边框 / 按钮扫光 / 呼吸光） ---------- */
+.lg-scan { position: absolute; inset: 0 0 auto; height: 32vh; pointer-events: none; z-index: 2;
+  background: linear-gradient(180deg, transparent, rgba(46,211,230,.035) 55%, rgba(46,211,230,.1) 92%, transparent);
+  animation: lg-scan 11s cubic-bezier(.5,0,.5,1) 1s infinite; transform: translateY(-40vh); }
+@keyframes lg-scan { 0% { transform: translateY(-40vh); } 100% { transform: translateY(110vh); } }
+
+.lg-card::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--lg-ang, 0deg), transparent 0 72%, rgba(127,243,255,.95) 86%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: lg-border 8s linear 1.2s infinite; }
+@property --lg-ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+@keyframes lg-border { to { --lg-ang: 360deg; } }
+.lg-card::before { animation: lg-glow 3.2s ease-in-out infinite; }
+@keyframes lg-glow { 50% { opacity: .45; box-shadow: 0 0 6px rgba(46,211,230,.4); } }
+.lg-card .cn { animation: lg-corner 2.6s ease-in-out infinite; }
+@keyframes lg-corner { 50% { opacity: .45; filter: drop-shadow(0 0 1px rgba(46,211,230,.3)); } }
+
+.lg-go { position: relative; overflow: hidden; }
+.lg-go::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 38%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.32), transparent); transform: translateX(-130%) skewX(-18deg);
+  animation: lg-sheen 4.5s ease-in-out 2s infinite; }
+@keyframes lg-sheen { 0%, 60% { transform: translateX(-130%) skewX(-18deg); } 85%, 100% { transform: translateX(330%) skewX(-18deg); } }
+
+.lg-brand svg { animation: lg-logo 4s ease-in-out infinite; }
+@keyframes lg-logo { 50% { filter: drop-shadow(0 0 20px rgba(46,211,230,.75)); } }
+.lg-caption h2::before { animation: lg-blink 2s ease-in-out infinite; }
+@keyframes lg-blink { 50% { opacity: .3; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-scan, .lg-card::after, .lg-card::before, .lg-card .cn, .lg-go::after, .lg-brand svg, .lg-caption h2::before { animation: none; }
+  .lg-scan { display: none; }
+}
