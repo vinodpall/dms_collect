@@ -127,3 +127,16 @@
 .lg-go:hover { filter: none; background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.42); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 8px 24px rgba(0,0,0,.2); }
 .lg-err { border-radius: 12px; border-left: 0; border: 1px solid rgba(255,122,122,.35); background: rgba(255,107,107,.12); }
 @media (max-width: 960px) { .lg-card { padding: 32px 22px 24px; border-radius: 22px; } .lg-card::before { border-radius: 22px 22px 0 0; } .lg-card h2 { font-size: 28px; } }
+/* ---------- 玻璃质感强化：渐变描边 + 斜向反光 + 适度虚化（让背后的产线透出来） ---------- */
+.lg-card { background: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.03) 60%, rgba(255,255,255,.05));
+  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(1.08); backdrop-filter: blur(16px) saturate(180%) brightness(1.08);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 24px 70px rgba(0,0,0,.4), inset 0 1px 1px rgba(255,255,255,.22), inset 0 -1px 1px rgba(0,0,0,.18); }
+.lg-card::before { inset: 0; height: auto; border-radius: inherit;
+  background: linear-gradient(118deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.03) 32%, transparent 33%, transparent 70%, rgba(255,255,255,.04) 100%); }
+.lg-card::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(140deg, rgba(255,255,255,.6), rgba(255,255,255,.12) 35%, rgba(255,255,255,.06) 65%, rgba(255,255,255,.32));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.lg-card > * { position: relative; }
+.lg-box { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.22); }
+.lg-go { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.3); }

@@ -44,7 +44,7 @@ onMounted(async () => {
     const { createHubLine } = await import('@/components/login/hubLine')
     const still = false // 与训练场一致：动效始终播放
     api = createHubLine(canvas.value, {
-      reserve: () => (root.value && root.value.clientWidth > 960 ? Math.min(560, root.value.clientWidth * 0.36) : 0),
+      reserve: () => (root.value && root.value.clientWidth > 960 ? Math.min(330, root.value.clientWidth * 0.21) : 0),
       onLayout: () => {},
       still,
     })
