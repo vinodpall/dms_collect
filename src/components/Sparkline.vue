@@ -14,8 +14,9 @@ const col = computed(() => props.color ?? 'var(--chart-1)')
 </script>
 <template>
   <svg class="spark" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" aria-hidden="true">
-    <path :d="geo.area" :fill="col" opacity=".12" />
-    <path :d="geo.d" fill="none" :stroke="col" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
-    <circle :cx="geo.cx" :cy="geo.cy" r="2.6" :fill="col" />
+    <path class="spark-area" :d="geo.area" :fill="col" opacity=".12" />
+    <path class="spark-line" :d="geo.d" fill="none" :stroke="col" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+    <circle class="spark-ring" :cx="geo.cx" :cy="geo.cy" r="2.6" fill="none" :stroke="col" stroke-width="1.2" vector-effect="non-scaling-stroke" />
+    <circle class="spark-dot" :cx="geo.cx" :cy="geo.cy" r="2.6" :fill="col" />
   </svg>
 </template>
