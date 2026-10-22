@@ -283,7 +283,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             </table>
           </div>
 
-          <!-- 传感器通道与血缘追溯卡片 -->
+          <!-- 传感器通道与数据来源卡片 -->
           <div class="provenance-grid">
             <div class="prov-card">
               <div class="p-title"><AppIcon name="camera" size="sm" /> 视觉同步流</div>
@@ -298,7 +298,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
               <div class="p-desc">双灵巧手 15 关节自由度真实角度，触觉阵列阻抗反馈与 VR 头显位姿同步解算</div>
             </div>
             <div class="prov-card">
-              <div class="p-title"><AppIcon name="shield" size="sm" /> 质检与血缘归档</div>
+              <div class="p-title"><AppIcon name="shield" size="sm" /> 质检与数据来源</div>
               <div class="p-desc">采集人: {{ curSample.operator }} · 标注: 林悦 · 审核: 陈静 (已通过) · 规范: DMS-v2.0</div>
             </div>
           </div>
@@ -484,7 +484,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .wall-wrapper {
   border-radius: 8px;
   overflow: hidden;
-  background: #0a121c;
+  background: #131c2d;
 }
 
 .control-bar {

@@ -4,8 +4,9 @@ import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import CockpitOverlay from './CockpitOverlay.vue'
-import { NO_PERM, OPS, SCEN, TASK_ST, TODAY } from '@/constants'
-import { sopSteps, useTasks, type Task } from '@/stores/tasks'
+import { MODES, NO_PERM, OPS, SCEN, TASK_ST, TODAY } from '@/constants'
+import { UPLOAD_STEPS, useTasks, type CheckItem, type Task } from '@/stores/tasks'
+import { useDatasets } from '@/stores/datasets'
 import { useSession } from '@/stores/session'
 import { useSettings } from '@/stores/settings'
 import { useDevices } from '@/stores/devices'
@@ -18,6 +19,7 @@ const tasks = useTasks()
 const session = useSession()
 const settings = useSettings()
 const dv = useDevices()
+const dsets = useDatasets()
 const checking = ref(false)
 
 const task = computed<Task | undefined>(() => (props.id ? tasks.byId(props.id) : undefined))
@@ -54,12 +56,32 @@ const mayEdit = computed(() => session.can('tasks'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
 const sc = computed(() => (task.value ? SCEN[task.value.scen] : SCEN.qmd))
 const op = computed(() => (task.value ? OPS[task.value.op] : OPS[0]))
-const steps = computed(() => (task.value ? sopSteps(task.value.scen) : []))
 const active = computed(() => !!task.value && ['ready', 'paused', 'running'].includes(task.value.status))
 const devs = computed(() => (task.value ? task.value.devices.map((id) => dv.byId(id)).filter((d) => !!d) : []))
 const eps = computed(() => (task.value ? tasks.episodesFor(task.value) : []))
 const nextName = computed(() => (task.value ? settings.nameFile(sc.value.code, TODAY, task.value.done + 1, op.value.c) : ''))
-const epOk = (e: { integrity: number; sync: number }) => e.integrity >= settings.cfg.integrity && e.sync <= settings.cfg.sync
+const mode = computed(() => (task.value ? MODES[task.value.mode] : MODES.vr))
+const dsName = computed(() => (task.value ? dsets.byId(task.value.datasetId)?.name ?? task.value.datasetId : ''))
+const EP_ST = { ok: ['good', '已入库'], warn: ['warn', '带警告入库'], fail: ['crit', '未入库'] } as const
+/** 五阶段：任务配置（创建时完成）→ 设备自检 → 场景复位与采集 → 数据校验 → 入库上传 */
+const stages = computed(() => {
+  const t = task.value
+  if (!t) return []
+  return [
+    ['任务配置', mode.value.name + ' · ' + t.devices.length + ' 台设备 · 数据集 ' + t.datasetId],
+    ['设备自检', '每次采集前执行：连接、电量、存储、延迟、标定与占用'],
+    ['场景复位与采集', SCEN[t.scen].reset],
+    ['数据校验', '自动校验 + 回放抽查，确认哪些数据入库'],
+    ['入库上传', UPLOAD_STEPS.join(' → ')],
+  ]
+})
+/** 自检结果按设备分组；全部正常的设备折叠成一行 */
+const showAllChecks = ref(false)
+const checkGroups = computed(() => {
+  const m = new Map<string, CheckItem[]>()
+  task.value?.check?.items.forEach((x) => { if (!m.has(x.group)) m.set(x.group, []); m.get(x.group)!.push(x) })
+  return [...m.entries()].map(([g, items]) => ({ g, items, bad: items.filter((x) => !x.ok) }))
+})
 
 /* 动态时间码与运动采样计时器 */
 const liveT = ref(0)
@@ -67,8 +89,14 @@ let liveTimer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   liveTimer = setInterval(() => {
-    if (task.value?.status === 'running') {
+    const t = task.value
+    if (t?.status === 'running') {
       liveT.value = +((liveT.value + 0.1) % 20).toFixed(2)
+      if (t.session) {
+        t.session.sec = +(t.session.sec + 0.1).toFixed(1)
+        // 演示：约每 6 秒完成一条 Episode
+        if (Math.round(t.session.sec * 10) % 60 === 0) tasks.tickEpisode(t)
+      }
     }
   }, 100)
 })
@@ -91,6 +119,7 @@ function doFlag() {
   const t = task.value
   if (!t) return
   const reason = flagDlg.custom.trim() || flagDlg.tag
+  t.session?.marks.push({ t: t.session.sec, ep: t.session.eps, label: reason })
   tasks.addLog(t, '操作员标记当前数据：' + reason)
   tasks.touch(t)
   flagDlg.open = false
@@ -118,19 +147,69 @@ async function doFail() {
   if (!t) return
   const ok = await confirmDlg({
     title: '确认标记本次采集失败？',
-    msg: '标记失败后，当前正在采集的这一条数据将作为废品丢弃，不计入有效条数（当前已累计 ' + t.done + ' 条）。可立即重新开始本次采集。',
-    ok: '标记失败并重采',
+    msg: '标记失败后，当前正在采集的这一条数据将作为废品丢弃，不进入校验和入库' + (t.params.autoRetry ? '，并自动开始重录这一条' : '') + '。',
+    ok: '标记失败并重录',
     danger: true,
   })
   if (!ok) return
-  tasks.addLog(t, '本次采集异常（已标记失败并重置）')
+  if (t.session) t.session.fails++
+  tasks.addLog(t, '当前这一条已标记失败并丢弃，重新录制')
   tasks.touch(t)
-  toast('本次采集已标记为失败，已重置当前采集状态')
+  toast('当前这一条已标记失败，开始重录')
 }
+
+/** 回退到上一个事件标记：丢弃标记之后采集的数据 */
+async function doRollback() {
+  const t = task.value
+  const m = t?.session?.marks[t.session.marks.length - 1]
+  if (!t || !t.session) return
+  if (!m) { toast('还没有事件标记，先点“标记”再回退', { type: 'warn' }); return }
+  const drop = t.session.eps - m.ep
+  const ok = await confirmDlg({ title: '回退到标记「' + m.label + '」？', msg: '将丢弃该标记之后采集的 ' + drop + ' 条数据，从第 ' + (m.ep + 1) + ' 条重新开始录制。', ok: '确认回退', danger: true })
+  if (!ok) return
+  t.session.eps = m.ep
+  t.session.marks.pop()
+  tasks.addLog(t, '回退到标记「' + m.label + '」，丢弃 ' + drop + ' 条')
+  tasks.touch(t)
+  toast('已回退，丢弃 ' + drop + ' 条')
+}
+
+/** 停止后的“采集结果”对话框 */
+const resultOpen = ref(false)
+const fmtSec = (x: number) => String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(Math.floor(x % 60)).padStart(2, '0')
+function submitVerify() {
+  const t = task.value
+  if (!t) return
+  resultOpen.value = false
+  tasks.endCollect(t); cockpitOpen.value = false
+  toast('已结束本次采集，正在自动校验')
+}
+async function discardRun() {
+  const t = task.value
+  if (!t) return
+  const ok = await confirmDlg({ title: '放弃本次采集？', msg: '本次采集的 ' + (t.session?.eps ?? 0) + ' 条数据都不会入库，回到“场景复位与采集”。', ok: '放弃本次', danger: true })
+  if (!ok) return
+  resultOpen.value = false; cockpitOpen.value = false
+  t.status = 'ready'; t.session = undefined; t.reset = false
+  tasks.addLog(t, '放弃本次采集'); tasks.touch(t)
+}
+function confirmReset() {
+  const t = task.value
+  if (!t) return
+  t.reset = true; tasks.addLog(t, '确认场景复位：' + SCEN[t.scen].reset); tasks.touch(t)
+}
+function replay() {
+  const v = task.value?.verify
+  if (!v) return
+  v.replay = Math.min(v.total, v.replay + 3)
+  toast('已回放抽查 ' + v.replay + ' 条，画面与传感器曲线正常')
+}
+function finishRun() { const t = task.value; if (t) { tasks.closeRun(t); toast('本次采集流程完成，下一次采集前请重新自检') } }
 
 function stepState(i: number) {
   const t = task.value!
-  return { done: i < t.sop || (i === 1 && active.value), cur: i === t.sop && active.value }
+  if (i === 0) return { done: true, cur: false }
+  return { done: active.value && i - 1 < t.sop, cur: active.value && i - 1 === t.sop }
 }
 async function runCheck() {
   const t = task.value
@@ -139,32 +218,9 @@ async function runCheck() {
   const items = await tasks.selfCheck(t)
   checking.value = false
   const bad = items.filter((x) => !x.ok).length
-  if (bad) toast('自检发现 ' + bad + ' 台设备异常，请处理后重试', { type: 'warn' })
-  else toast('设备自检通过，设备巡检已完成')
-}
-async function manualDone(i: number) {
-  const t = task.value
-  if (!t) return
-  if (i === 0 && (!t.check || t.check.items.some((x) => !x.ok))) {
-    const ok = await confirmDlg({ title: t.check ? '仍有设备自检异常，确认标记完成？' : '尚未执行设备自检，确认直接标记完成？', msg: '建议先点击“自检设备”确认全部设备状态正常。', ok: '仍然标记完成' })
-    if (!ok) return
-  }
-  if (i === 4) { tasks.finishQc(t, false); return }
-  doStep(i)
-}
-function doStep(i: number) {
-  const t = task.value
-  if (!t || i !== t.sop || t.sop === 3) return
-  tasks.bump(t)
-  tasks.addLog(t, '完成「' + steps.value[i][0] + '」')
-  if (t.sop === 6) {
-    const add = 30 + Math.floor(Math.random() * 50)
-    t.done += add
-    t.sop = 0; t.qc = 'idle'; t.check = undefined
-    tasks.addLog(t, '本次采集已归档，新增 ' + add + ' 条有效数据')
-    toast('本次采集已归档，新增 ' + add + ' 条')
-  }
-  tasks.touch(t)
+  showAllChecks.value = false
+  if (bad) toast('自检发现 ' + bad + ' 项异常，请处理后重新自检', { type: 'warn' })
+  else toast('设备自检通过')
 }
 async function act(a: string) {
   const t = task.value
@@ -175,21 +231,21 @@ async function act(a: string) {
     if (!ok) return
     tasks.list.splice(tasks.list.indexOf(t), 1)
     emit('close'); toast('草稿已删除'); return
-  } else if (a === 'start') { t.status = 'running'; t.sop = 3; cockpitOpen.value = true; tasks.addLog(t, '开始采集'); toast('开始采集 · ' + t.id) }
+  } else if (a === 'start') { tasks.startSession(t); cockpitOpen.value = true; toast('开始采集 · ' + t.id) }
   else if (a === 'finish') {
     const ok = await confirmDlg({ title: '完成任务 ' + t.id + '？', msg: '共采集 ' + t.done + ' 条有效数据。完成后任务不再接收新数据。', ok: '完成任务' })
     if (!ok) return
-    t.status = 'done'; t.sop = 0; cockpitOpen.value = false; tasks.addLog(t, '任务已完成，共 ' + t.done + ' 条'); toast('任务已完成')
+    t.status = 'done'; tasks.closeRun(t); cockpitOpen.value = false; tasks.addLog(t, '任务已完成，共 ' + t.done + ' 条'); toast('任务已完成')
   }
   else if (a === 'resume') { t.status = 'running'; tasks.addLog(t, '继续采集'); toast('已继续采集') }
   else if (a === 'pause') {
     t.status = 'paused'; tasks.addLog(t, '暂停采集')
     toast('已暂停', { action: '撤销', onAction: () => { t.status = 'running'; tasks.addLog(t, '撤销暂停'); tasks.touch(t) } })
-  } else if (a === 'end') { tasks.endCollect(t); cockpitOpen.value = false; toast('采集已结束，结束动作已自动下发后台，正在自动质检') }
+  } else if (a === 'end') { resultOpen.value = true; return }
   else if (a === 'cancel') {
     const ok = await confirmDlg({ title: '取消任务 ' + t.id + '？', msg: '已采集的 ' + t.done + ' 条数据会保留，任务将不再接收新数据。之后可以重新开启。', ok: '确认取消', danger: true })
     if (!ok) return
-    t.status = 'cancel'; t.sop = 0; cockpitOpen.value = false; tasks.addLog(t, '任务已取消'); toast('任务已取消')
+    t.status = 'cancel'; tasks.closeRun(t); cockpitOpen.value = false; tasks.addLog(t, '任务已取消'); toast('任务已取消')
   } else if (a === 'reopen') { t.status = 'ready'; t.sop = 0; tasks.addLog(t, '任务重新开启'); toast('任务已重新开启') }
   tasks.touch(t)
 }
@@ -198,7 +254,7 @@ const epCols = [
   { title: '时长', key: 'dur', align: 'right' as const },
   { title: '完整率', key: 'integrity', align: 'right' as const },
   { title: '同步误差', key: 'sync', align: 'right' as const },
-  { title: '质检', key: 'qc' },
+  { title: '结论', key: 'qc' },
 ]
 </script>
 
@@ -250,7 +306,7 @@ const epCols = [
         </div>
         <div>
           <h2 style="font-size:20px;font-weight:600">{{ task.name }}</h2>
-          <p class="muted" style="margin-top:2px;font-weight:400;font-size:14px">{{ sc.name }} · {{ sc.mode }} · {{ op.n }} · {{ task.devices.length }} 台设备</p>
+          <p class="muted" style="margin-top:2px;font-weight:400;font-size:14px">{{ sc.name }} · {{ mode.name }} · {{ op.n }} · {{ task.devices.length }} 台设备</p>
         </div>
         <a-tabs v-model:active-key="tab" :tab-bar-style="{ marginBottom: 0 }">
           <a-tab-pane key="overview" tab="概览" /><a-tab-pane key="records" tab="采集记录" /><a-tab-pane key="logs" tab="日志" />
@@ -263,39 +319,92 @@ const epCols = [
         <!-- 数据概览卡片 -->
         <div class="card"><div class="card-body row between">
           <div><span class="num" style="font-size:30px;font-weight:600">{{ task.done }}</span><span class="muted"> 条有效数据</span></div>
-          <span class="muted">{{ task.status === 'done' ? '任务已完成' : '随采集归档累计' }}</span>
+          <span class="muted">{{ task.status === 'done' ? '任务已完成' : '每次采集校验通过后入库累计' }}</span>
         </div></div>
 
-        <!-- 本次采集 SOP 流程：纯净清晰的 6 步，无任何参数杂项干扰 -->
+        <!-- 采集五阶段 -->
         <div>
           <div class="row between" style="margin-bottom:10px">
-            <h3 style="font-size:15px;font-weight:600">本次采集 SOP</h3>
-            <span class="muted" style="font-size:12.5px">巡检 → 标定 → 复位 → 采集 → 质检 → 归档</span>
+            <h3 style="font-size:15px;font-weight:600">采集流程</h3>
+            <span class="muted" style="font-size:12.5px">配置 → 自检 → 复位与采集 → 校验 → 入库</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
-            <div v-for="(s, i) in steps" :key="i">
+            <div v-for="(s, i) in stages" :key="i">
               <div class="sop-item" :class="stepState(i).done ? 'done' : stepState(i).cur ? '' : 'locked'">
                 <span class="step"><span class="n" :style="stepState(i).done ? 'background:var(--good-solid);border-color:var(--good-solid);color:#fff' : ''">{{ i + 1 }}</span></span>
-                <div style="flex:1;min-width:0"><div class="t">{{ s[0] }}<span v-if="i === 1 && stepState(i).done" class="tag" style="margin-left:8px">默认完成</span></div><div class="d">{{ s[1] }}</div></div>
+                <div style="flex:1;min-width:0"><div class="t">{{ s[0] }}</div><div class="d">{{ s[1] }}</div></div>
                 <span v-if="stepState(i).done" style="color:var(--good)"><AppIcon name="check" /></span>
-                <template v-else-if="stepState(i).cur && i === 3"><StatusBadge v-if="task.status === 'running'" kind="info" text="进行中" /><span v-else class="muted" style="font-size:12.5px">点击“开始采集”</span></template>
-                <template v-else-if="stepState(i).cur && i === 4"><StatusBadge v-if="task.qc === 'running'" kind="info" text="后台质检中…" /><a-button size="small" :disabled="!mayEdit" :title="dis" @click="manualDone(4)">标记完成</a-button></template>
-                <template v-else-if="stepState(i).cur && i === 0 && task.status !== 'running'">
-                  <a-button size="small" type="primary" :loading="checking" :disabled="!mayEdit" :title="dis" @click="runCheck">自检设备</a-button>
-                  <a-button size="small" :disabled="!mayEdit || checking" :title="dis" @click="manualDone(0)">标记完成</a-button>
+                <template v-else-if="stepState(i).cur && i === 1">
+                  <a-button size="small" type="primary" :loading="checking" :disabled="!mayEdit" :title="dis" @click="runCheck">{{ task.check ? '重新自检' : '开始自检' }}</a-button>
                 </template>
-                <a-button v-else-if="stepState(i).cur && task.status !== 'running'" size="small" :disabled="!mayEdit" :title="dis" @click="manualDone(i)">标记完成</a-button>
+                <template v-else-if="stepState(i).cur && i === 2">
+                  <StatusBadge v-if="task.status === 'running'" kind="info" :text="'采集中 · 第 ' + ((task.session?.eps ?? 0) + 1) + ' 条'" />
+                  <StatusBadge v-else-if="task.status === 'paused'" kind="warn" :text="'已暂停 · 已采 ' + (task.session?.eps ?? 0) + ' 条'" />
+                  <a-button v-else-if="!task.reset" size="small" type="primary" :disabled="!mayEdit" :title="dis" @click="confirmReset">确认已复位</a-button>
+                  <span v-else class="muted" style="font-size:12.5px">点击“开始采集”</span>
+                </template>
+                <template v-else-if="stepState(i).cur && i === 3">
+                  <StatusBadge v-if="task.verify?.state === 'running'" kind="info" text="自动校验中…" />
+                  <StatusBadge v-else kind="warn" text="待确认" />
+                </template>
+                <template v-else-if="stepState(i).cur && i === 4">
+                  <StatusBadge v-if="task.upload?.state === 'running'" kind="info" :text="UPLOAD_STEPS[task.upload.step] + '…'" />
+                  <a-button v-else size="small" type="primary" :disabled="!mayEdit" :title="dis" @click="finishRun">完成本次</a-button>
+                </template>
               </div>
-              <div v-if="i === 0 && task.check" class="chk">
-                <div v-for="x in task.check!.items" :key="x.id" class="chk-i" :class="x.ok ? 'ok' : 'bad'"><AppIcon :name="x.ok ? 'check' : 'alert'" size="sm" /><span class="grow">{{ x.name }}</span><span>{{ x.msg }}</span></div>
+
+              <!-- 自检结果 -->
+              <div v-if="i === 1 && task.check && stepState(1).cur" class="chk">
+                <template v-for="g in checkGroups" :key="g.g">
+                  <div v-if="!g.bad.length && !showAllChecks" class="chk-i ok"><AppIcon name="check" size="sm" /><span class="grow">{{ g.g }}</span><span>{{ g.items.length }} 项正常</span></div>
+                  <template v-else>
+                    <div v-for="x in (showAllChecks ? g.items : g.bad)" :key="x.id" class="chk-i" :class="x.ok ? 'ok' : 'bad'"><AppIcon :name="x.ok ? 'check' : 'alert'" size="sm" /><span class="grow">{{ g.g }} · {{ x.name }}</span><span>{{ x.val }}<span class="muted"> / {{ x.rule }}</span></span></div>
+                  </template>
+                </template>
+                <a-button type="link" size="small" style="align-self:flex-start;padding:0" @click="showAllChecks = !showAllChecks">{{ showAllChecks ? '收起' : '查看全部 ' + task.check.items.length + ' 项' }}</a-button>
+              </div>
+
+              <!-- 校验报告 -->
+              <div v-if="i === 3 && stepState(3).cur && task.verify?.state === 'done'" class="vf">
+                <div class="vf-sum">
+                  <span>共 <b class="num">{{ task.verify.total }}</b> 条</span>
+                  <span class="good">通过 <b class="num">{{ task.verify.pass }}</b></span>
+                  <span class="warn">警告 <b class="num">{{ task.verify.warn }}</b></span>
+                  <span class="crit">不通过 <b class="num">{{ task.verify.fail }}</b></span>
+                </div>
+                <table class="vf-t"><thead><tr><th>校验项</th><th>规则</th><th class="r">通过</th><th class="r">警告</th><th class="r">不通过</th></tr></thead>
+                  <tbody><tr v-for="r in task.verify.rules" :key="r.key"><td>{{ r.name }}</td><td class="muted">{{ r.rule }}</td><td class="r num">{{ r.pass }}</td><td class="r num" :class="{ warn: r.warn }">{{ r.warn }}</td><td class="r num" :class="{ crit: r.fail }">{{ r.fail }}</td></tr></tbody></table>
+                <div class="row between" style="gap:10px;flex-wrap:wrap">
+                  <span class="row" style="gap:12px">
+                    <a-button size="small" @click="replay"><AppIcon name="play" size="sm" />回放抽查</a-button>
+                    <span class="muted" style="font-size:12.5px">已抽查 {{ task.verify.replay }} 条</span>
+                    <a-checkbox v-model:checked="task.verify.keepWarn">警告数据带警告入库</a-checkbox>
+                  </span>
+                  <a-button size="small" type="primary" :disabled="!mayEdit" :title="dis" @click="tasks.confirmVerify(task)">确认并入库 {{ task.verify.pass + (task.verify.keepWarn ? task.verify.warn : 0) }} 条</a-button>
+                </div>
+                <span class="muted" style="font-size:12px">不通过的数据不入库；警告数据入库后在标注、审核时会带警告标识</span>
+              </div>
+
+              <!-- 入库进度 -->
+              <div v-if="i === 4 && stepState(4).cur && task.upload" class="vf">
+                <div class="up-steps">
+                  <span v-for="(u, k) in UPLOAD_STEPS" :key="u" class="up" :class="k < task.upload.step || task.upload.state === 'done' ? 'done' : k === task.upload.step ? 'cur' : ''"><AppIcon v-if="k < task.upload.step || task.upload.state === 'done'" name="check" size="sm" />{{ u }}</span>
+                </div>
+                <span class="muted" style="font-size:12.5px">本次入库 {{ task.upload.count }} 条<template v-if="task.upload.retry.length">，其中 {{ task.upload.retry.length }} 条上传失败已进入待重传队列</template></span>
               </div>
             </div>
           </div>
         </div>
 
+        <!-- 待重传队列 -->
+        <div v-if="task.retry.length" class="callout warn" style="flex-direction:column;align-items:stretch;gap:8px">
+          <span><AppIcon name="alert" size="sm" /> 待重传 {{ task.retry.length }} 条：入库时网络中断，自动重试 3 次仍失败</span>
+          <div v-for="f in task.retry" :key="f" class="row between"><span class="mono" style="font-size:12.5px">{{ f }}</span><a-button size="small" :disabled="!mayEdit" :title="dis" @click="tasks.retryUpload(task, f); toast('重传成功')">重传</a-button></div>
+        </div>
+
         <!-- 任务属性 -->
         <dl class="kv">
-          <dt>采集场景</dt><dd>{{ sc.name }}</dd><dt>采集方式</dt><dd>{{ sc.mode }}</dd><dt>操作员</dt><dd>{{ op.n }}（{{ op.c }}）</dd>
+          <dt>采集场景</dt><dd>{{ sc.name }}</dd><dt>采集模式</dt><dd>{{ mode.name }}</dd><dt>目标数据集</dt><dd>{{ dsName }} <span class="muted mono">{{ task.datasetId }}</span></dd><dt>采集参数</dt><dd>{{ task.params.fps }} fps · {{ task.params.res }} · {{ task.params.codec }} <span class="muted">（来自设备配置）</span></dd><dt>语言指令</dt><dd>{{ task.lang || '—' }}</dd><dt>操作员</dt><dd>{{ op.n }}（{{ op.c }}）</dd>
           <dt>备注</dt><dd>{{ task.note || '—' }}</dd>
           <dt>采集设备</dt><dd><span v-for="d in devs" :key="d!.id" class="tag" style="margin:0 6px 6px 0">{{ d!.name }}</span></dd><dt>文件命名</dt><dd class="mono">{{ nextName }}</dd>
         </dl>
@@ -303,7 +412,7 @@ const epCols = [
 
       <template v-else-if="tab === 'records'">
         <template v-if="eps.length">
-          <div class="callout info"><AppIcon name="info" /><span>当前质检阈值：完整率 ≥ {{ settings.cfg.integrity }}%，同步误差 ≤ {{ settings.cfg.sync }} ms。可在“系统管理 → 系统设置”调整。</span></div>
+          <div class="callout info"><AppIcon name="info" /><span>校验阈值：完整率 ≥ {{ settings.cfg.integrity }}%，同步误差 ≤ {{ settings.cfg.sync }} ms，单条时长 {{ sc.dur[0] }}–{{ sc.dur[1] }} 秒。完整的采集历史见“采集任务 → 采集历史”。</span></div>
           <div class="card">
             <a-table :columns="epCols" :data-source="eps" row-key="file" :pagination="false" size="middle" :scroll="{ x: 560 }">
               <template #bodyCell="{ column, record }">
@@ -311,7 +420,7 @@ const epCols = [
                 <span v-else-if="column.key === 'dur'" class="num">{{ record.dur }} s</span>
                 <span v-else-if="column.key === 'integrity'" class="num" :style="record.integrity < settings.cfg.integrity ? 'color:var(--crit);font-weight:500' : ''">{{ record.integrity }}%</span>
                 <span v-else-if="column.key === 'sync'" class="num" :style="record.sync > settings.cfg.sync ? 'color:var(--crit);font-weight:500' : ''">{{ record.sync }} ms</span>
-                <StatusBadge v-else-if="column.key === 'qc'" :kind="epOk(record) ? 'good' : 'crit'" :text="epOk(record) ? '合格' : '已隔离'" />
+                <StatusBadge v-else-if="column.key === 'qc'" :kind="EP_ST[record.verdict as 'ok'][0]" :text="EP_ST[record.verdict as 'ok'][1]" />
               </template>
             </a-table>
           </div>
@@ -327,7 +436,8 @@ const epCols = [
     <template #footer>
       <div v-if="task" style="display:flex;gap:10px;justify-content:flex-end">
         <template v-if="task.status === 'draft'"><a-button danger :disabled="!mayEdit" :title="dis" @click="act('del')">删除草稿</a-button><a-button type="primary" :disabled="!mayEdit" :title="dis" @click="act('submit')">提交任务</a-button></template>
-        <template v-else-if="task.status === 'ready'"><a-button danger :disabled="!mayEdit" :title="dis" @click="act('cancel')">取消任务</a-button><a-button v-if="task.done > 0 && task.sop === 0" :disabled="!mayEdit" :title="dis" @click="act('finish')">完成任务</a-button><a-button type="primary" :disabled="!mayEdit || task.sop !== 3" :title="mayEdit ? (task.sop === 3 ? undefined : '请先完成前三步：巡检、标定、复位') : NO_PERM" @click="act('start')"><AppIcon name="play" size="sm" />开始采集</a-button></template>
+        <template v-else-if="task.status === 'ready'"><a-button danger :disabled="!mayEdit" :title="dis" @click="act('cancel')">取消任务</a-button><a-button v-if="task.done > 0 && task.sop <= 1" :disabled="!mayEdit" :title="dis" @click="act('finish')">完成任务</a-button><a-button v-if="task.sop <= 1" type="primary" :disabled="!mayEdit || task.sop !== 1 || !task.reset" :title="mayEdit ? (task.sop !== 1 ? '请先完成设备自检' : !task.reset ? '请先确认场景复位' : undefined) : NO_PERM" @click="act('start')"><AppIcon name="play" size="sm" />开始采集</a-button></template>
+        <span v-else-if="task.status === 'running' && task.sop >= 2" class="muted" style="font-size:12.5px;align-self:center">本次采集已结束，请在上方完成数据校验与入库</span>
         <template v-else-if="task.status === 'running'"><a-button :disabled="!mayEdit" :title="dis" @click="act('pause')"><AppIcon name="pause" size="sm" />暂停</a-button><a-button type="primary" :disabled="!mayEdit" :title="dis" @click="act('end')"><AppIcon name="stop" size="sm" />结束本次采集</a-button></template>
         <template v-else-if="task.status === 'paused'"><a-button danger :disabled="!mayEdit" :title="dis" @click="act('cancel')">取消任务</a-button><a-button :disabled="!mayEdit" :title="dis" @click="act('finish')">完成任务</a-button><a-button type="primary" :disabled="!mayEdit" :title="dis" @click="act('resume')"><AppIcon name="play" size="sm" />继续采集</a-button></template>
         <template v-else-if="task.status === 'cancel'"><a-button type="primary" :disabled="!mayEdit" :title="dis" @click="act('reopen')">重新开启</a-button></template>
@@ -351,10 +461,29 @@ const epCols = [
     @flag="openFlag"
     @note="openNote"
     @fail="doFail"
+    @rollback="doRollback"
   />
 
+  <!-- 停止后的采集结果 -->
+  <a-modal v-model:open="resultOpen" title="本次采集结果" centered :z-index="2000" :footer="null" :width="480">
+    <div v-if="task?.session" style="display:flex;flex-direction:column;gap:14px">
+      <div class="res-grid">
+        <div><span class="muted">采集时长</span><b class="num">{{ fmtSec(task.session.sec) }}</b></div>
+        <div><span class="muted">完成条数</span><b class="num">{{ task.session.eps }}</b></div>
+        <div><span class="muted">事件标记</span><b class="num">{{ task.session.marks.length }}</b></div>
+        <div><span class="muted">标记失败（已丢弃）</span><b class="num">{{ task.session.fails }}</b></div>
+      </div>
+      <span class="muted" style="font-size:12.5px">提交后自动校验文件完整性、时长、丢帧、时间同步、{{ task.mode === 'vr' ? 'VR 追踪漂移' : 'UMI 位姿跳变' }}与传感器范围，再由你确认入库。</span>
+      <div class="row" style="gap:10px;justify-content:flex-end">
+        <a-button danger @click="discardRun">放弃本次</a-button>
+        <a-button @click="resultOpen = false">继续采集</a-button>
+        <a-button type="primary" :disabled="!task.session.eps" :title="task.session.eps ? undefined : '还没有完整采集的数据'" @click="submitVerify">提交校验</a-button>
+      </div>
+    </div>
+  </a-modal>
+
   <!-- 标记对话框 -->
-  <a-modal v-model:open="flagDlg.open" title="标记当前采集数据" centered ok-text="确认标记" cancel-text="取消" @ok="doFlag">
+  <a-modal v-model:open="flagDlg.open" title="标记当前采集数据" centered :z-index="2000" ok-text="确认标记" cancel-text="取消" @ok="doFlag">
     <a-form layout="vertical">
       <a-form-item label="快捷标记类型">
         <div class="row wrap" style="gap:6px">
@@ -368,7 +497,7 @@ const epCols = [
   </a-modal>
 
   <!-- 备注对话框 -->
-  <a-modal v-model:open="noteDlg.open" title="修改采集备注" centered ok-text="保存备注" cancel-text="取消" @ok="doNote">
+  <a-modal v-model:open="noteDlg.open" title="修改采集备注" centered :z-index="2000" ok-text="保存备注" cancel-text="取消" @ok="doNote">
     <a-form layout="vertical">
       <a-form-item label="任务备注信息" help="保存后将记录在任务属性及采集日志中">
         <a-textarea v-model:value="noteDlg.val" :rows="3" :maxlength="100" show-count placeholder="填写工件批次、特殊要求或采集环境记录..." />
@@ -382,6 +511,19 @@ const epCols = [
 .chk-i { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 12.5px; background: var(--surface-2); }
 .chk-i.ok { color: var(--good); } .chk-i.bad { color: var(--crit); background: var(--crit-soft); }
 .chk-i span:last-child { color: inherit; }
+.vf { margin: 6px 0 2px 44px; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.vf-sum { display: flex; gap: 16px; font-size: 13px; }
+.vf-sum .good { color: var(--good); } .vf-sum .warn { color: var(--warn); } .vf-sum .crit { color: var(--crit); }
+.vf-t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.vf-t th { text-align: left; font-weight: 500; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.vf-t td { padding: 5px 6px; border-bottom: 1px solid var(--line); }
+.vf-t .r { text-align: right; } .vf-t td.warn { color: var(--warn); font-weight: 600; } .vf-t td.crit { color: var(--crit); font-weight: 600; }
+.up-steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.up { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px; font-size: 12px; background: var(--surface-3); color: var(--muted); }
+.up.done { background: var(--good-soft); color: var(--good); } .up.cur { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.res-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.res-grid > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); }
+.res-grid b { font-size: 20px; }
 
 .drawer-main-content {
   display: flex;

@@ -5,8 +5,8 @@ import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import SaveBar from '@/components/SaveBar.vue'
-import { NO_PERM, ROLES, TODAY, type RoleKey } from '@/constants'
-import { PERMS, useSystem } from '@/stores/system'
+import { NO_PERM, TODAY } from '@/constants'
+import { useSystem } from '@/stores/system'
 import { useSession } from '@/stores/session'
 import { useSettings, type Cfg } from '@/stores/settings'
 import { toast } from '@/composables/toast'
@@ -15,18 +15,9 @@ import { confirmDlg } from '@/composables/confirm'
 const sys = useSystem()
 const session = useSession()
 const settings = useSettings()
-const isAdmin = computed(() => session.role === 'admin')
+const isAdmin = computed(() => session.can('system'))
 const dis = computed(() => (isAdmin.value ? undefined : NO_PERM))
-const tab = ref('users')
-const ROLE_KEYS: RoleKey[] = ['admin', 'op', 'ann', 'rev', 'mt']
-
-/* 用户与权限 */
-const snap = JSON.stringify(sys.matrix)
-const matrixDirty = computed(() => JSON.stringify(sys.matrix) !== snapshot.value)
-const snapshot = ref(snap)
-function saveMatrix() { snapshot.value = JSON.stringify(sys.matrix); toast('权限已保存，下次登录生效') }
-function resetMatrix() { const o = JSON.parse(snapshot.value); Object.keys(o).forEach((k) => Object.assign(sys.matrix[+k], o[k])) }
-function toggleUser(i: number, v: boolean) { const u = sys.users[i]; u.on = v; toast(u.n + (v ? ' 已启用' : ' 已停用')) }
+const tab = ref('ip')
 
 /* IP 白名单 */
 const wl = reactive({ v: '', err: '' })
@@ -64,41 +55,15 @@ const preview = computed(() => draft.naming.replace('{任务}', 'VR_QMD').replac
 function saveCfg() { if (anyBad.value) { toast('请先修正标红的字段', { type: 'warn' }); return } Object.assign(settings.cfg, draft); toast('系统设置已保存') }
 function resetCfg() { Object.assign(draft, settings.cfg) }
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
-const userCols = [{ title: '用户', key: 'u' }, { title: '角色', key: 'r' }, { title: '最近登录', key: 'last' }, { title: '启用', key: 'on', width: 80 }]
 const auditCols = [{ title: '时间', key: 't', width: 130 }, { title: '用户', key: 'u', width: 90 }, { title: '类型', key: 'k', width: 90 }, { title: '操作', key: 'd' }, { title: '来源 IP', key: 'ip', width: 150 }]
 </script>
 
 <template>
-  <PageHead title="系统管理" desc="用户权限、IP 白名单、审计日志与系统参数" />
+  <PageHead title="系统管理" desc="IP 白名单、审计日志与系统参数" />
   <div v-if="!isAdmin" class="callout info"><AppIcon name="lock" /><span>当前角色只有查看权限，修改请联系系统管理员。</span></div>
-  <a-tabs v-model:active-key="tab"><a-tab-pane key="users" tab="用户与权限" /><a-tab-pane key="ip" tab="IP 白名单" /><a-tab-pane key="audit" tab="审计日志" /><a-tab-pane key="cfg" tab="系统设置" /></a-tabs>
+  <a-tabs v-model:active-key="tab"><a-tab-pane key="ip" tab="IP 白名单" /><a-tab-pane key="audit" tab="审计日志" /><a-tab-pane key="cfg" tab="系统设置" /></a-tabs>
 
-  <template v-if="tab === 'users'">
-    <div class="grid g-main">
-      <div class="card">
-        <div class="card-head"><div><h2>用户</h2><div class="sub">{{ sys.users.filter((u) => u.on).length }} 个启用中</div></div></div>
-        <a-table row-key="n" :columns="userCols" :data-source="sys.users" :pagination="false" :scroll="{ x: 520 }">
-          <template #bodyCell="{ column, record, index }">
-            <div v-if="column.key === 'u'" class="cell-main"><span>{{ record.n }}</span><small>{{ record.e }}</small></div>
-            <span v-else-if="column.key === 'r'">{{ ROLES[record.r as RoleKey].name }}</span>
-            <span v-else-if="column.key === 'last'" class="muted">{{ record.last }}</span>
-            <a-switch v-else-if="column.key === 'on'" :checked="record.on" :disabled="!isAdmin || record.r === 'admin'" :aria-label="'启用 ' + record.n" @change="(v: boolean) => toggleUser(index, v)" />
-          </template>
-        </a-table>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h2>角色权限矩阵</h2><div class="sub">管理员权限不可修改</div></div></div>
-        <div class="tbl-wrap"><table class="ant-table matrix" style="width:100%;border-collapse:collapse;font-size:13.5px">
-          <thead><tr><th style="text-align:left;padding:11px 16px;color:var(--muted);font-weight:500;background:var(--surface-2)">权限</th><th v-for="r in ['管理员', '操作员', '标注', '维护']" :key="r" style="padding:11px 8px;color:var(--muted);font-weight:500;background:var(--surface-2)">{{ r }}</th></tr></thead>
-          <tbody><tr v-for="(p, i) in PERMS" :key="p.label" style="border-top:1px solid var(--line)"><td style="padding:10px 16px">{{ p.label }}</td>
-            <td v-for="r in ROLE_KEYS" :key="r" style="text-align:center"><a-checkbox v-model:checked="sys.matrix[i][r]" :disabled="r === 'admin' || !isAdmin" :aria-label="p.label + ' ' + ROLES[r].name" /></td></tr></tbody>
-        </table></div>
-      </div>
-    </div>
-    <SaveBar v-if="matrixDirty" msg="权限矩阵有未保存的修改" @save="saveMatrix" @reset="resetMatrix" />
-  </template>
-
-  <div v-else-if="tab === 'ip'" class="card">
+  <div v-if="tab === 'ip'" class="card">
     <div class="card-head"><div><h2>IP 白名单</h2><div class="sub">仅白名单内的地址可以访问平台</div></div><div class="row"><span class="muted">启用</span><a-switch :checked="settings.cfg.whitelistOn" :disabled="!isAdmin" aria-label="启用白名单" @change="toggleWl as never" /></div></div>
     <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
       <a-form layout="vertical"><a-form-item label="添加地址" extra="支持单个 IPv4 或 CIDR 网段" :validate-status="wl.err ? 'error' : ''" :help="wl.err">

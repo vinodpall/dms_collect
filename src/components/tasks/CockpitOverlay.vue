@@ -23,11 +23,34 @@ interface CockpitEmits {
   (e: 'flag'): void
   (e: 'note'): void
   (e: 'fail'): void
+  (e: 'rollback'): void
 }
 
 const emit = defineEmits<CockpitEmits>()
 
 const session = useSession()
+
+/** 实时质量反馈：超过阈值时变色提醒，并计入时间轴事件 */
+const quality = computed(() => {
+  const x = props.liveT
+  const wob = (k: number) => 0.5 + 0.5 * Math.sin(x * k)
+  const fps = x > 14 && x < 15.5 ? 23 : props.task.params.fps - (wob(1.3) > 0.85 ? 1 : 0)
+  const sync = +(3 + wob(0.7) * 4 + (x > 6 && x < 7.8 ? 9 : 0)).toFixed(1)
+  const base = [
+    { k: '帧率', v: fps + ' fps', bad: fps < 25, rule: '≥ 25' },
+    { k: '时间同步', v: sync + ' ms', bad: sync > 10, rule: '≤ 10' },
+  ]
+  if (props.task.mode === 'vr') {
+    const drift = +(1.2 + wob(0.9) * 2.4).toFixed(1)
+    const lost = x > 10.5 && x < 11.4 ? 0.6 : 0
+    return [...base, { k: 'VR 漂移', v: drift + ' cm/s', bad: drift > 5, rule: '≤ 5' }, { k: '追踪丢失', v: lost + ' s', bad: lost > 0.5, rule: '≤ 0.5' }, { k: '力觉', v: (18 + wob(1.1) * 22).toFixed(0) + ' N', bad: false, rule: '≤ 80' }]
+  }
+  const acc = +(2.5 + wob(1.7) * 5 + (x > 16 && x < 17 ? 6 : 0)).toFixed(1)
+  const occl = Math.round(8 + wob(0.5) * 30)
+  return [...base, { k: '加速度', v: acc + ' m/s²', bad: acc > 10, rule: '≤ 10' }, { k: '相机遮挡', v: occl + '%', bad: occl > 50, rule: '≤ 50%' }]
+})
+const qualityBad = computed(() => quality.value.filter((q) => q.bad))
+const marks = computed(() => props.task.session?.marks ?? [])
 const isDark = computed(() => session.dark)
 
 const isFullscreen = ref(false)
@@ -188,7 +211,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 <span class="rec-txt">REC</span>
                 <span>{{ timeStr }}</span>
               </div>
-              <span class="stream-stat muted mono">30 FPS · 1080P · 0 丢包</span>
+              <span class="stream-stat muted mono">{{ task.params.fps }} FPS · {{ task.params.res.toUpperCase() }} · {{ task.params.codec }} · 第 {{ (task.session?.eps ?? 0) + 1 }} 条</span>
             </div>
 
             <!-- 右侧：控制按钮与窗口操作 -->
@@ -227,6 +250,17 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 >
                   <svg viewBox="0 0 24 24" class="btn-ic"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
                   <span>标记</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="op-btn"
+                  :disabled="!mayEdit || !marks.length"
+                  :title="marks.length ? '回退到标记「' + marks[marks.length - 1].label + '」，丢弃之后采集的数据' : '先打一个事件标记，才能回退'"
+                  @click="emit('rollback')"
+                >
+                  <svg viewBox="0 0 24 24" class="btn-ic"><path d="M9 14L4 9l5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /><path d="M4 9h10a6 6 0 010 12h-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" /></svg>
+                  <span>回退</span>
                 </button>
 
                 <button
@@ -277,6 +311,15 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
             </div>
           </header>
 
+          <!-- 实时质量反馈 -->
+          <div class="q-strip" :class="{ bad: qualityBad.length }">
+            <span class="q-title">{{ qualityBad.length ? '质量预警' : '实时质量' }}</span>
+            <span v-for="q in quality" :key="q.k" class="q-i" :class="{ bad: q.bad }" :title="'阈值 ' + q.rule">{{ q.k }} <b class="mono">{{ q.v }}</b></span>
+            <span class="q-grow" />
+            <span v-if="qualityBad.length" class="q-msg">{{ qualityBad.map((q) => q.k).join('、') }}超出阈值，可点“标记”记录或“标记失败”重录</span>
+            <span v-else-if="marks.length" class="q-msg muted">最近标记：{{ marks[marks.length - 1].label }}（第 {{ marks[marks.length - 1].ep + 1 }} 条）</span>
+          </div>
+
           <!-- 2. 主体视口区域 -->
           <div class="deck-scroll-area">
             <!-- 第一排：RGB 三路彩色宽屏视频 -->
@@ -289,10 +332,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 </div>
                 <div class="tile-media-box">
                   <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="90" fill="#0C1420" />
-                    <polygon points="8,85 152,85 132,54 28,54" fill="#132236" />
-                    <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
-                    <circle cx="80" cy="50" r="8" fill="#1A2D46" />
+                    <rect width="160" height="90" fill="#161E31" />
+                    <polygon points="8,85 152,85 132,54 28,54" fill="#202e4c" />
+                    <circle cx="80" cy="50" r="24" fill="none" stroke="#354B78" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="50" r="8" fill="#293B5F" />
                     <line x1="20" y1="80" :x2="armX" :y2="armY" stroke="#38bdf8" stroke-width="2.6" stroke-linecap="round" />
                     <circle :cx="armX" :cy="armY" r="4.5" fill="#38bdf8" />
                     <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
@@ -310,10 +353,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 </div>
                 <div class="tile-media-box">
                   <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="90" fill="#0E1826" />
-                    <polygon points="12,88 148,88 126,56 34,56" fill="#16263B" />
-                    <circle cx="80" cy="48" r="28" fill="none" stroke="#294569" stroke-width="1.8" />
-                    <circle cx="80" cy="48" r="10" fill="#1E334E" />
+                    <rect width="160" height="90" fill="#192339" />
+                    <polygon points="12,88 148,88 126,56 34,56" fill="#243352" />
+                    <circle cx="80" cy="48" r="28" fill="none" stroke="#3e5689" stroke-width="1.8" />
+                    <circle cx="80" cy="48" r="10" fill="#2F4269" />
                     <circle cx="80" cy="48" r="14" fill="none" stroke="rgba(56,189,248,0.55)" stroke-width="1" />
                     <line x1="80" y1="28" x2="80" y2="38" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
                     <line x1="80" y1="58" x2="80" y2="68" stroke="rgba(56,189,248,0.65)" stroke-width="1" />
@@ -335,10 +378,10 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 </div>
                 <div class="tile-media-box">
                   <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
-                    <rect width="160" height="90" fill="#0C1420" />
-                    <polygon points="8,85 152,85 132,54 28,54" fill="#132236" />
-                    <circle cx="80" cy="50" r="24" fill="none" stroke="#223B5B" stroke-width="1.8" stroke-dasharray="4 2" />
-                    <circle cx="80" cy="50" r="8" fill="#1A2D46" />
+                    <rect width="160" height="90" fill="#161E31" />
+                    <polygon points="8,85 152,85 132,54 28,54" fill="#202e4c" />
+                    <circle cx="80" cy="50" r="24" fill="none" stroke="#354B78" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <circle cx="80" cy="50" r="8" fill="#293B5F" />
                     <line x1="140" y1="80" :x2="armX" :y2="armY" stroke="#60a5fa" stroke-width="2.6" stroke-linecap="round" />
                     <circle :cx="armX" :cy="armY" r="4.5" fill="#60a5fa" />
                     <circle :cx="armX" :cy="armY" r="1.8" fill="#fff" />
@@ -360,7 +403,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 <div class="tile-media-box">
                   <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
                     <rect width="160" height="90" fill="#040609" />
-                    <polygon points="10,85 150,85 130,55 30,55" fill="#0D1B2A" />
+                    <polygon points="10,85 150,85 130,55 30,55" fill="#17263D" />
                     <ellipse cx="80" cy="54" rx="28" ry="17" fill="#1E40AF" />
                     <ellipse cx="80" cy="54" rx="20" ry="12" fill="#047857" />
                     <ellipse cx="80" cy="54" rx="12" ry="7" fill="#D97706" />
@@ -407,7 +450,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
                 <div class="tile-media-box">
                   <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" class="sim-cam-svg">
                     <rect width="160" height="90" fill="#040609" />
-                    <polygon points="10,85 150,85 130,55 30,55" fill="#0D1B2A" />
+                    <polygon points="10,85 150,85 130,55 30,55" fill="#17263D" />
                     <ellipse cx="80" cy="54" rx="28" ry="17" fill="#1E40AF" />
                     <ellipse cx="80" cy="54" rx="20" ry="12" fill="#047857" />
                     <ellipse cx="80" cy="54" rx="12" ry="7" fill="#D97706" />
@@ -578,11 +621,11 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 .cockpit-root.theme-light,
 .cockpit-deck.cockpit-light {
   --cp-bg: #FFFFFF;
-  --cp-scrim: rgba(15, 23, 42, 0.32);
+  --cp-scrim: rgba(26,33,61, 0.32);
   --cp-border: #E2E8F0;
   --cp-border-subtle: #EEF2F6;
-  --cp-shadow: 0 20px 48px rgba(15, 23, 42, 0.14), 0 1px 3px rgba(15, 23, 42, 0.08);
-  --cp-text: #0F172A;
+  --cp-shadow: 0 20px 48px rgba(26,33,61, 0.14), 0 1px 3px rgba(26,33,61, 0.08);
+  --cp-text: #1A213D;
   --cp-text-muted: #64748B;
   --cp-text-faint: #94A3B8;
   --cp-topbar-bg: #F8FAFC;
@@ -595,11 +638,11 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   --cp-btn-bg: #FFFFFF;
   --cp-btn-hover: #F1F5F9;
   --cp-btn-border: #CBD5E1;
-  --cp-btn-text: #334155;
+  --cp-btn-text: #4c5271;
   --cp-icon-btn-bg: #F1F5F9;
   --cp-icon-btn-hover: #E2E8F0;
   --cp-icon-btn-border: #CBD5E1;
-  --cp-icon-btn-color: #475569;
+  --cp-icon-btn-color: #686989;
   --cp-switcher-bg: #F1F5F9;
   --cp-switcher-active-bg: #FFFFFF;
   --cp-switcher-active-text: #0284C7;
@@ -607,7 +650,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   --cp-canvas-bg: radial-gradient(circle at center, #F8FAFC 0%, #EEF2F6 100%);
   --cp-prog-track: #E2E8F0;
   --cp-pill-bg: #F1F5F9;
-  --cp-pill-text: #475569;
+  --cp-pill-text: #686989;
   --cp-timer-bg: #F1F5F9;
   --cp-timer-border: #E2E8F0;
   --cp-btn-pause-bg: #FEF3C7;
@@ -626,51 +669,51 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 
 .cockpit-root.theme-dark,
 .cockpit-deck.cockpit-dark {
-  --cp-bg: #090E17;
-  --cp-scrim: rgba(8, 12, 20, 0.45);
-  --cp-border: rgba(255, 255, 255, 0.1);
-  --cp-border-subtle: rgba(255, 255, 255, 0.06);
-  --cp-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
-  --cp-text: #E2E8F0;
-  --cp-text-muted: #94A3B8;
-  --cp-text-faint: #64748B;
-  --cp-topbar-bg: #0E1522;
-  --cp-action-bg: #0A101A;
-  --cp-surface-card: #070C15;
-  --cp-surface-subtle: #0B121E;
-  --cp-hover-border: rgba(56, 189, 248, 0.4);
-  --cp-accent: #38BDF8;
-  --cp-accent-soft: rgba(56, 189, 248, 0.14);
-  --cp-btn-bg: #142032;
-  --cp-btn-hover: #1B2B44;
-  --cp-btn-border: rgba(255, 255, 255, 0.1);
-  --cp-btn-text: #E2E8F0;
-  --cp-icon-btn-bg: #131E2E;
-  --cp-icon-btn-hover: #1D2D45;
-  --cp-icon-btn-border: rgba(255, 255, 255, 0.08);
-  --cp-icon-btn-color: #CBD5E1;
-  --cp-switcher-bg: #070B12;
-  --cp-switcher-active-bg: #1E2D44;
-  --cp-switcher-active-text: #38BDF8;
+  --cp-bg: #0f1f35;
+  --cp-scrim: rgba(9,18,33, 0.55);
+  --cp-border: #2B4A6D;
+  --cp-border-subtle: rgba(46,211,230, 0.10);
+  --cp-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(46,211,230, 0.12);
+  --cp-text: #F3F8FC;
+  --cp-text-muted: #B6CADC;
+  --cp-text-faint: #8EA6BE;
+  --cp-topbar-bg: #132640;
+  --cp-action-bg: #10233b;
+  --cp-surface-card: #162A45;
+  --cp-surface-subtle: #1B3352;
+  --cp-hover-border: rgba(46,211,230, 0.45);
+  --cp-accent: #26C6DA;
+  --cp-accent-soft: rgba(38, 198, 218, 0.14);
+  --cp-btn-bg: #1B3352;
+  --cp-btn-hover: #243f63;
+  --cp-btn-border: #2B4A6D;
+  --cp-btn-text: #F3F8FC;
+  --cp-icon-btn-bg: #1B3352;
+  --cp-icon-btn-hover: #243f63;
+  --cp-icon-btn-border: #2B4A6D;
+  --cp-icon-btn-color: #D0E2EE;
+  --cp-switcher-bg: #0d1c31;
+  --cp-switcher-active-bg: #243f63;
+  --cp-switcher-active-text: #26C6DA;
   --cp-switcher-active-shadow: none;
-  --cp-canvas-bg: radial-gradient(circle at center, #0B1626 0%, #04080F 100%);
-  --cp-prog-track: #05080E;
-  --cp-pill-bg: #05080E;
-  --cp-pill-text: #64748B;
-  --cp-timer-bg: #05080E;
-  --cp-timer-border: rgba(255, 255, 255, 0.08);
+  --cp-canvas-bg: radial-gradient(circle at center, #173558 0%, #0C182B 100%);
+  --cp-prog-track: #0d1c31;
+  --cp-pill-bg: #0d1c31;
+  --cp-pill-text: #8EA6BE;
+  --cp-timer-bg: #0d1c31;
+  --cp-timer-border: #2B4A6D;
   --cp-btn-pause-bg: rgba(245, 158, 11, 0.18);
   --cp-btn-pause-border: rgba(245, 158, 11, 0.4);
-  --cp-btn-pause-text: #FBBF24;
+  --cp-btn-pause-text: #FFC15C;
   --cp-btn-paused-bg: rgba(16, 185, 129, 0.2);
   --cp-btn-paused-border: rgba(16, 185, 129, 0.4);
-  --cp-btn-paused-text: #34D399;
+  --cp-btn-paused-text: #45E3A8;
   --cp-btn-stop-bg: rgba(239, 68, 68, 0.18);
   --cp-btn-stop-border: rgba(239, 68, 68, 0.4);
-  --cp-btn-stop-text: #F87171;
+  --cp-btn-stop-text: #FF7A7A;
   --cp-btn-fail-bg: rgba(244, 63, 94, 0.12);
   --cp-btn-fail-border: rgba(244, 63, 94, 0.3);
-  --cp-btn-fail-text: #FB7185;
+  --cp-btn-fail-text: #FF7A7A;
 }
 
 /* 驾驶舱全屏定位容器：右侧保留 640px 给任务抽屉，协同交互 */
@@ -763,7 +806,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 }
 .status-chip.paused {
   background: rgba(245, 158, 11, 0.16);
-  color: #FBBF24;
+  color: #FFC15C;
 }
 .cockpit-light .status-chip.paused {
   background: #FEF3C7;
@@ -1004,8 +1047,8 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 }
 
 .widescreen-tile.depth-tile {
-  background: #050911;
-  border-color: rgba(56, 189, 248, 0.18);
+  background: #0c111f;
+  border-color: rgba(46,211,230, 0.18);
 }
 .cockpit-light .widescreen-tile.depth-tile {
   background: #F8FAFC;
@@ -1041,7 +1084,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   border-left: 2px solid #0284C7;
 }
 .cockpit-dark .hand-telemetry-card.left-card {
-  border-left: 2px solid #38BDF8;
+  border-left: 2px solid #2ED3E6;
 }
 .hand-telemetry-card.right-card {
   border-left: 2px solid #F59E0B;
@@ -1065,9 +1108,9 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   font-family: var(--font-mono);
 }
 .h-sym.l { background: rgba(2, 132, 199, 0.15); color: #0284C7; }
-.cockpit-dark .h-sym.l { background: rgba(56, 189, 248, 0.2); color: #38BDF8; }
+.cockpit-dark .h-sym.l { background: rgba(46,211,230, 0.2); color: #2ED3E6; }
 .h-sym.r { background: rgba(245, 158, 11, 0.15); color: #D97706; }
-.cockpit-dark .h-sym.r { background: rgba(245, 158, 11, 0.2); color: #FBBF24; }
+.cockpit-dark .h-sym.r { background: rgba(245, 158, 11, 0.2); color: #FFC15C; }
 .h-name {
   font-size: 11.5px;
   font-weight: 600;
@@ -1113,7 +1156,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   border-radius: 3px;
   transition: width 0.15s ease-out;
 }
-.prog-fill.l { background: linear-gradient(90deg, #0284c7, #38bdf8); }
+.prog-fill.l { background: linear-gradient(90deg, #0284c7, #2ED3E6); }
 .prog-fill.r { background: linear-gradient(90deg, #d97706, #fbbf24); }
 .h-imu {
   font-size: 9px;
@@ -1201,7 +1244,7 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   cursor: pointer;
 }
 .cockpit-dark .cb-input {
-  accent-color: #38BDF8;
+  accent-color: #2ED3E6;
 }
 .cb-label.hand-toggle-chip {
   background: rgba(2, 132, 199, 0.08);
@@ -1210,8 +1253,8 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   border-radius: 3px;
 }
 .cockpit-dark .cb-label.hand-toggle-chip {
-  background: rgba(56, 189, 248, 0.08);
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(46,211,230, 0.08);
+  border: 1px solid rgba(46,211,230, 0.25);
 }
 
 /* 3D 画布容器：弹性充满整个卡片高度，真正做到显示到底！ */
@@ -1266,11 +1309,11 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   border-radius: 1px;
 }
 .leg-line.traj { background: #0284C7; }
-.cockpit-dark .leg-line.traj { background: #38BDF8; }
+.cockpit-dark .leg-line.traj { background: #2ED3E6; }
 .leg-line.x { background: #EF4444; }
 .leg-line.y { background: #10B981; }
 .leg-line.z { background: #0284C7; }
-.cockpit-dark .leg-line.z { background: #38BDF8; }
+.cockpit-dark .leg-line.z { background: #2ED3E6; }
 
 .pos-compact-tag {
   color: var(--cp-text-muted);
@@ -1283,9 +1326,9 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
 
 /* 颜色辅助类 */
 .text-cyan { color: #0284C7 !important; }
-.cockpit-dark .text-cyan { color: #38BDF8 !important; }
+.cockpit-dark .text-cyan { color: #2ED3E6 !important; }
 .text-amber { color: #D97706 !important; }
-.cockpit-dark .text-amber { color: #FBBF24 !important; }
+.cockpit-dark .text-amber { color: #FFC15C !important; }
 
 /* 动效过渡 */
 .cockpit-anim-enter-active,
@@ -1308,4 +1351,14 @@ const armY = computed(() => +(45 - pos.value[2] * 40).toFixed(1))
   transform: translateX(-14px) scale(0.99);
   opacity: 0;
 }
+.q-strip { display: flex; align-items: center; gap: 14px; padding: 6px 16px; font-size: 12px; border-bottom: 1px solid rgba(148,163,184,.16); background: rgba(16,185,129,.06); flex-wrap: wrap; }
+.q-strip.bad { background: rgba(245,158,11,.1); }
+.q-title { font-weight: 600; color: #10b981; }
+.q-strip.bad .q-title { color: #f59e0b; }
+.q-i { color: #94a3b8; }
+.q-i b { color: #e2e8f0; font-weight: 500; margin-left: 2px; }
+.q-i.bad b, .q-i.bad { color: #f59e0b; }
+.q-grow { flex: 1; }
+.q-msg { color: #f59e0b; }
+.q-msg.muted { color: #94a3b8; }
 </style>

@@ -24,7 +24,6 @@ const items = computed<Item[]>(() => {
   NAV_GROUPS.forEach((g) => g.items.filter((i) => session.allowed(i)).forEach((id) => out.push({ t: PAGE_META[id].title, k: '页面', icon: PAGE_META[id].icon, kw: PAGE_META[id].title + ' ' + id, run: () => router.push({ name: id }) })))
   if (session.allowed('tasks')) tasks.list.slice(0, 8).forEach((t) => out.push({ t: t.id + ' · ' + t.name, k: '采集任务', icon: 'task', kw: t.id + t.name, run: () => { router.push({ name: 'tasks' }); setTimeout(() => (ui.taskDrawerId = t.id), 300) } }))
   if (session.allowed('datasets')) datasets.list.forEach((d) => out.push({ t: d.name + ' ' + d.ver, k: '数据集', icon: 'db', kw: d.name + d.tags.join(''), run: () => { router.push({ name: 'datasets' }); setTimeout(() => (ui.datasetDrawerId = d.id), 300) } }))
-  out.push({ t: session.dark ? '切换为浅色模式' : '切换为深色模式', k: '操作', icon: session.dark ? 'sun' : 'moon', kw: '主题 深色 浅色 dark light', run: () => session.toggleTheme() })
   if (session.allowed('tasks') && session.can('tasks')) out.push({ t: '新建采集任务', k: '操作', icon: 'plus', kw: '新建 创建 任务', run: () => { router.push({ name: 'tasks' }); setTimeout(() => (ui.wizardOpen = true), 300) } })
   return out
 })

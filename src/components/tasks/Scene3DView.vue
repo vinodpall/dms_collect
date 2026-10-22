@@ -174,7 +174,7 @@ function initThree() {
   // 3. 头部轨迹线
   const headGeom = new THREE.BufferGeometry().setFromPoints(headPoints)
   const headMat = new THREE.LineBasicMaterial({
-    color: props.isDark ? 0x223E63 : 0xCBD5E1,
+    color: props.isDark ? 0x2b5c85 : 0xCBD5E1,
     linewidth: 1,
     transparent: true,
     opacity: 0.6,
@@ -185,7 +185,7 @@ function initThree() {
   // 已走过的高亮头部轨迹
   const headDoneGeom = new THREE.BufferGeometry()
   const headDoneMat = new THREE.LineBasicMaterial({
-    color: props.isDark ? 0x38BDF8 : 0x0284C7,
+    color: props.isDark ? 0x26C6DA : 0x0284C7,
     linewidth: 2.5,
   })
   headTrajDoneLine = new THREE.Line(headDoneGeom, headDoneMat)
@@ -221,7 +221,7 @@ function initThree() {
   headFrustum = new THREE.LineSegments(
     createFrustumGeometry(),
     new THREE.LineBasicMaterial({
-      color: props.isDark ? 0x38BDF8 : 0x0284C7,
+      color: props.isDark ? 0x26C6DA : 0x0284C7,
       transparent: true,
       opacity: 0.75,
     }),
@@ -276,8 +276,8 @@ function buildGrid() {
     gridHelper.dispose()
     gridHelper = null
   }
-  const gridCenterColor = props.isDark ? 0x223E63 : 0x94A3B8
-  const gridLineColor = props.isDark ? 0x142032 : 0xE2E8F0
+  const gridCenterColor = props.isDark ? 0x2b5c85 : 0x94A3B8
+  const gridLineColor = props.isDark ? 0x1b3352 : 0xE2E8F0
   gridHelper = new THREE.GridHelper(1.2, 24, gridCenterColor, gridLineColor)
   gridHelper.position.set(0, -0.22, 0.22)
   gridHelper.visible = props.showGrid
@@ -544,7 +544,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 3px;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(26,33,61, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -573,7 +573,7 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 :root:not([data-theme="dark"]) .preset-btn {
-  color: #475569;
+  color: #686989;
 }
 .preset-btn:hover {
   background: rgba(255, 255, 255, 0.12);
@@ -581,11 +581,11 @@ onBeforeUnmount(() => {
 }
 :root:not([data-theme="dark"]) .preset-btn:hover {
   background: #E2E8F0;
-  color: #0F172A;
+  color: #1A213D;
 }
 .preset-btn.active {
-  background: rgba(56, 189, 248, 0.2);
-  color: #38BDF8;
+  background: rgba(46,211,230, 0.2);
+  color: #2ED3E6;
   font-weight: 600;
 }
 :root:not([data-theme="dark"]) .preset-btn.active {
@@ -616,13 +616,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   color: #64748B;
-  background: rgba(7, 12, 21, 0.6);
+  background: rgba(15,21,36, 0.6);
   padding: 1px 6px;
   border-radius: 3px;
   backdrop-filter: blur(2px);
 }
 :root:not([data-theme="dark"]) .hud-tip {
-  color: #475569;
+  color: #686989;
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid #E2E8F0;
 }
@@ -635,13 +635,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   color: #94A3B8;
-  background: rgba(7, 12, 21, 0.6);
+  background: rgba(15,21,36, 0.6);
   padding: 1px 7px;
   border-radius: 3px;
   backdrop-filter: blur(2px);
 }
 :root:not([data-theme="dark"]) .hud-pos-pill {
-  color: #475569;
+  color: #686989;
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid #E2E8F0;
 }
@@ -649,6 +649,6 @@ onBeforeUnmount(() => {
   color: #F8FAFC;
 }
 :root:not([data-theme="dark"]) .hud-pos-pill b {
-  color: #0F172A;
+  color: #1A213D;
 }
 </style>

@@ -5,42 +5,40 @@ import { rng } from '@/utils'
 import { useSettings } from './settings'
 import { usePipeline } from './pipeline'
 import { useLogs } from './logs'
+import { useDict } from './dict'
+import { useSession } from './session'
 
 /** 待标注 → 已提交（待审核）→ 已通过；审核打回后回到“被打回”，修改后可再次提交 */
 export type ClipStatus = 'todo' | 'rejected' | 'submitted' | 'approved'
-/** 子任务级标注片段（暂不标注动作级）；flag 为审核员标记的问题说明 */
-export interface Seg { id: number; s: number; e: number; n: string; flag?: string }
+/**
+ * 子任务切片：n 为子任务名称（来自字典），s/e 为起止时间；flag 为审核员标记的问题说明。
+ */
+export interface Seg {
+  id: number; s: number; e: number; n: string; flag?: string
+}
+export type Prio = 'urgent' | 'normal'
 export interface Clip {
   id: string; file: string; scen: ScenKey; dur: number; batch: string; status: ClipStatus; segs: Seg[]
   reject?: { reason: string; by: string; t: string }
+  /** 领取人（标注员）；为空表示仍在任务池 */
+  owner?: string
+  /** 审核领取人 */
+  reviewer?: string
+  prio?: Prio
+  /** 审核时限（剩余小时） */
+  dueH?: number
+  submitNote?: string
+  /** 是否被抽中需人工审核；未抽中的直接按自检结果通过 */
+  sampled?: boolean
 }
 
-/** 统一通用子任务标签体系（所有场景通用） */
-export const DEFAULT_SUB_NAMES: string[] = [
-  '取件上台',
-  '夹紧密封',
-  '充气保压',
-  '读数判定',
-  '取下放回',
-  '取防护堵',
-  '对准孔位',
-  '压入到位',
-  '检查确认',
-]
-
+/** 子任务候选来自统一字典（复合动作 + 异常动作） */
+function dictNames(scen?: ScenKey) {
+  try { return useDict().actionsFor(scen).map((x) => x.name) } catch { return [] }
+}
 /** 兼容旧代码按场景索引 SUB_NAMES[scen] 的访问方式 */
-export const SUB_NAMES: Record<string, string[]> & string[] = new Proxy(DEFAULT_SUB_NAMES as any, {
-  get(target, prop) {
-    if (prop === 'qmd' || prop === 'fhd') {
-      try {
-        const store = useAnnotate()
-        return store.subNames
-      } catch {
-        return DEFAULT_SUB_NAMES
-      }
-    }
-    return (target as any)[prop]
-  },
+export const SUB_NAMES = new Proxy({} as Record<ScenKey, string[]>, {
+  get(_t, prop) { return dictNames(prop === 'qmd' || prop === 'fhd' ? prop : undefined) },
 })
 
 export const SUB_COLORS = ['#2F6FD1', '#2C8F7B', '#B86E1A', '#8A5CC9', '#C2476B', '#4A8FB8', '#D97706', '#059669', '#7C3AED', '#DB2777']
@@ -52,14 +50,7 @@ function hashStr(s: string) {
 }
 
 export const colorOf = (_scen: unknown, name: string) => {
-  let idx = -1
-  try {
-    const store = useAnnotate()
-    idx = store?.subNames?.indexOf(name) ?? -1
-  } catch {
-    idx = DEFAULT_SUB_NAMES.indexOf(name)
-  }
-  if (idx < 0) idx = DEFAULT_SUB_NAMES.indexOf(name)
+  let idx = dictNames().indexOf(name)
   if (idx < 0) idx = hashStr(name)
   return SUB_COLORS[idx % SUB_COLORS.length]
 }
@@ -103,21 +94,10 @@ export interface ValidationReport {
 export const useAnnotate = defineStore('annotate', () => {
   const { nameFile } = useSettings()
 
-  // 通用响应式子任务标签字典（所有场景通用）
-  const subNames = ref<string[]>([...DEFAULT_SUB_NAMES])
-
-  // 通用子任务元数据
-  const subtaskMeta = ref<Record<string, SubtaskMeta>>({
-    取件上台: { name: '取件上台', desc: '抓取工件移送至检测工位并安放平稳', required: true },
-    夹紧密封: { name: '夹紧密封', desc: '气动机构闭合压紧，密封胶垫完全压实气阀孔', required: true },
-    充气保压: { name: '充气保压', desc: '向工件充入高压测试气体并持续保持稳定', required: true },
-    读数判定: { name: '读数判定', desc: '观察精密微压表压降波动，判定气密是否合格', required: true },
-    取下放回: { name: '取下放回', desc: '松开夹具，取出工件移送至传输托盘', required: false },
-    取防护堵: { name: '取防护堵', desc: '从零件料盒中精准抓取特制硅胶防护堵塞', required: true },
-    对准孔位: { name: '对准孔位', desc: '将防护堵中心轴线与轮毂装配孔同轴对齐', required: true },
-    压入到位: { name: '压入到位', desc: '施加推力垂直压入孔槽，确保边缘平整卡紧', required: true },
-    检查确认: { name: '检查确认', desc: '轻触并目视确认工件安装平齐无翘曲遗漏', required: false },
-  })
+  const dict = useDict()
+  /** 子任务下拉（全部场景）；页面内按场景用 namesFor */
+  const subNames = computed(() => dictNames())
+  const namesFor = (scen: ScenKey) => dictNames(scen)
 
   // 撤销历史栈（按片段 ID）
   const undoHistory = ref<Record<string, Seg[][]>>({})
@@ -137,109 +117,36 @@ export const useAnnotate = defineStore('annotate', () => {
     return !!(undoHistory.value[clipId] && undoHistory.value[clipId].length > 0)
   }
 
-  // 通用子任务 CRUD
-  function addSubName(name: string, desc = '', required = false) {
-    const trimmed = name.trim()
-    if (!trimmed || subNames.value.includes(trimmed)) return false
-    subNames.value.push(trimmed)
-    subtaskMeta.value[trimmed] = { name: trimmed, desc, required }
-
-    useLogs().addLog({
-      user: '林悦',
-      role: '标注员',
-      module: 'annotate',
-      moduleName: '标注工作台',
-      action: '新增子任务',
-      target: trimmed,
-      summary: `标注员新增通用子任务：${trimmed}`,
-      after: { name: trimmed, desc, required },
-    })
-    return true
-  }
-
-  function updateSubName(oldName: string, newName: string, desc?: string, required?: boolean) {
-    const trimmed = newName.trim()
-    const idx = subNames.value.indexOf(oldName)
-    if (idx < 0 || !trimmed) return false
-
-    if (trimmed !== oldName && !subNames.value.includes(trimmed)) {
-      subNames.value[idx] = trimmed
-      const meta = subtaskMeta.value[oldName] ?? { name: trimmed, desc: desc ?? '', required: !!required }
-      delete subtaskMeta.value[oldName]
-      subtaskMeta.value[trimmed] = { ...meta, name: trimmed, desc: desc ?? meta.desc, required: required ?? meta.required }
-
-      // 同步更新所有片段中引用的名称
-      clips.value.forEach((c) => {
-        c.segs.forEach((s) => {
-          if (s.n === oldName) s.n = trimmed
-        })
-      })
-    } else if (trimmed === oldName && subtaskMeta.value[oldName]) {
-      if (desc !== undefined) subtaskMeta.value[oldName].desc = desc
-      if (required !== undefined) subtaskMeta.value[oldName].required = required
-    }
-
-    useLogs().addLog({
-      user: '林悦',
-      role: '标注员',
-      module: 'annotate',
-      moduleName: '标注工作台',
-      action: '修改子任务',
-      target: trimmed,
-      summary: `标注员更新通用子任务：${oldName} → ${trimmed}`,
-      before: { name: oldName },
-      after: { name: trimmed, desc, required },
-    })
-    return true
-  }
-
-  function deleteSubName(name: string) {
-    const idx = subNames.value.indexOf(name)
-    if (idx < 0) return false
-    subNames.value.splice(idx, 1)
-    if (subtaskMeta.value[name]) delete subtaskMeta.value[name]
-
-    useLogs().addLog({
-      user: '林悦',
-      role: '标注员',
-      module: 'annotate',
-      moduleName: '标注工作台',
-      action: '删除子任务',
-      target: name,
-      summary: `标注员删除了通用子任务：${name}`,
-    })
-    return true
-  }
-
-  function resetSubNames() {
-    subNames.value = [...DEFAULT_SUB_NAMES]
-  }
-
+  const me = () => useSession().info.user
   function mkSegs(i: number, scen: ScenKey, dur: number, parts: number): Seg[] {
     const r = rng(900 + i)
-    const preset = scen === 'qmd'
-      ? ['取件上台', '夹紧密封', '充气保压', '读数判定', '取下放回']
-      : ['取防护堵', '对准孔位', '压入到位', '检查确认']
+    const preset = dict.sequenceFor(scen)
     const cuts = [0]
     for (let k = 1; k < parts; k++) cuts.push(+((dur * k) / preset.length + (r() - 0.5)).toFixed(1))
     cuts.push(parts === preset.length ? dur : +((dur * parts) / preset.length).toFixed(1))
     return Array.from({ length: parts }, (_, k) => ({ id: newSegId(), s: cuts[k], e: cuts[k + 1], n: preset[k % preset.length] }))
   }
 
-  function mk(i: number, scen: ScenKey, batch: string, status: ClipStatus, parts: number): Clip {
+  function mk(i: number, scen: ScenKey, batch: string, status: ClipStatus, parts: number, extra: Partial<Clip> = {}): Clip {
     const r = rng(500 + i), dur = Math.round(14 + r() * 14)
-    return { id: 'C' + (200 + i), file: nameFile(SCEN[scen].code, TODAY, 120 - i, OPS[i % 4].c), scen, dur, batch, status, segs: parts ? mkSegs(i, scen, dur, parts) : [] }
+    return { id: 'C' + (200 + i), file: nameFile(SCEN[scen].code, TODAY, 120 - i, OPS[i % 4].c), scen, dur, batch, status, segs: parts ? mkSegs(i, scen, dur, parts) : [], ...extra }
   }
 
+  const ME = me()
   const clips = ref<Clip[]>([
     mk(0, 'qmd', 'B-1013-03', 'todo', 0),
-    mk(1, 'qmd', 'B-1013-03', 'rejected', 5),
-    mk(2, 'qmd', 'B-1013-03', 'todo', 2),
-    mk(3, 'qmd', 'B-1013-03', 'submitted', 5),
+    mk(1, 'qmd', 'B-1013-03', 'rejected', 5, { owner: ME }),
+    mk(2, 'qmd', 'B-1013-03', 'todo', 2, { owner: ME }),
+    mk(3, 'qmd', 'B-1013-03', 'submitted', 5, { owner: ME, prio: 'urgent', dueH: 3, sampled: true }),
     mk(4, 'qmd', 'B-1013-03', 'todo', 0),
-    mk(5, 'fhd', 'B-1012-04', 'submitted', 4),
-    mk(6, 'fhd', 'B-1012-04', 'submitted', 4),
-    mk(7, 'fhd', 'B-1012-04', 'approved', 4),
+    mk(5, 'fhd', 'B-1012-04', 'submitted', 4, { owner: '林悦', prio: 'normal', dueH: 20, sampled: true }),
+    mk(6, 'fhd', 'B-1012-04', 'submitted', 4, { owner: '林悦', prio: 'urgent', dueH: 5, sampled: true, reviewer: ME }),
+    mk(7, 'fhd', 'B-1012-04', 'approved', 4, { owner: ME }),
+    mk(8, 'qmd', 'B-1013-03', 'todo', 0),
+    mk(9, 'fhd', 'B-1012-04', 'todo', 0),
+    mk(10, 'fhd', 'B-1012-04', 'todo', 0),
+    mk(11, 'qmd', 'B-1013-03', 'submitted', 5, { owner: '王磊', prio: 'normal', dueH: 30, sampled: true }),
+    mk(12, 'qmd', 'B-1013-03', 'approved', 5, { owner: '林悦' }),
   ])
 
   const c1 = clips.value[1]
@@ -259,10 +166,58 @@ export const useAnnotate = defineStore('annotate', () => {
     usePipeline().sync(batch, { todo: n('todo'), submitted: n('submitted'), rejected: n('rejected'), approved: n('approved'), total: cs.length })
   }
 
-  function submit(c: Clip) {
+  const pool = computed(() => clips.value.filter((c) => c.status === 'todo' && !c.owner))
+  const mine = (u = me()) => clips.value.filter((c) => c.owner === u)
+  /** 从任务池领取：传 Clip 领取单条，传数字按顺序批量领取（1–10 条） */
+  function claim(x: Clip | number, scen?: ScenKey) {
+    const list = typeof x === 'number' ? pool.value.filter((c) => !scen || c.scen === scen).slice(0, Math.min(10, Math.max(1, x))) : [x]
+    list.forEach((c) => (c.owner = me()))
+    if (list.length) useLogs().addLog({ user: me(), role: '标注员', module: 'annotate', moduleName: '标注工作台', action: '领取任务', target: list.map((c) => c.id).join('、'), summary: '从任务池领取 ' + list.length + ' 条待标注数据' })
+    return list
+  }
+  /** 放回任务池（保留已做的草稿） */
+  function release(c: Clip) {
+    if (c.status !== 'todo') return
+    c.owner = undefined
+  }
+
+  /** 规则预切分：seq 按字典中该场景子任务标准顺序均分；force 模拟按夹爪力觉突变点切分 */
+  function presplit(c: Clip, how: 'seq' | 'force' = 'seq') {
+    const names = dict.sequenceFor(c.scen)
+    if (!names.length) return 0
+    const r = rng(Date.now() % 9973)
+    const w = names.map(() => (how === 'force' ? 0.6 + r() * 0.8 : 1))
+    const sum = w.reduce((a, b) => a + b, 0)
+    let acc = 0.3
+    const span = c.dur - 0.6
+    c.segs = names.map((n, k) => {
+      const s = +acc.toFixed(1)
+      acc += (span * w[k]) / sum
+      return { id: newSegId(), s, e: +(k === names.length - 1 ? c.dur - 0.3 : acc - 0.1).toFixed(1), n }
+    })
+    return c.segs.length
+  }
+
+  /** 入库完成的数据进入标注任务池 */
+  function ingest(scen: ScenKey, batch: string, count: number) {
+    const base = clips.value.length
+    for (let k = 0; k < count; k++) {
+      const i = base + k, r = rng(700 + i)
+      clips.value.push({ id: 'C' + (200 + i), file: nameFile(SCEN[scen].code, TODAY, 60 - k, OPS[i % 4].c), scen, dur: Math.round(14 + r() * 14), batch, status: 'todo', segs: [] })
+    }
+  }
+
+  function submit(c: Clip, note = '', sampled = true) {
     c.status = 'submitted'
     c.reject = undefined
+    c.submitNote = note || undefined
+    c.prio = c.prio ?? 'normal'
+    c.dueH = c.prio === 'urgent' ? 4 : 24
+    c.reviewer = undefined
+    c.sampled = sampled
     c.segs.forEach((s) => (s.flag = undefined))
+    /** 未被抽中的数据免检通过 */
+    if (!sampled) c.status = 'approved'
     syncBatch(c.batch)
   }
 
@@ -275,7 +230,26 @@ export const useAnnotate = defineStore('annotate', () => {
   function reject(c: Clip, reason: string, by: string) {
     c.status = 'rejected'
     c.reject = { reason, by, t: '刚刚' }
+    c.reviewer = undefined
     syncBatch(c.batch)
+  }
+
+  /** 退回重做：清空标注，放回任务池重新分配 */
+  function redo(c: Clip, reason: string, by: string) {
+    c.status = 'todo'
+    c.segs = []
+    c.owner = undefined
+    c.reviewer = undefined
+    c.reject = { reason: '退回重做：' + reason, by, t: '刚刚' }
+    syncBatch(c.batch)
+  }
+
+  /** 审核领取：优先级加急在前，再按剩余时限 */
+  const reviewPool = computed(() => clips.value.filter((c) => c.status === 'submitted' && !c.reviewer).sort((a, b) => (a.prio === 'urgent' ? 0 : 1) - (b.prio === 'urgent' ? 0 : 1) || (a.dueH ?? 99) - (b.dueH ?? 99)))
+  function claimReview(x: Clip | number) {
+    const list = typeof x === 'number' ? reviewPool.value.slice(0, Math.min(10, Math.max(1, x))) : [x]
+    list.forEach((c) => (c.reviewer = me()))
+    return list
   }
 
   /** 提交前数据质量自检引擎 */
@@ -371,11 +345,7 @@ export const useAnnotate = defineStore('annotate', () => {
 
     // 5. 核心关键子任务完整性检测
     const usedNames = new Set(segs.map((s) => s.n))
-    const scenReqs: Record<ScenKey, string[]> = {
-      qmd: ['夹紧密封', '充气保压', '读数判定'],
-      fhd: ['压入到位'],
-    }
-    const requiredList = scenReqs[c.scen] || []
+    const requiredList = dict.requiredFor(c.scen)
     requiredList.forEach((reqName) => {
       if (!usedNames.has(reqName)) {
         issues.push({
@@ -400,6 +370,13 @@ export const useAnnotate = defineStore('annotate', () => {
           time: segs[i].e,
         })
       }
+    }
+
+    // 7. 子任务标签必须在当前字典中
+    if (totalSegs < 3) issues.push({ id: 'iss-few', severity: 'warn', rule: '子任务区间过少', desc: `仅 ${totalSegs} 个子任务区间，完整作业通常不少于 3 个` })
+    for (const seg of segs) {
+      const at = { segId: seg.id, segName: seg.n, time: seg.s }
+      if (!dict.isValid(seg.n)) issues.push({ id: `iss-dict-${seg.id}`, severity: 'fatal', rule: '标签不在字典中', desc: `[${seg.n}] 不在当前字典 ${dict.version} 中或已停用，请重新选择`, ...at })
     }
 
     const hasFatal = issues.some((i) => i.severity === 'fatal')
@@ -429,11 +406,16 @@ export const useAnnotate = defineStore('annotate', () => {
   return {
     clips,
     subNames,
-    subtaskMeta,
-    addSubName,
-    updateSubName,
-    deleteSubName,
-    resetSubNames,
+    namesFor,
+    pool,
+    mine,
+    claim,
+    release,
+    presplit,
+    ingest,
+    redo,
+    reviewPool,
+    claimReview,
     pushHistory,
     popHistory,
     canUndo,

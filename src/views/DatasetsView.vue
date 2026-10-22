@@ -54,7 +54,7 @@ function openViewer(d: Dataset) { ui.datasetViewerId = d.id }
 </script>
 
 <template>
-  <PageHead title="数据集管理" desc="检索、版本、血缘追溯与导出" />
+  <PageHead title="数据集管理" desc="检索、版本与导出" />
   <div class="card">
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="自然语言检索，如：20寸 气密性 高质量" aria-label="检索数据集"><template #prefix><AppIcon name="search" /></template></a-input>

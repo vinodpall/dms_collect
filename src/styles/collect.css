@@ -1,0 +1,54 @@
+/* 数据采集模块：沿用平台深海军蓝 + 青色赛博风。
+   变量同时挂在 .cl（模块根）与 html.cl-theme（进入模块时添加），让弹窗 / 抽屉等挂到 body 的浮层也一致 */
+:root.cl-theme[data-theme], :root.cl-theme, .pp.cl {
+  --bg: #0f1f35; --surface: #162A45; --surface-2: #1B3352; --surface-3: #243f63;
+  --line: #2B4A6D; --line-strong: #3d6691;
+  --text: #F3F8FC; --muted: #B6CADC; --faint: #8EA6BE;
+  --accent: #26C6DA; --accent-hover: #2ED3E6; --accent-soft: rgba(38,198,218,.12); --accent-text: #7FF3FF; --on-accent: #0B2D3D;
+  --good: #45E3A8; --good-soft: rgba(77,232,176,.12); --good-solid: #22C08A;
+  --warn: #FFC15C; --warn-soft: rgba(255,183,77,.13); --warn-solid: #F5A623;
+  --crit: #FF7A7A; --crit-soft: rgba(255,107,107,.13); --crit-solid: #E5484D;
+  --nav-bg: #0D1B2E; --nav-text: #D0E2EE; --nav-muted: #8EA6BE; --nav-hover: rgba(46,211,230,.08); --nav-active: rgba(38,198,218,.18); --nav-line: #2ED3E6;
+  --chart-1: #26C6DA; --chart-2: #1E6F86; --chart-grid: #254064; --chart-axis: #A3BCD0;
+  --shadow-pop: 0 16px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(46,211,230,.14);
+  --shadow-card: none;
+  --overlay: rgba(8,16,30,.66);
+  --cyan: #2ED3E6; --ok: #45E3A8; --bad: #FF7A7A;
+  color-scheme: dark;
+}
+
+/* ---------- 外壳 ---------- */
+.pp.cl .pp-main.flush { overflow: hidden; display: flex; }
+.pp.cl .cl-content { flex: 1; min-width: 0; height: 100%; overflow: auto; padding: 20px 24px 28px; }
+.pp.cl .cl-content > .page { max-width: 1560px; }
+.pp.cl .pp-menu .ant-menu-item .ant-menu-title-content { display: flex; align-items: center; gap: 8px; }
+.pp.cl .pp-menu .ant-menu-item .ic { width: 16px; height: 16px; }
+.pp-mbadge { margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--crit-solid); color: #fff; font: 600 11px/18px var(--mono, monospace); text-align: center; }
+.pp-mbadge.soft { background: rgba(38,198,218,.16); color: var(--accent-text); }
+
+.pp.cl .cl-search { height: 32px; width: 260px; border-radius: 3px; border-color: rgba(46,211,230,.25); background: rgba(22,42,69,.7); margin-right: 6px; }
+.pp.cl .cl-search kbd { font: 11px var(--mono, monospace); color: var(--faint); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+.pp.cl .cl-bell { color: var(--muted); }
+.pp.cl .cl-bell:hover { color: var(--cyan); background: rgba(46,211,230,.08); }
+
+/* ---------- 通用组件赛博化 ---------- */
+.cl-theme .card { border-color: var(--line); border-radius: 6px; background: linear-gradient(180deg, rgba(27,51,82,.82), rgba(22,42,69,.82)); position: relative; }
+.cl-theme .card::before { content: ''; position: absolute; left: -1px; top: -1px; width: 14px; height: 14px; border-left: 2px solid rgba(46,211,230,.55); border-top: 2px solid rgba(46,211,230,.55); border-top-left-radius: 6px; pointer-events: none; }
+.cl-theme .btn { border-radius: 4px; }
+.cl-theme .btn.sm { border-radius: 3px; }
+.cl-theme .btn.primary { background: linear-gradient(90deg, #12B5CB, #26C6DA); border-color: #26C6DA; color: var(--on-accent); box-shadow: 0 0 12px rgba(38,198,218,.25); }
+.cl-theme .btn.primary:hover:not(:disabled) { background: #2ED3E6; border-color: #2ED3E6; }
+.cl-theme .chip { border-radius: 4px; }
+.cl-theme .badge { border-radius: 4px; }
+.cl-theme .tag { border-radius: 3px; }
+.cl-theme .seg { border-radius: 4px; background: rgba(13,28,49,.8); border: 1px solid var(--line); }
+.cl-theme .seg button { border-radius: 3px; }
+.cl-theme .page-head h1 { color: #fff; letter-spacing: .04em; }
+.cl-theme .page-head h1::before { content: ''; display: inline-block; width: 4px; height: 18px; margin-right: 10px; vertical-align: -2px; background: linear-gradient(180deg, #2ED3E6, rgba(46,211,230,.2)); }
+.cl-theme .kpi:hover { border-color: rgba(46,211,230,.5); }
+.cl-theme .plain-pop .ant-popover-inner { border-radius: 6px; background: #162A45; }
+.cl-theme .ant-modal .ant-modal-content, .cl-theme .ant-drawer .ant-drawer-content { background: #162A45; }
+.cl-theme .ant-modal .ant-modal-header { background: transparent; }
+.cl-theme .ant-drawer .ant-drawer-header { border-bottom-color: var(--line); }
+.pp.cl .ant-btn-primary.ant-btn-background-ghost:not(:disabled) { background: transparent; border: 1px solid rgba(38,198,218,.6); color: var(--accent-text); box-shadow: none; }
+.pp.cl .ant-btn-primary.ant-btn-background-ghost:not(:disabled):hover { background: var(--accent-soft); }

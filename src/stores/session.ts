@@ -1,55 +1,50 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
-import { DEMO_ACCOUNTS, DEMO_PASSWORD, ROLES, type PageKey, type RoleKey } from '@/constants'
+import { computed, ref } from 'vue'
+import { type PageKey, type RoleKey } from '@/constants'
 import { lsGet, lsSet } from '@/utils'
+import { useAccess } from '@/stores/access'
 
-export type ThemeMode = 'auto' | 'light' | 'dark'
+/** 统一采用深空蓝赛博主题（方案一），不再区分浅色 / 深色 */
+export type ThemeMode = 'dark'
 
 export const useSession = defineStore('session', () => {
-  const savedAuth = lsGet('dms-auth')
-  const initRole = (savedAuth && savedAuth in ROLES ? savedAuth : 'admin') as RoleKey
-  const role = ref<RoleKey>(initRole)
-  const authed = ref(!!(savedAuth && savedAuth in ROLES))
-  /** 演示登录：账号见 DEMO_ACCOUNTS，统一密码 DEMO_PASSWORD；接后端时替换为真实接口 */
+  const access = useAccess()
+  const uid = ref<string>(lsGet('dms-user') || '')
+  const user = computed(() => access.byId(uid.value))
+  /** 账号被停用或删除后立即失效 */
+  const authed = computed(() => !!user.value && user.value.on)
+  const role = computed<RoleKey>(() => user.value?.role ?? '')
+  const roleDef = computed(() => access.roleMap[role.value])
+
+  /** 演示登录：账号来自「用户管理」；正式环境请替换为后端登录接口 */
   async function login(u: string, pwd: string, remember: boolean): Promise<string | null> {
     await new Promise((r) => setTimeout(r, 700))
-    const acc = DEMO_ACCOUNTS.find((a) => a.u === u.trim())
-    if (!acc || pwd !== DEMO_PASSWORD) return '账号或密码错误'
-    role.value = acc.role
-    authed.value = true
-    if (remember) lsSet('dms-auth', acc.role)
-    else lsSet('dms-auth', '')
+    const acc = access.byAccount(u)
+    if (!acc || !(await access.checkPwd(acc, pwd))) return '账号或密码错误'
+    if (!acc.on) return '该账号已停用，请联系系统管理员'
+    if (!access.roleMap[acc.role]) return '该账号未分配有效角色，请联系系统管理员'
+    uid.value = acc.id
+    access.touch(acc.id)
+    lsSet('dms-user', remember ? acc.id : '')
     return null
   }
-  /** 从训练场入口站跳转时携带角色，免二次登录（演示用；正式环境请改为后端签发的 token 校验） */
-  function ssoLogin(r: string): boolean {
-    if (!(r in ROLES)) return false
-    role.value = r as RoleKey; authed.value = true; lsSet('dms-auth', r)
-    return true
-  }
-  function logout() { authed.value = false; lsSet('dms-auth', '') }
-  const saved = lsGet('dms-theme')
-  const theme = ref<ThemeMode>(saved === 'light' || saved === 'dark' ? saved : 'auto')
+  function logout() { uid.value = ''; lsSet('dms-user', '') }
+
+  const theme = ref<ThemeMode>('dark')
+  const dark = computed(() => true)
   const collapsed = ref(false)
-  const sysDark = ref(typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches)
-  if (typeof matchMedia !== 'undefined') {
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => { sysDark.value = e.matches })
-  }
-  const dark = computed(() => theme.value === 'dark' || (theme.value === 'auto' && sysDark.value))
-  watch(theme, (v) => { if (v !== 'auto') lsSet('dms-theme', v) })
-  watch(
-    [theme],
-    () => {
-      const de = document.documentElement
-      if (theme.value === 'auto') de.removeAttribute('data-theme')
-      else de.setAttribute('data-theme', theme.value)
-    },
-    { immediate: true },
-  )
-  const info = computed(() => ROLES[role.value])
-  const isAdmin = computed(() => !!info.value.all)
-  const can = (k: string) => !!(info.value.all || info.value.can[k])
-  const allowed = (p: PageKey) => info.value.pages.includes(p)
-  function toggleTheme() { theme.value = dark.value ? 'light' : 'dark' }
-  return { role, authed, login, ssoLogin, logout, theme, dark, collapsed, info, isAdmin, can, allowed, toggleTheme }
+  document.documentElement.setAttribute('data-theme', 'dark')
+  document.documentElement.classList.add('cl-theme')
+
+  const info = computed(() => ({
+    name: roleDef.value?.name ?? '未分配角色',
+    user: user.value?.name ?? '',
+    init: (user.value?.name ?? '?').slice(0, 1),
+    account: user.value?.u ?? '',
+  }))
+  const isAdmin = computed(() => !!roleDef.value?.all)
+  const can = (k: string) => !!(roleDef.value && (roleDef.value.all || roleDef.value.can[k]))
+  const allowed = (p: PageKey) => !!(roleDef.value && (roleDef.value.all || roleDef.value.pages.includes(p)))
+  function toggleTheme() { /* 统一深色主题 */ }
+  return { uid, user, role, authed, login, logout, theme, dark, collapsed, info, isAdmin, can, allowed, toggleTheme }
 })

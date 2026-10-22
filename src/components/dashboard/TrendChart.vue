@@ -32,7 +32,7 @@ const option = computed(() => {
     grid: { left: 40, right: 6, top: 10, bottom: 28, containLabel: false },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'none' }, confine: true,
-      backgroundColor: '#14253B', borderWidth: 0, padding: [8, 10], extraCssText: 'box-shadow:var(--shadow-pop);border-radius:8px;',
+      backgroundColor: '#213252', borderWidth: 0, padding: [8, 10], extraCssText: 'box-shadow:var(--shadow-pop);border-radius:8px;',
       textStyle: { color: '#F2F6FB', fontSize: 12.5, fontFamily: font },
       formatter: (ps: { dataIndex: number }[]) => {
         const i = ps[0].dataIndex

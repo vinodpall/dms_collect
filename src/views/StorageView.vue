@@ -10,7 +10,7 @@ import { toast } from '@/composables/toast'
 
 const session = useSession()
 const settings = useSettings()
-const mayEdit = computed(() => session.role === 'admin')
+const mayEdit = computed(() => session.can('storage'))
 const PARTS = [
   { k: '原始数据区', cap: 12, used: 5.4, c: 'var(--chart-1)' }, { k: '清洗数据区', cap: 6, used: 2.4, c: '#2C8F7B' },
   { k: '标注数据区', cap: 4, used: 1.5, c: '#B86E1A' }, { k: '发布数据集', cap: 4, used: 1.9, c: '#8A5CC2' }, { k: '备份区', cap: 4, used: 0.4, c: '#6B7A8E' },

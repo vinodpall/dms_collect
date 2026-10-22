@@ -33,3 +33,7 @@ body { font-family: var(--font-sans); }
 .card > .card-head + .ant-table-wrapper { margin-top: 4px; }
 
 .tag.man { background: var(--warn-soft); color: var(--warn); }
+.tag.good { background: var(--good-soft); color: var(--good); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.crit { background: var(--crit-soft); color: var(--crit); }
+.tag.info { background: var(--accent-soft); color: var(--accent); }

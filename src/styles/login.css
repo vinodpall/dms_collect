@@ -1,7 +1,7 @@
 /* 登录页 —— 与「具身智能训练场」登录页同一套深色科技风格 */
 .lg {
-  --bg: #081827; --field: #0B1D2E; --line: rgba(77,208,225,.18); --cyan: #4DD0E1; --cyan-dk: #00ACC1; --ink: #E6F7FB; --muted: #8FB3C7; --dim: #5B7486;
-  --bad: #FF6B6B; --ok: #4DE8B0; --amber: #FFB74D;
+  --bg: #10233a; --field: #142842; --line: rgba(46,211,230,.18); --cyan: #2ED3E6; --cyan-dk: #00ACC1; --ink: #F3F8FC; --muted: #B6CADC; --dim: #8EA6BE;
+  --bad: #FF7A7A; --ok: #45E3A8; --amber: #FFC15C;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
   position: relative; height: 100vh; min-height: 640px; overflow: hidden; background: var(--bg); color: var(--ink);
   display: grid; grid-template-columns: minmax(0, 1fr) min(560px, 36vw);
@@ -10,13 +10,13 @@
 .lg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .lg-fx { position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 60% 70% at 32% 52%, transparent 55%, rgba(8,24,39,.75) 100%),
-    linear-gradient(90deg, transparent 55%, rgba(8,24,39,.55) 72%, rgba(8,24,39,.8)),
-    linear-gradient(rgba(77,208,225,.045) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, rgba(77,208,225,.045) 1px, transparent 1px) 0 0 / 48px 48px; }
+    radial-gradient(ellipse 60% 70% at 32% 52%, transparent 55%, rgba(16,35,58,.75) 100%),
+    linear-gradient(90deg, transparent 55%, rgba(16,35,58,.55) 72%, rgba(16,35,58,.8)),
+    linear-gradient(rgba(46,211,230,.045) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(46,211,230,.045) 1px, transparent 1px) 0 0 / 48px 48px; }
 
 .lg-brand { position: absolute; z-index: 3; left: 48px; top: 36px; display: flex; align-items: center; gap: 14px; animation: lg-down .8s .2s both; }
-.lg-brand svg { width: 44px; height: 44px; filter: drop-shadow(0 0 12px rgba(77,208,225,.45)); }
+.lg-brand svg { width: 44px; height: 44px; filter: drop-shadow(0 0 12px rgba(46,211,230,.45)); }
 .lg-brand h1 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 600; letter-spacing: 4px; color: #fff; }
 .lg-brand p { margin: 5px 0 0; font: 10.5px var(--mono); letter-spacing: 3.2px; color: var(--cyan); opacity: .8; }
 
@@ -28,12 +28,12 @@
 
 /* 右侧登录 */
 .lg-side { grid-column: 2; position: relative; z-index: 4; display: flex; flex-direction: column; justify-content: center; padding: 40px 72px 56px 8px; }
-.lg-card { position: relative; padding: 40px 38px 30px; border-radius: 6px; border: 1px solid rgba(77,208,225,.22);
-  background: linear-gradient(160deg, rgba(16,40,62,.88), rgba(8,24,40,.86)); backdrop-filter: blur(10px);
-  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 40px rgba(77,208,225,.06) inset; animation: lg-card .9s .35s cubic-bezier(.2,.7,.2,1) both; }
+.lg-card { position: relative; padding: 40px 38px 30px; border-radius: 6px; border: 1px solid rgba(46,211,230,.22);
+  background: linear-gradient(160deg, rgba(27,53,85,.88), rgba(16,35,59,.86)); backdrop-filter: blur(10px);
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 40px rgba(46,211,230,.06) inset; animation: lg-card .9s .35s cubic-bezier(.2,.7,.2,1) both; }
 .lg-card::before { content: ''; position: absolute; left: 24px; right: 24px; top: -1px; height: 2px; border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--cyan) 30%, #4FA3FF 70%, transparent); box-shadow: 0 0 14px rgba(77,208,225,.8); }
-.lg-card .cn { position: absolute; width: 14px; height: 14px; border: 2px solid var(--cyan); pointer-events: none; filter: drop-shadow(0 0 4px rgba(77,208,225,.8)); }
+  background: linear-gradient(90deg, transparent, var(--cyan) 30%, #4FA3FF 70%, transparent); box-shadow: 0 0 14px rgba(46,211,230,.8); }
+.lg-card .cn { position: absolute; width: 14px; height: 14px; border: 2px solid var(--cyan); pointer-events: none; filter: drop-shadow(0 0 4px rgba(46,211,230,.8)); }
 .lg-card .cn.tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; border-top-left-radius: 6px; }
 .lg-card .cn.tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; border-top-right-radius: 6px; }
 .lg-card .cn.bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; border-bottom-left-radius: 6px; }
@@ -42,14 +42,14 @@
 .lg-card h2 { margin: 0; font-size: 26px; line-height: 1.3; font-weight: 600; letter-spacing: 2px; color: #fff; }
 .lg-card .sub { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
 .lg-field { display: block; margin-bottom: 18px; }
-.lg-box { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; background: var(--field); border: 1px solid rgba(120,175,205,.22); border-radius: 4px; color: #6F92A8; transition: border-color .2s, box-shadow .2s, color .2s; }
-.lg-box:hover { border-color: rgba(77,208,225,.45); }
-.lg-box:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(77,208,225,.14); color: var(--cyan); }
+.lg-box { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; background: var(--field); border: 1px solid rgba(120,175,205,.22); border-radius: 4px; color: #9DB5CB; transition: border-color .2s, box-shadow .2s, color .2s; }
+.lg-box:hover { border-color: rgba(46,211,230,.45); }
+.lg-box:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(46,211,230,.14); color: var(--cyan); }
 .lg-box.bad { border-color: var(--bad); }
 .lg-box input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 15px; letter-spacing: .3px; }
 .lg-box input::placeholder { color: #5E7F94; }
 .lg-box input:-webkit-autofill { -webkit-text-fill-color: var(--ink); caret-color: var(--ink); -webkit-box-shadow: 0 0 0 1000px var(--field) inset; transition: background-color 9999s; }
-.lg-eye { display: grid; place-items: center; width: 28px; height: 28px; border: 0; background: none; color: #6F92A8; cursor: pointer; border-radius: 4px; }
+.lg-eye { display: grid; place-items: center; width: 28px; height: 28px; border: 0; background: none; color: #9DB5CB; cursor: pointer; border-radius: 4px; }
 .lg-eye:hover { color: var(--cyan); }
 .lg-help { display: block; color: var(--bad); font-size: 12.5px; margin-top: 6px; }
 .lg-row { display: flex; justify-content: space-between; align-items: center; margin: -2px 0 22px; font-size: 13px; color: var(--dim); }
