@@ -15,7 +15,10 @@ const loaders: Record<PageKey, () => Promise<unknown>> = {
   storage: () => import('@/views/StorageView.vue'),
   devices: () => import('@/views/DevicesView.vue'),
   logs: () => import('@/views/LogsView.vue'),
+  dict: () => import('@/views/DictView.vue'),
   system: () => import('@/views/SystemView.vue'),
+  users: () => import('@/views/UsersView.vue'),
+  roles: () => import('@/views/RolesView.vue'),
 }
 
 export const router = createRouter({
@@ -30,13 +33,6 @@ export const router = createRouter({
 
 router.beforeEach((to) => {
   const s0 = useSession()
-  const sso = typeof to.query.sso === 'string' ? to.query.sso : ''
-  if (sso) {
-    // 来自入口站的跳转：携带角色直接登录，并清掉地址里的 sso 参数
-    const ok = s0.ssoLogin(sso)
-    const { sso: _x, ...rest } = to.query
-    return ok ? { path: to.name === 'login' ? '/dashboard' : to.path, query: rest, replace: true } : { name: 'login' }
-  }
   if (!s0.authed && !to.meta.public) return { name: 'login', query: to.fullPath === '/dashboard' ? {} : { redirect: to.fullPath } }
   if (s0.authed && to.name === 'login') return { name: 'dashboard' }
   const page = to.meta.page as PageKey | undefined
@@ -44,7 +40,8 @@ router.beforeEach((to) => {
   const s = useSession()
   if (!s.allowed(page)) {
     toast('当前角色没有访问该页面的权限', { type: 'warn' })
-    return to.name === 'dashboard' ? true : { name: 'dashboard' }
+    const first = keys.find((k) => s.allowed(k))
+    return first && first !== to.name ? { name: first } : true
   }
   return true
 })

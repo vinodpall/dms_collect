@@ -6,8 +6,9 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import TaskDrawer from '@/components/tasks/TaskDrawer.vue'
 import TaskWizard from '@/components/tasks/TaskWizard.vue'
-import { NO_PERM, OPS, SCEN, TASK_ST, type TaskStatus } from '@/constants'
-import { useTasks, type Task } from '@/stores/tasks'
+import ImportDialog from '@/components/tasks/ImportDialog.vue'
+import { MODES, NO_PERM, OPS, SCEN, TASK_ST, type ModeKey, type TaskStatus } from '@/constants'
+import { HIST_SRC, HIST_ST, useTasks, type HistSource, type HistState, type Task } from '@/stores/tasks'
 import { useSession } from '@/stores/session'
 import { useUi } from '@/stores/ui'
 import { toast } from '@/composables/toast'
@@ -67,6 +68,40 @@ async function bulkCancel() {
   hit.forEach((t) => { t.status = 'cancel'; tasks.touch(t) })
   selected.value = []; toast('已取消 ' + hit.length + ' 个任务')
 }
+/* 采集历史：Episode 粒度，含采集产出、视频上传、LeRobot 导入 */
+const tab = ref<'tasks' | 'hist'>('tasks')
+const imp = reactive({ open: false, kind: 'video' as 'video' | 'lerobot' })
+const hs = reactive({ q: '', src: 'all' as 'all' | HistSource, state: 'all' as 'all' | HistState })
+const hist = computed(() => tasks.history())
+const histRows = computed(() => {
+  const q = hs.q.trim().toLowerCase()
+  return hist.value.filter((r) => (hs.src === 'all' || r.source === hs.src) && (hs.state === 'all' || r.state === hs.state) && (!q || (r.file + r.task + r.dataset).toLowerCase().includes(q)))
+})
+const SRC_OPTS = [{ value: 'all', label: '全部来源' }, ...(Object.keys(HIST_SRC) as HistSource[]).map((k) => ({ value: k, label: HIST_SRC[k] }))]
+const HIST_CHIPS: ['all' | HistState, string][] = [['all', '全部'], ...(Object.keys(HIST_ST) as HistState[]).map((k): [HistState, string] => [k, HIST_ST[k][1]])]
+const histCount = (k: 'all' | HistState) => (k === 'all' ? hist.value.length : hist.value.filter((r) => r.state === k).length)
+const histCols = [
+  { title: '文件', key: 'file' },
+  { title: '来源', key: 'source', width: 120 },
+  { title: '任务', key: 'task', width: 100 },
+  { title: '数据集', key: 'dataset', width: 90 },
+  { title: '时长', key: 'dur', width: 80, align: 'right' as const },
+  { title: '体量', key: 'size', width: 90, align: 'right' as const },
+  { title: '状态', key: 'state', width: 120 },
+  { title: '时间', key: 'at', width: 110, align: 'right' as const },
+]
+function openTask(id: string) { if (tasks.byId(id)) ui.taskDrawerId = id }
+function retryAll() {
+  let n = 0
+  tasks.list.forEach((t) => [...t.retry].forEach((f) => { tasks.retryUpload(t, f); n++ }))
+  toast(n ? `已重传 ${n} 个文件` : '没有待重传的文件', { type: n ? undefined : 'warn' })
+}
+const kpi = computed(() => ({
+  running: tasks.list.filter((t) => t.status === 'running').length,
+  today: tasks.list.reduce((a, t) => a + (t.session?.eps ?? 0), 0),
+  retry: tasks.list.reduce((a, t) => a + t.retry.length, 0),
+  imported: tasks.imports.length,
+}))
 function clearFilters() { st.q = ''; st.status = 'all'; st.scen = 'all' }
 function created(id: string) {
   st.status = 'all'; st.page = 1
@@ -75,11 +110,48 @@ function created(id: string) {
 </script>
 
 <template>
-  <PageHead title="采集任务" desc="创建任务、执行 SOP、跟踪采集进度">
+  <PageHead title="采集任务" desc="每次采集：设备自检 → 场景复位与采集 → 数据校验 → 入库；也可上传视频或导入 LeRobot 数据">
+    <div class="seg" role="tablist">
+      <button type="button" role="tab" :aria-selected="tab === 'tasks'" @click="tab = 'tasks'"><span>采集任务</span></button>
+      <button type="button" role="tab" :aria-selected="tab === 'hist'" @click="tab = 'hist'"><span>采集历史</span></button>
+    </div>
+    <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'video'; imp.open = true"><AppIcon name="camera" />视频上传</a-button>
+    <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'lerobot'; imp.open = true"><AppIcon name="db" />LeRobot 导入</a-button>
     <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="ui.wizardOpen = true"><AppIcon name="plus" />新建任务</a-button>
   </PageHead>
 
-  <div class="card">
+  <div class="grid g4" style="margin-bottom:16px">
+    <button type="button" class="card kpi" @click="tab = 'tasks'; st.status = 'running'"><span class="k">采集中任务 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.running }}<small>个</small></span><span class="d">设备按工位占用，互不冲突</span></button>
+    <div class="card kpi"><span class="k">本次会话采集</span><span class="v">{{ kpi.today }}<small>条</small></span><span class="d">进行中任务的当前会话合计</span></div>
+    <button type="button" class="card kpi" @click="tab = 'hist'; hs.state = 'retry'"><span class="k">待重传 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.retry }}<small>个文件</small></span><span class="d">上传中断，自动重试失败</span></button>
+    <button type="button" class="card kpi" @click="tab = 'hist'; hs.src = 'all'; hs.state = 'all'"><span class="k">外部导入 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.imported }}<small>批</small></span><span class="d">视频上传 / LeRobot 导入</span></button>
+  </div>
+
+  <div v-if="tab === 'hist'" class="card">
+    <div class="toolbar">
+      <a-input v-model:value="hs.q" class="grow" allow-clear placeholder="搜索文件名、任务、数据集" aria-label="搜索采集历史"><template #prefix><AppIcon name="search" /></template></a-input>
+      <a-select v-model:value="hs.src" style="width:140px" aria-label="来源" :options="SRC_OPTS" />
+      <a-button :disabled="!kpi.retry" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
+    </div>
+    <div class="toolbar" style="border-bottom:0;padding-bottom:0">
+      <div class="chips"><button v-for="c in HIST_CHIPS" :key="c[0]" type="button" class="chip" :aria-pressed="hs.state === c[0]" @click="hs.state = c[0]">{{ c[1] }} <span class="n num">{{ histCount(c[0]) }}</span></button></div>
+    </div>
+    <a-table :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :scroll="{ x: 900 }" :pagination="{ pageSize: 12, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 条` }">
+      <template #bodyCell="{ column, record }">
+        <span v-if="column.key === 'file'" class="mono" style="font-size:12.5px">{{ record.file }}</span>
+        <span v-else-if="column.key === 'source'">{{ HIST_SRC[record.source as HistSource] }}</span>
+        <a v-else-if="column.key === 'task' && record.task !== '—'" class="mono" @click="openTask(record.task)">{{ record.task }}</a>
+        <span v-else-if="column.key === 'dataset'" class="mono muted">{{ record.dataset }}</span>
+        <span v-else-if="column.key === 'dur'" class="num">{{ record.dur }} s</span>
+        <span v-else-if="column.key === 'size'" class="num muted">{{ record.size }} GB</span>
+        <StatusBadge v-else-if="column.key === 'state'" :kind="HIST_ST[record.state as HistState][0]" :text="HIST_ST[record.state as HistState][1]" />
+        <span v-else-if="column.key === 'at'" class="muted num">{{ record.at }}</span>
+      </template>
+      <template #emptyText><EmptyState icon="inbox" title="没有符合条件的记录" desc="换个筛选条件试试" /></template>
+    </a-table>
+  </div>
+
+  <div v-else class="card">
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="搜索任务编号、名称、操作员" aria-label="搜索任务"><template #prefix><AppIcon name="search" /></template></a-input>
       <a-select v-model:value="st.scen" style="width:150px" aria-label="场景" :options="[{ value: 'all', label: '全部场景' }, { value: 'qmd', label: '气密性检测' }, { value: 'fhd', label: '防护堵安装' }]" />
@@ -97,7 +169,7 @@ function created(id: string) {
       :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个任务` }" @change="onTableChange as never">
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'id'" class="cell-main"><span class="mono">{{ record.id }}</span><span>{{ record.name }}</span></div>
-        <div v-else-if="column.key === 'scen'" class="cell-main"><span>{{ SCEN[record.scen as 'qmd' | 'fhd'].short }}</span><small class="muted">{{ SCEN[record.scen as 'qmd' | 'fhd'].mode }} · {{ record.devices.length }} 台设备</small></div>
+        <div v-else-if="column.key === 'scen'" class="cell-main"><span>{{ SCEN[record.scen as 'qmd' | 'fhd'].short }}</span><small class="muted">{{ MODES[record.mode as ModeKey].name }} · {{ record.devices.length }} 台设备</small></div>
         <span v-else-if="column.key === 'op'">{{ OPS[record.op].n }}</span>
         <span v-else-if="column.key === 'progress'" class="num"><b>{{ record.done }}</b> <span class="muted">条</span></span>
         <StatusBadge v-else-if="column.key === 'status'" :kind="TASK_ST[record.status as TaskStatus][0]" :text="TASK_ST[record.status as TaskStatus][1]" />
@@ -111,4 +183,5 @@ function created(id: string) {
 
   <TaskDrawer :id="ui.taskDrawerId" @close="ui.taskDrawerId = null" />
   <TaskWizard :open="ui.wizardOpen" @close="ui.wizardOpen = false" @done="created" />
+  <ImportDialog :open="imp.open" :kind="imp.kind" @close="imp.open = false" />
 </template>

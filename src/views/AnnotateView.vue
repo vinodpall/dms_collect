@@ -20,6 +20,8 @@ import {
   type ValidationReport,
 } from '@/stores/annotate'
 import { usePipeline } from '@/stores/pipeline'
+import { useDict } from '@/stores/dict'
+import { useReview } from '@/stores/review'
 import { useLogs } from '@/stores/logs'
 import { NO_PERM, SCEN, type BadgeKind } from '@/constants'
 import { useSession } from '@/stores/session'
@@ -28,6 +30,8 @@ import { confirmDlg } from '@/composables/confirm'
 import { clamp } from '@/utils'
 
 const store = useAnnotate()
+const dict = useDict()
+const review = useReview()
 const pl = usePipeline()
 const logs = useLogs()
 const session = useSession()
@@ -37,30 +41,43 @@ const router = useRouter()
 const canLabel = computed(() => session.can('annotate'))
 
 const batchFilter = computed(() => (typeof route.query.batch === 'string' ? route.query.batch : ''))
-const FILTERS = computed<[string, string, number][]>(() => {
-  const n = (s: ClipStatus[]) => store.clips.filter((c) => s.includes(c.status) && (!batchFilter.value || c.batch === batchFilter.value)).length
-  return [
-    ['todo', '待标注', n(['todo', 'rejected'])],
-    ['submitted', '待审核', n(['submitted'])],
-    ['approved', '已通过', n(['approved'])],
-    ['all', '全部', n(['todo', 'rejected', 'submitted', 'approved'])],
-  ]
-})
-
+const me = computed(() => session.info.user)
+/** 任务池（未领取）/ 我的任务（已领取） */
+const view = ref<'pool' | 'mine'>(store.mine(me.value).length ? 'mine' : 'pool')
+const inBatch = (c: Clip) => !batchFilter.value || c.batch === batchFilter.value
 const MATCH: Record<string, ClipStatus[]> = {
-  todo: ['todo', 'rejected'],
+  todo: ['todo'],
+  rejected: ['rejected'],
   submitted: ['submitted'],
   approved: ['approved'],
-  all: ['todo', 'rejected', 'submitted', 'approved'],
 }
-
-function matches(c: Clip, f: string) {
-  if (batchFilter.value && c.batch !== batchFilter.value) return false
-  return MATCH[f]?.includes(c.status) ?? true
-}
-
-const vis = computed(() => store.clips.filter((c) => matches(c, store.filter)))
+const myClips = computed(() => store.clips.filter((c) => c.owner === me.value && inBatch(c)))
+const FILTERS = computed<[string, string, number][]>(() => {
+  const n = (s: ClipStatus) => myClips.value.filter((c) => c.status === s).length
+  return [['todo', '待标注', n('todo')], ['rejected', '被打回', n('rejected')], ['submitted', '已提交', n('submitted')], ['approved', '已通过', n('approved')]]
+})
+const poolScen = ref<'all' | 'qmd' | 'fhd'>('all')
+const claimN = ref(5)
+const poolClips = computed(() => store.pool.filter((c) => inBatch(c) && (poolScen.value === 'all' || c.scen === poolScen.value)))
+const vis = computed(() => (view.value === 'pool' ? poolClips.value : myClips.value.filter((c) => MATCH[store.filter]?.includes(c.status) ?? true)))
 const clip = computed<Clip | undefined>(() => store.byId(store.cur))
+const inPool = computed(() => !!clip.value && clip.value.status === 'todo' && !clip.value.owner)
+
+function doClaim(x?: Clip) {
+  const got = store.claim(x ?? claimN.value, x ? undefined : poolScen.value === 'all' ? undefined : poolScen.value)
+  if (!got.length) return toast('任务池中没有可领取的数据', { type: 'warn' })
+  view.value = 'mine'
+  store.filter = 'todo'
+  pick(got[0].id)
+  toast(`已领取 ${got.length} 条，可开始标注`)
+}
+async function doRelease() {
+  const c = clip.value
+  if (!c) return
+  if (!(await confirmDlg({ title: '放回任务池？', msg: '放回后其他标注员可以领取；已做的切片会保留。', ok: '放回' }))) return
+  store.release(c)
+  toast('已放回任务池')
+}
 
 function pick(id: string) {
   store.cur = id
@@ -97,11 +114,23 @@ function toggle() {
 }
 
 /* 编辑权限与状态计算 */
-const editable = computed(() => canLabel.value && !!clip.value && ['todo', 'rejected'].includes(clip.value.status))
+const editable = computed(() => canLabel.value && !!clip.value && clip.value.owner === me.value && ['todo', 'rejected'].includes(clip.value.status))
 const sorted = computed(() => (clip.value ? clip.value.segs.slice().sort((a, b) => a.s - b.s) : []))
 const coverage = computed(() => (clip.value ? Math.min(100, Math.round((sorted.value.reduce((a, s) => a + (s.e - s.s), 0) / clip.value.dur) * 100)) : 0))
 const nowSeg = computed(() => sorted.value.find((s) => t.value >= s.s && t.value < s.e))
-const nextName = (c: Clip) => store.subNames.find((n) => !c.segs.some((s) => s.n === n)) ?? store.subNames[0] ?? '未命名'
+const nextName = (c: Clip) => { const l = dict.sequenceFor(c.scen); return l.find((n) => !c.segs.some((s) => s.n === n)) ?? l[0] ?? '未命名' }
+const subOpts = computed(() => (clip.value ? store.namesFor(clip.value.scen).map((n) => ({ value: n, label: n + (dict.byName(n)?.level === 'abnormal' ? '（异常）' : '') })) : []))
+
+/** 规则预切分：按字典中该场景子任务的标准顺序生成初始区间，标注员再微调 */
+async function doPresplit(how: 'seq' | 'force') {
+  const c = clip.value
+  if (!c || !editable.value) return
+  if (c.segs.length && !(await confirmDlg({ title: '覆盖当前切片？', msg: `当前已有 ${c.segs.length} 个切片，预切分会替换它们（可用 Ctrl+Z 撤销）。`, ok: '覆盖' }))) return
+  recordHistory()
+  const n = store.presplit(c, how)
+  sel.value = c.segs[0]?.id ?? null
+  toast(n ? `已按${how === 'seq' ? '子任务标准顺序' : '夹爪力觉突变点'}生成 ${n} 个切片，请逐个微调边界并补充描述` : '字典中该场景没有子任务定义', { type: n ? undefined : 'warn' })
+}
 
 /* 撤销管理 */
 const hasUndo = computed(() => (clip.value ? store.canUndo(clip.value.id) : false))
@@ -248,17 +277,18 @@ function saveDraft() {
 const valModal = reactive<{
   open: boolean
   report: ValidationReport | null
-  submitting: boolean
+  note: string
 }>({
   open: false,
   report: null,
-  submitting: false,
+  note: '',
 })
 
 function checkAndSubmit() {
   const c = clip.value
   if (!c || !editable.value) return
   valModal.report = store.validateClip(c)
+  valModal.note = c.submitNote ?? ''
   valModal.open = true
 }
 
@@ -272,7 +302,8 @@ function doSubmitFinal() {
   const c = clip.value
   if (!c) return
   valModal.open = false
-  run(c, () => store.submit(c), '已通过质量自检并提交审核')
+  const sampled = review.sampleFor(c.owner ?? me.value)
+  run(c, () => store.submit(c, valModal.note.trim(), sampled), sampled ? '已提交审核' : `已提交，本条未被抽中（抽检比例 ${review.rateOf(c.owner ?? me.value)}%），免检通过`)
   logs.addLog({
     user: session.info.user,
     role: session.info.name,
@@ -335,16 +366,10 @@ async function withdraw() {
 
 /* 快捷键指南弹窗与子任务字典弹窗状态 */
 const shortcutGuideOpen = ref(false)
-const subModal = reactive({
-  open: false,
-  editingName: null as string | null,
-  form: { name: '', desc: '', required: false },
-})
-
 /* 键盘快捷键监听器 */
 function onKey(e: KeyboardEvent) {
   // 1. 如果弹窗处于打开状态，不响应页面快捷键
-  if (valModal.open || subModal.open || shortcutGuideOpen.value) return
+  if (valModal.open || shortcutGuideOpen.value) return
 
   // 2. 如果输入框、下拉框正在输入，不拦截按键
   const el = e.target as HTMLElement, tag = el?.tagName
@@ -438,63 +463,16 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
 })
 
-/* 通用子任务字典管理操作 */
-function openSubModal() {
-  subModal.editingName = null
-  subModal.form = { name: '', desc: '', required: false }
-  subModal.open = true
-}
-
-function handleSaveSubtask() {
-  const name = subModal.form.name.trim()
-  if (!name) {
-    toast('请输入子任务名称', { type: 'warn' })
-    return
-  }
-  if (subModal.editingName) {
-    store.updateSubName(subModal.editingName, name, subModal.form.desc, subModal.form.required)
-    toast(`已更新通用子任务 [${name}]`)
-  } else {
-    const ok = store.addSubName(name, subModal.form.desc, subModal.form.required)
-    if (!ok) {
-      toast('该子任务名称已存在或无效', { type: 'warn' })
-      return
-    }
-    toast(`已添加通用子任务 [${name}]`)
-  }
-  subModal.editingName = null
-  subModal.form = { name: '', desc: '', required: false }
-}
-
-function startEditSubtask(n: string) {
-  subModal.editingName = n
-  const meta = store.subtaskMeta[n]
-  subModal.form = { name: n, desc: meta?.desc ?? '', required: !!meta?.required }
-}
-
-async function handleDeleteSubtask(n: string) {
-  const ok = await confirmDlg({
-    title: '确认删除通用子任务',
-    msg: `确定删除子任务 [${n}]？删除后下拉选项中将不再显示。`,
-    ok: '确认删除',
-    danger: true,
-  })
-  if (ok) {
-    store.deleteSubName(n)
-    toast(`已删除通用子任务 [${n}]`)
-  }
-}
-
 const isVr = computed(() => (clip.value ? SCEN[clip.value.scen].mode.includes('VR') : false))
 function clearBatch() { router.replace({ name: 'annotate' }) }
 </script>
 
 <template>
-  <PageHead title="标注工作台" desc="时序多视角视频切片标注；支持丰富键盘快捷键、通用子任务字典实时维护与提交前质量自检拦截">
+  <PageHead title="标注工作台" desc="从任务池领取数据后，按子任务切分时间区间；提交前自动自检">
     <div class="row" style="gap:8px">
-      <a-button @click="openSubModal"><AppIcon name="tag" size="sm" />子任务字典管理</a-button>
-      <a-button @click="shortcutGuideOpen = true"><AppIcon name="kbd" size="sm" />快捷键指南</a-button>
-      <span class="muted" style="margin-left:8px">待标注 {{ store.labelTodo() }} 条 · 待审核 {{ store.reviewTodo() }} 条</span>
+      <span class="muted" style="margin-right:4px">任务池 {{ store.pool.length }} 条 · 我的待处理 {{ store.mine(me).filter((c) => c.status === 'todo' || c.status === 'rejected').length }} 条</span>
+      <a-button @click="router.push({ name: 'dict' })"><AppIcon name="layers" size="sm" />标注字典 <span class="mono muted" style="margin-left:4px">{{ dict.version }}</span></a-button>
+      <a-button @click="shortcutGuideOpen = true"><AppIcon name="kbd" size="sm" />快捷键</a-button>
     </div>
   </PageHead>
 
@@ -505,7 +483,20 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
   </div>
 
   <div class="card ann2">
-    <ClipList v-model:filter="store.filter" :clips="vis" :cur="clip?.id ?? null" :filters="FILTERS" empty-desc="暂无待处理标注数据" @pick="pick" />
+    <ClipList v-model:filter="store.filter" :clips="vis" :cur="clip?.id ?? null" :filters="view === 'mine' ? FILTERS : []" :empty-desc="view === 'pool' ? '任务池已清空' : '没有该状态的数据，可去任务池领取'" @pick="pick">
+      <template #head>
+        <div class="vseg" role="tablist" aria-label="任务视图">
+          <button type="button" role="tab" :aria-selected="view === 'pool'" @click="view = 'pool'">任务池 <span class="num">{{ store.pool.length }}</span></button>
+          <button type="button" role="tab" :aria-selected="view === 'mine'" @click="view = 'mine'">我的任务 <span class="num">{{ myClips.length }}</span></button>
+        </div>
+        <div v-if="view === 'pool'" class="claim">
+          <a-select v-model:value="poolScen" size="small" style="width:96px" aria-label="场景" :options="[{ value: 'all', label: '全部场景' }, { value: 'qmd', label: SCEN.qmd.short }, { value: 'fhd', label: SCEN.fhd.short }]" />
+          <a-input-number v-model:value="claimN" size="small" :min="1" :max="10" style="width:60px" aria-label="领取条数" />
+          <span class="ct">条</span><span class="grow" />
+          <a-button size="small" type="primary" :disabled="!poolClips.length" @click="doClaim()">批量领取</a-button>
+        </div>
+      </template>
+    </ClipList>
 
     <div class="work">
       <EmptyState v-if="!clip || !vis.length" icon="inbox" title="请选择一条数据" desc="请从左侧列表选择待标注视频" />
@@ -531,6 +522,14 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
           </div>
         </div>
 
+        <div v-if="inPool" class="callout info">
+          <AppIcon name="inbox" />
+          <span class="grow">该数据仍在任务池中，领取后才能标注（领取后其他人不可再领）<template v-if="clip.reject">。上次{{ clip.reject.reason }}</template></span>
+          <a-button size="small" type="primary" @click="doClaim(clip)">领取此条</a-button>
+        </div>
+        <div v-else-if="clip.owner && clip.owner !== me" class="callout">
+          <AppIcon name="user" /><span>由 {{ clip.owner }} 标注，当前只读</span>
+        </div>
         <div v-if="clip.reject && clip.status === 'rejected'" class="callout warn" role="alert">
           <AppIcon name="alert" />
           <span><b>审核打回：</b>{{ clip.reject.reason }}<span class="muted"> —— {{ clip.reject.by }} · {{ clip.reject.t }}</span></span>
@@ -549,6 +548,15 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
           </span>
           <span class="grow" />
           <template v-if="editable">
+            <a-dropdown :trigger="['click']">
+              <a-button size="small"><AppIcon name="bolt" size="sm" />规则预切分</a-button>
+              <template #overlay>
+                <a-menu @click="({ key }: { key: string }) => doPresplit(key as 'seq' | 'force')">
+                  <a-menu-item key="seq">按子任务标准顺序均分</a-menu-item>
+                  <a-menu-item key="force">按夹爪力觉突变点切分</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
             <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增切片 <kbd>A</kbd></a-button>
             <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />向下合并 <kbd>M</kbd></a-button>
             <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除切片 <kbd>D</kbd></a-button>
@@ -570,7 +578,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <div class="row between" style="margin-top:6px">
           <span style="font-weight:600;font-size:13.5px">子任务切片明细 ({{ sorted.length }})</span>
-          <a-button size="small" type="link" @click="openSubModal"><AppIcon name="settings" size="sm" />管理通用子任务标签</a-button>
+          <span class="muted" style="font-size:12px">子任务名称来自 <a @click="router.push({ name: 'dict' })">标注字典 {{ dict.version }}</a></span>
         </div>
 
         <table class="stbl" aria-label="子任务切片列表">
@@ -594,10 +602,11 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
                   size="small"
                   style="width:100%"
                   aria-label="子任务名称"
-                  :options="store.subNames.map((n) => ({ value: n }))"
+                  :options="subOpts"
                   @change="changed"
                 />
                 <span v-else>{{ s.n }}</span>
+                <div v-if="s.flag" class="tag crit" style="font-size:11px;margin-top:4px;display:inline-block">审核意见：{{ s.flag }}</div>
               </td>
               <td>
                 <a-input-number
@@ -637,7 +646,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
             </tr>
             <tr v-if="!sorted.length">
               <td colspan="6" class="muted" style="text-align:center;padding:24px">
-                暂无切片数据{{ editable ? '，可在时间轴上拖拽或直接按 A 键新增切片' : '' }}
+                暂无切片数据{{ editable ? '，可点「规则预切分」自动生成，或在时间轴上拖拽 / 按 A 键新增' : '' }}
               </td>
             </tr>
           </tbody>
@@ -656,7 +665,11 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
               <AppIcon name="check" size="sm" />已通过审核并归档入库
             </span>
           </template>
-          <template v-else>
+          <template v-else-if="inPool">
+            <a-button type="primary" @click="doClaim(clip)">领取此条</a-button>
+          </template>
+          <template v-else-if="editable">
+            <a-button v-if="clip.status === 'todo'" @click="doRelease">放回任务池</a-button>
             <a-button
               type="primary"
               :disabled="!canLabel || !clip.segs.length"
@@ -766,10 +779,15 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
       </div>
     </div>
 
+    <div v-if="valModal.report && !valModal.report.hasFatal" style="margin-top:14px">
+      <div style="font-weight:600;margin-bottom:6px">提交说明 <span class="muted" style="font-weight:400;font-size:12px">（可选，如不确定的地方、与字典定义不一致的情况）</span></div>
+      <a-textarea v-model:value="valModal.note" :rows="2" :maxlength="200" show-count placeholder="例如：第 3 段工件被遮挡，边界按力觉曲线判断" />
+    </div>
+
     <template #footer>
       <div class="row between" style="width:100%">
         <span class="muted" style="font-size:12px">
-          {{ valModal.report?.hasFatal ? '阻断问题必须修正后才可提交' : '提交后将由审核员陈静进行 6 维度质检评分' }}
+          {{ valModal.report?.hasFatal ? '阻断问题必须修正后才可提交' : (review.sampleRate >= 100 ? '提交后进入审核员待审池' : `按 ${review.sampleRate}% 抽检比例决定是否人工审核`) }}
         </span>
         <div class="row" style="gap:8px">
           <a-button @click="valModal.open = false">返回修改</a-button>
@@ -784,78 +802,6 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
         </div>
       </div>
     </template>
-  </a-modal>
-
-  <!-- 通用子任务字典管理弹窗（无场景分类、去掉当前使用列） -->
-  <a-modal
-    v-model:open="subModal.open"
-    title="标注子任务字典管理 (通用)"
-    width="680px"
-    centered
-    :footer="null"
-  >
-    <div class="card" style="padding:12px;background:var(--surface-2);margin-bottom:16px">
-      <div style="font-weight:600;margin-bottom:8px">
-        {{ subModal.editingName ? '✏️ 编辑通用子任务: ' + subModal.editingName : '➕ 添加通用子任务' }}
-      </div>
-      <div class="row" style="gap:8px;flex-wrap:wrap">
-        <a-input
-          v-model:value="subModal.form.name"
-          placeholder="子任务名称 (如: 锁紧气门嘴)"
-          style="width:180px"
-          size="small"
-        />
-        <a-input
-          v-model:value="subModal.form.desc"
-          placeholder="动作标准规范与操作说明"
-          style="flex:1;min-width:180px"
-          size="small"
-        />
-        <a-checkbox v-model:checked="subModal.form.required">核心必选</a-checkbox>
-        <a-button type="primary" size="small" @click="handleSaveSubtask">
-          {{ subModal.editingName ? '保存修改' : '确认添加' }}
-        </a-button>
-        <a-button v-if="subModal.editingName" size="small" @click="subModal.editingName = null; subModal.form = { name: '', desc: '', required: false }">
-          取消编辑
-        </a-button>
-      </div>
-    </div>
-
-    <table class="stbl" aria-label="通用子任务定义表">
-      <thead>
-        <tr>
-          <th style="width:36px">颜色</th>
-          <th style="width:140px">子任务名称</th>
-          <th>标准操作说明与规范释义</th>
-          <th style="width:80px">属性</th>
-          <th style="width:100px">操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="n in store.subNames" :key="n">
-          <td><i class="dot" :style="{ background: colorOf(null, n) }" /></td>
-          <td><b>{{ n }}</b></td>
-          <td class="muted" style="font-size:12.5px">
-            {{ store.subtaskMeta[n]?.desc || '通用标准作业步骤' }}
-          </td>
-          <td>
-            <a-tag v-if="store.subtaskMeta[n]?.required" color="red">必选</a-tag>
-            <a-tag v-else color="default">可选</a-tag>
-          </td>
-          <td>
-            <div class="row" style="gap:4px">
-              <a-button size="small" type="link" @click="startEditSubtask(n)">编辑</a-button>
-              <a-button size="small" type="link" danger @click="handleDeleteSubtask(n)">删除</a-button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="row between" style="margin-top:14px">
-      <span class="muted" style="font-size:12px">所有场景通用字典；添加或编辑后实时同步至当前切片下拉选项</span>
-      <a-button size="small" @click="store.resetSubNames(); toast('已重置为通用预设子任务')">恢复预设子任务</a-button>
-    </div>
   </a-modal>
 
   <!-- 快捷键指南弹窗 -->
@@ -884,6 +830,20 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 .stbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .stbl tr.sel td { background: var(--accent-soft); }
 .stbl tr.flag td { background: var(--crit-soft); }
+.detail { padding: 12px 14px; background: var(--surface-2); }
+.dgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; }
+.dgrid label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.dgrid label.wide { grid-column: span 2; }
+.req { color: var(--crit); font-style: normal; }
+.vseg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface-3); margin-bottom: 8px; }
+.vseg button { flex: 1 1 0; min-width: 0; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.vseg button[aria-selected="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(26,42,77,.12); }
+.claim { display: flex; gap: 6px; align-items: center; width: 100%; min-width: 0; }
+.claim :deep(.ant-btn), .claim :deep(.ant-input-number), .claim :deep(.ant-select-selector) { height: 28px !important; }
+.claim :deep(.ant-input-number-input) { height: 26px; }
+.claim :deep(.ant-select-selection-item) { line-height: 26px !important; }
+.claim .grow { flex: 1; min-width: 0; }
+.claim .ct { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .dot { display: block; width: 10px; height: 10px; border-radius: 3px; }
 .actbar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; margin-top: 4px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
 kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); }
@@ -917,5 +877,5 @@ kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--lin
 .kbd-row .keys { display: flex; gap: 4px; align-items: center; }
 .kbd-row .desc { font-size: 13px; color: var(--text); }
 
-@media (max-width: 900px) { .ann2 { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .ann2 { grid-template-columns: 1fr; } .dgrid { grid-template-columns: 1fr 1fr; } }
 </style>

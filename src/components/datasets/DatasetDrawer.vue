@@ -6,7 +6,6 @@ import ExportDialog from './ExportDialog.vue'
 import { NO_PERM, SCEN } from '@/constants'
 import { DS_ST, useDatasets, type Dataset } from '@/stores/datasets'
 import { useSession } from '@/stores/session'
-import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
@@ -16,13 +15,12 @@ const props = defineProps<{ id: string | null }>()
 const emit = defineEmits<{ close: [] }>()
 const store = useDatasets()
 const session = useSession()
-const settings = useSettings()
 const ui = useUi()
 const d = computed<Dataset | undefined>(() => (props.id ? store.byId(props.id) : undefined))
 const tab = ref('info')
 const exporting = ref<Dataset | null>(null)
 watch(() => props.id, () => { tab.value = 'info' })
-const mayPub = computed(() => session.role === 'admin' || session.role === 'ann')
+const mayPub = computed(() => session.can('datasets'))
 const dis = computed(() => (mayPub.value ? undefined : NO_PERM))
 
 const versions = computed(() => {
@@ -32,8 +30,6 @@ const versions = computed(() => {
   for (let i = n; i >= 0 && out.length < 4; i--) out.push(['v' + m + '.' + i, i === n ? d.value.updated : '10-0' + (1 + i) + ' 10:00', i === n ? '当前版本' : i === 0 ? '首次发布' : '新增采集批次与标签修订'])
   return out
 })
-const nodes = computed(() => d.value ? [['原始批次', 'B-1008~1012'], ['清洗降噪', '同步 ≤' + settings.cfg.sync + 'ms'], ['质量评分', '均分 ' + d.value.quality], ['自动标注', '三级标签'], ['人工校验', '林悦等'], [d.value.id + ' ' + d.value.ver, fmt(d.value.count) + ' 条']] : [])
-const W = 118, GAP = 26, H = 62
 
 async function act(a: string) {
   const x = d.value
@@ -57,7 +53,7 @@ async function act(a: string) {
       <div v-if="d" style="display:flex;flex-direction:column;gap:12px;width:100%">
         <div class="row between"><div class="row"><span class="mono">{{ d.id }}</span><StatusBadge :kind="DS_ST[d.status][0]" :text="DS_ST[d.status][1]" /></div><button type="button" class="icon-btn" aria-label="关闭" @click="emit('close')"><AppIcon name="x" /></button></div>
         <h2 style="font-size:20px;font-weight:600">{{ d.name }} <span class="fmt">{{ d.ver }}</span></h2>
-        <a-tabs v-model:active-key="tab" :tab-bar-style="{ marginBottom: 0 }"><a-tab-pane key="info" tab="概览" /><a-tab-pane key="ver" tab="版本" /><a-tab-pane key="lin" tab="血缘" /></a-tabs>
+        <a-tabs v-model:active-key="tab" :tab-bar-style="{ marginBottom: 0 }"><a-tab-pane key="info" tab="概览" /><a-tab-pane key="ver" tab="版本" /></a-tabs>
       </div>
     </template>
 
@@ -73,25 +69,12 @@ async function act(a: string) {
         </div>
         <dl class="kv">
           <dt>场景</dt><dd>{{ SCEN[d.scen].name }}</dd><dt>采集方式</dt><dd>{{ SCEN[d.scen].mode }}</dd><dt>轮毂规格</dt><dd>{{ d.spec === 'mix' ? '18 / 19 / 20 寸混合' : d.spec + ' 寸' }}</dd><dt>负责人</dt><dd>{{ d.owner }}</dd>
-          <dt>标签</dt><dd class="row wrap" style="gap:6px"><span v-for="t in d.tags" :key="t" class="tag">{{ t }}</span></dd><dt>多模态通道</dt><dd>3 路视觉 · 六维力 · 关节 · VR 位姿</dd>
+          <dt>标签</dt><dd class="row wrap" style="gap:6px"><span v-for="t in d.tags" :key="t" class="tag">{{ t }}</span></dd><dt>多模态通道</dt><dd>3 路视觉 · 六维力 · 关节 · VR 位姿</dd><dt>数据来源</dt><dd>采集批次 B-1008 ~ B-1012 · 经清洗、标注、审核后入集</dd>
         </dl>
       </template>
       <div v-else-if="tab === 'ver'" class="list-i">
         <div v-for="v in versions" :key="v[0]" class="li"><span class="fmt">{{ v[0] }}</span><span class="grow"><span class="tt" style="display:block;white-space:normal">{{ v[2] }}</span><span class="ss">{{ v[1] }}</span></span></div>
       </div>
-      <template v-else>
-        <div class="callout info"><AppIcon name="info" /><span>每条数据都可以追溯到原始批次、处理参数和校验人，满足方案书对数据溯源的要求。</span></div>
-        <svg class="lin" :viewBox="`0 0 ${nodes.length * (W + GAP) - GAP} ${H}`" style="width:100%;height:auto" role="img" aria-label="数据血缘">
-          <template v-for="(n, i) in nodes" :key="i">
-            <path v-if="i" class="ln" :d="`M${i * (W + GAP) - GAP} ${H / 2}H${i * (W + GAP)}`" />
-            <g :class="{ on: i === nodes.length - 1 }">
-              <rect class="nd" :x="i * (W + GAP)" y="4" :width="W" :height="H - 8" rx="8" />
-              <text :x="i * (W + GAP) + W / 2" y="27" text-anchor="middle" style="font-weight:600">{{ n[0] }}</text>
-              <text :x="i * (W + GAP) + W / 2" y="45" text-anchor="middle" style="fill:var(--muted);font-size:11px">{{ n[1] }}</text>
-            </g>
-          </template>
-        </svg>
-      </template>
     </div>
 
     <template #footer>

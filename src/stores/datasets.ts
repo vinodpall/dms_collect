@@ -80,5 +80,12 @@ export const useDatasets = defineStore('datasets', () => {
     { id: 'DS-009', name: '防护堵安装 · 混合规格', ver: 'v1.0', scen: 'fhd', spec: 'mix', count: 1180, size: 1130, quality: 91, status: 'published', tags: ['防护堵', '混合规格', 'UMI', '训练集'], updated: '09-30 09:45', owner: '陈浩' },
   ])
   const byId = (id: string) => list.value.find((d) => d.id === id)
-  return { list, byId }
+  /** 新建采集任务时快速新建的数据集（草稿），后续在数据集管理中完善 */
+  function create(name: string, scen: ScenKey, owner: string): Dataset {
+    const id = 'DS-' + String(Math.max(...list.value.map((d) => parseInt(d.id.slice(3), 10))) + 1).padStart(3, '0')
+    const d: Dataset = { id, name, ver: 'v0.1', scen, spec: 'mix', count: 0, size: 0, quality: 0, status: 'draft', tags: [SCEN[scen].short], updated: '刚刚', owner }
+    list.value.unshift(d)
+    return d
+  }
+  return { list, byId, create }
 })

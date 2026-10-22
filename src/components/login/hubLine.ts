@@ -20,10 +20,10 @@ export interface HubLineOptions {
   still?: boolean
 }
 
-const BG = 0x081827
+const BG = 0x10233a
 const C = {
-  frame: 0x0f2c44, frameHi: 0x14405f, roller: 0x0f5a5a, hub: 0x6f93a8, table: 0x10324c, arm: 0x1a4766, skin: 0x203a8a,
-  edge: 0x4dd0e1, edgeDim: 0x2b7f99, edgeHub: 0xd8f6ff, roll: 0x3fe0c0, amber: 0xffb74d, ok: 0x4de8b0,
+  frame: 0x1a3a5d, frameHi: 0x21517d, roller: 0x1a6e77, hub: 0x6f93a8, table: 0x1b4066, arm: 0x295985, skin: 0x203a8a,
+  edge: 0x2ed3e6, edgeDim: 0x2b7f99, edgeHub: 0xd8f6ff, roll: 0x3fe0c0, amber: 0xffc15c, ok: 0x45e3a8,
 }
 
 /* ---------------- 路径 ---------------- */
@@ -212,9 +212,9 @@ function flowMat(color: number, speed = 1.1, period = 2.4) {
       void main(){ float k = fract(vUv.x/uP - uTime*uS/uP); float a = .1 + pow(smoothstep(0.,.85,k)*smoothstep(1.,.85,k), 1.4)*.6; gl_FragColor = vec4(uC*a, 1.); }`,
   })
 }
-const FLOW = flowMat(0x4dd0e1)
+const FLOW = flowMat(0x2ed3e6)
 const SKIN = holoMat(0x223a86, 0x7fa8ff)
-const SUIT = holoMat(0x1c2f6e, 0x6d8dff)
+const SUIT = holoMat(0x2c3d8f, 0x6d8dff)
 const GLOW = new THREE.MeshBasicMaterial({ color: 0x9ff7ff })
 const AMBER = new THREE.MeshBasicMaterial({ color: C.amber })
 interface Person { root: THREE.Group; arms: { sh: THREE.Group; el: THREE.Group; hand: THREE.Group }[]; head: THREE.Group }
@@ -253,7 +253,7 @@ function gloveMarkers(hand: THREE.Group) {
 /** UMI 手持采集夹爪 */
 function umiDevice(): { g: THREE.Group; jaws: THREE.Mesh[] } {
   const g = new THREE.Group()
-  const handle = part(new THREE.BoxGeometry(0.05, 0.16, 0.06), 0x1f4f72, C.edge, 0.9); handle.position.set(0, 0.0, 0); g.add(handle)
+  const handle = part(new THREE.BoxGeometry(0.05, 0.16, 0.06), 0x306294, C.edge, 0.9); handle.position.set(0, 0.0, 0); g.add(handle)
   const body = part(new THREE.BoxGeometry(0.14, 0.07, 0.16), 0x245a80, C.edge, 0.95); body.position.set(0, -0.09, 0.06); g.add(body)
   const cam = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.02, 16), GLOW); cam.rotation.x = Math.PI / 2; cam.position.set(0, -0.06, 0.15); g.add(cam)
   const jaws: THREE.Mesh[] = []
@@ -264,7 +264,7 @@ function umiDevice(): { g: THREE.Group; jaws: THREE.Mesh[] } {
 function dotTex() {
   const c = document.createElement('canvas'); c.width = c.height = 32
   const x = c.getContext('2d')!, g = x.createRadialGradient(16, 16, 0, 16, 16, 16)
-  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(160,247,255,.9)'); g.addColorStop(1, 'rgba(77,208,225,0)')
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(160,247,255,.9)'); g.addColorStop(1, 'rgba(46,211,230,0)')
   x.fillStyle = g; x.fillRect(0, 0, 32, 32)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t
 }
@@ -275,9 +275,9 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setClearColor(new THREE.Color(BG).convertSRGBToLinear(), 1) // 经 OutputPass 再做一次 sRGB 编码，这里预先线性化
   const scene = new THREE.Scene()
-  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x06121f, 0.7))
+  scene.add(new THREE.HemisphereLight(0x9fdcff, 0x0d1c30, 0.7))
   const sun = new THREE.DirectionalLight(0xbfeaff, 1.1); sun.position.set(-4, 10, 6); scene.add(sun)
-  const fill = new THREE.DirectionalLight(0x4dd0e1, 0.6); fill.position.set(8, 3, -6); scene.add(fill)
+  const fill = new THREE.DirectionalLight(0x2ed3e6, 0.6); fill.position.set(8, 3, -6); scene.add(fill)
 
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100)
   const target = new THREE.Vector3(1.6, 0.6, 0.6)
@@ -288,7 +288,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   const PAD = 0.7, X0 = -4.8 - PAD, X1 = 8.9 + PAD, Z0 = -R - 2.6 - PAD, Z1 = BEND + 1.2 + PAD
   const PW = X1 - X0, PD = Z1 - Z0, PCX = (X0 + X1) / 2, PCZ = (Z0 + Z1) / 2
   const b = new Batch(), lines = new THREE.Group()
-  b.add(new THREE.BoxGeometry(PW, 0.16, PD), M(PCX, -0.08, PCZ), 0x061524, C.edge, 0.5)
+  b.add(new THREE.BoxGeometry(PW, 0.16, PD), M(PCX, -0.08, PCZ), 0x0d1f36, C.edge, 0.5)
   const grid = new THREE.GridHelper(PW, 30, C.edgeDim, C.edgeDim)
   ;(grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.14
   grid.scale.z = PD / PW; grid.position.set(PCX, 0.002, PCZ); scene.add(grid)
@@ -314,30 +314,30 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
   // 首尾端板（封口）
   conveyor(b, BRANCH, lines)
   // 返修料箱（NG）
-  b.add(new THREE.BoxGeometry(0.7, 0.36, 0.8), M(3.7, 0.18, R), 0x14283a, 0xff8a80, 0.55)
+  b.add(new THREE.BoxGeometry(0.7, 0.36, 0.8), M(3.7, 0.18, R), 0x213551, 0xff8a80, 0.55)
 
   /* 气密检测工位：工作台 + 检测腔 */
   const TX = 4.3, TZ = -R - 1.55
   b.add(new THREE.BoxGeometry(3.0, 0.08, 1.15), M(TX, 0.78, TZ), C.table, C.edge, 0.8)
   for (const [dx, dz] of [[-1.4, -0.5], [1.4, -0.5], [-1.4, 0.5], [1.4, 0.5]]) b.add(new THREE.BoxGeometry(0.07, 0.74, 0.07), M(TX + dx, 0.37, TZ + dz), C.frame, C.edgeDim, 0.7)
   b.add(new THREE.BoxGeometry(2.9, 0.05, 1.05), M(TX, 0.2, TZ), C.frame, C.edgeDim, 0.5)
-  b.add(new THREE.CylinderGeometry(0.46, 0.5, 0.08, 36), M(TX, 0.86, TZ + 0.08), 0x153a57, C.edge, 0.9, 40)
+  b.add(new THREE.CylinderGeometry(0.46, 0.5, 0.08, 36), M(TX, 0.86, TZ + 0.08), 0x224a73, C.edge, 0.9, 40)
   // 控制柜
   b.add(new THREE.BoxGeometry(0.5, 1.3, 0.45), M(TX + 2.0, 0.65, TZ - 0.15), C.table, C.edge, 0.7)
   // 遥操作站：圆形平台
   const OX = 7.4, OZ = -R - 1.45
-  b.add(new THREE.CylinderGeometry(0.62, 0.66, 0.06, 40), M(OX, 0.03, OZ), 0x0f3550, C.edge, 0.9, 40)
+  b.add(new THREE.CylinderGeometry(0.62, 0.66, 0.06, 40), M(OX, 0.03, OZ), 0x1a446b, C.edge, 0.9, 40)
   // UMI 工位小桌
   b.add(new THREE.BoxGeometry(0.9, 0.06, 0.7), M(2.75, 0.72, R + 3.35), C.table, C.edge, 0.8)
   for (const [dx, dz] of [[-0.4, -0.3], [0.4, -0.3], [-0.4, 0.3], [0.4, 0.3]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(2.75 + dx, 0.35, R + 3.35 + dz), C.frame, C.edgeDim, 0.7)
-  b.add(new THREE.BoxGeometry(0.24, 0.16, 0.24), M(2.6, 0.83, R + 3.3, 0.3), 0x184463, C.edge, 0.7) // 防护堵料盒
+  b.add(new THREE.BoxGeometry(0.24, 0.16, 0.24), M(2.6, 0.83, R + 3.3, 0.3), 0x275582, C.edge, 0.7) // 防护堵料盒
   // 左侧目检位小桌
   b.add(new THREE.BoxGeometry(0.8, 0.06, 0.8), M(-3.2, 0.72, R + 1.5), C.table, C.edge, 0.7)
   for (const [dx, dz] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) b.add(new THREE.BoxGeometry(0.05, 0.7, 0.05), M(-3.2 + dx, 0.35, R + 1.5 + dz), C.frame, C.edgeDim, 0.7)
   // 上料托盘 / 成品托盘
   const LX = 6.3, LZ = -R, FX = BX, FZ = BEND + 0.72
   for (const [x, z] of [[LX, LZ], [FX, FZ]]) {
-    b.add(new THREE.BoxGeometry(0.95, 0.04, 0.95), M(x, 0.11, z), 0x13344d, C.edgeDim, 0.8)
+    b.add(new THREE.BoxGeometry(0.95, 0.04, 0.95), M(x, 0.11, z), 0x204367, C.edgeDim, 0.8)
     for (const dz of [-0.4, 0, 0.4]) b.add(new THREE.BoxGeometry(0.95, 0.08, 0.12), M(x, 0.045, z + dz), C.frame, C.edgeDim, 0.6)
   }
   scene.add(b.build(), lines)
@@ -349,7 +349,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
     const r = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.43, 48), new THREE.MeshBasicMaterial({ color: C.ok, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }))
     r.rotation.x = -Math.PI / 2; r.position.set(TX, 0.93, TZ + 0.08); scene.add(r); rings.push(r)
   }
-  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.5, 48, 1, true), holoMat(0x0a2a3a, 0x7ff3ff, 0.28)); glass.position.set(TX, 1.15, TZ + 0.08); scene.add(glass)
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.5, 48, 1, true), holoMat(0x133751, 0x7ff3ff, 0.28)); glass.position.set(TX, 1.15, TZ + 0.08); scene.add(glass)
   const ring = (r0: number, r1: number, c: number, op: number) => { const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 72), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; return m }
   const padRing = ring(0.5, 0.52, C.edge, 0.55); padRing.position.set(OX, 0.065, OZ); scene.add(padRing)
   // 两台灵巧手机械臂
@@ -360,7 +360,7 @@ export function createHubLine(canvas: HTMLCanvasElement, opt: HubLineOptions) {
 
   /* 遥操作员：VR + 动捕手套 */
   const op = person(); op.root.position.set(OX, 0.06, OZ); op.root.rotation.y = -Math.PI / 2 - 0.15; scene.add(op.root)
-  const vr = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.1), holoMat(0x0e1a3a, 0x9ff7ff, 1)); vr.position.set(0, 0.0, 0.11); op.head.add(vr)
+  const vr = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.1), holoMat(0x192551, 0x9ff7ff, 1)); vr.position.set(0, 0.0, 0.11); op.head.add(vr)
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.02, 0.005), GLOW); visor.position.set(0, 0.0, 0.163); op.head.add(visor)
   for (const a of op.arms) gloveMarkers(a.hand)
 

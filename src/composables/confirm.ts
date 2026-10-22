@@ -11,6 +11,7 @@ export function confirmDlg(o: { title: string; msg: string; ok?: string; danger?
       cancelText: '取消',
       okButtonProps: o.danger ? { danger: true } : undefined,
       centered: true,
+      zIndex: 2000,
       icon: null,
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
