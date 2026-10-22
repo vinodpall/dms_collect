@@ -16,7 +16,7 @@
     linear-gradient(90deg, rgba(46,211,230,.045) 1px, transparent 1px) 0 0 / 48px 48px; }
 
 .lg-brand { position: absolute; z-index: 3; left: 48px; top: 36px; display: flex; align-items: center; gap: 14px; animation: lg-down .8s .2s both; }
-.lg-brand svg { width: 44px; height: 44px; filter: drop-shadow(0 0 12px rgba(46,211,230,.45)); }
+.lg-brand svg { width: 44px; height: 44px; }
 .lg-brand h1 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 600; letter-spacing: 4px; color: #fff; }
 .lg-brand p { margin: 5px 0 0; font: 10.5px var(--mono); letter-spacing: 3.2px; color: var(--cyan); opacity: .8; }
 
@@ -94,11 +94,9 @@
 .lg-card .cn { animation: lg-corner 2.6s ease-in-out infinite; }
 @keyframes lg-corner { 50% { opacity: .45; filter: drop-shadow(0 0 1px rgba(46,211,230,.3)); } }
 
-.lg-brand svg { animation: lg-logo 4s ease-in-out infinite; }
-@keyframes lg-logo { 50% { filter: drop-shadow(0 0 20px rgba(46,211,230,.75)); } }
 .lg-caption h2::before { animation: lg-blink 2s ease-in-out infinite; }
 @keyframes lg-blink { 50% { opacity: .3; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .lg-card::after, .lg-card::before, .lg-card .cn, .lg-brand svg, .lg-caption h2::before { animation: none; }
+  .lg-card::after, .lg-card::before, .lg-card .cn, .lg-caption h2::before { animation: none; }
 }
