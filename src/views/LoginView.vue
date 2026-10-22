@@ -77,13 +77,14 @@ onBeforeUnmount(() => { api?.dispose() })
         </div>
         <div v-if="err" class="lg-err" :class="{ shake }" role="alert"><AppIcon name="alert" size="sm" />{{ err }}</div>
         <label class="lg-field">
-          <span class="lg-box" :class="{ bad: uErr }"><AppIcon name="user" size="sm" /><input v-model="f.u" placeholder="账号" aria-label="账号" autocomplete="username" :aria-invalid="!!uErr" @blur="touched.u = true" /></span>
+          <span class="lg-lb">账号</span>
+          <span class="lg-box" :class="{ bad: uErr }"><input v-model="f.u" placeholder="请输入账号" aria-label="账号" autocomplete="username" :aria-invalid="!!uErr" @blur="touched.u = true" /></span>
           <small v-if="uErr" class="lg-help">{{ uErr }}</small>
         </label>
         <label class="lg-field">
+          <span class="lg-lb">密码</span>
           <span class="lg-box" :class="{ bad: pErr }">
-            <AppIcon name="lock" size="sm" />
-            <input v-model="f.p" :type="showPwd ? 'text' : 'password'" placeholder="密码" aria-label="密码" autocomplete="current-password" :aria-invalid="!!pErr" @blur="touched.p = true" />
+            <input v-model="f.p" :type="showPwd ? 'text' : 'password'" placeholder="请输入密码" aria-label="密码" autocomplete="current-password" :aria-invalid="!!pErr" @blur="touched.p = true" />
             <button type="button" class="lg-eye" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @click="showPwd = !showPwd"><AppIcon :name="showPwd ? 'eyeoff' : 'eye'" size="sm" /></button>
           </span>
           <small v-if="pErr" class="lg-help">{{ pErr }}</small>

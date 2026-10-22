@@ -5,7 +5,6 @@ import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHead from '@/components/PageHead.vue'
 import Sparkline from '@/components/Sparkline.vue'
-import CountUp from '@/components/CountUp.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TrendChart, { type TrendSeries } from '@/components/dashboard/TrendChart.vue'
 import { trendData, type Range } from '@/components/dashboard/trend'
@@ -66,7 +65,6 @@ const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防
 </script>
 
 <template>
-  <div class="dash">
   <PageHead title="数据看板" desc="2026 年 10 月 13 日 周二 · 示例数据">
     <div class="seg" role="group" aria-label="时间范围">
       <button v-for="[k, l] in RANGES" :key="k" type="button" :aria-pressed="range === k" @click="setRange(k)">{{ l }}</button>
@@ -76,25 +74,25 @@ const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防
   <div class="grid g4">
     <button type="button" class="card kpi" @click="go('tasks')">
       <span class="k">今日采集 <AppIcon name="right" size="sm" /></span>
-      <span class="v"><CountUp :value="tot" :delay="250" /><small>条</small></span>
+      <span class="v">{{ tot }}<small>条</small></span>
       <span class="d"><span class="delta" :class="delta >= 0 ? 'up' : 'down'">{{ delta >= 0 ? '▲ ' : '▼ ' }}{{ Math.abs(delta) }}%</span>较昨日 {{ prev }} 条</span>
       <Sparkline :values="total14" />
     </button>
     <button type="button" class="card kpi" @click="go('datasets')">
       <span class="k">总数据量 <AppIcon name="right" size="sm" /></span>
-      <span class="v"><CountUp :value="8.6" :decimals="1" :delay="330" /><small>TB</small></span>
+      <span class="v">8.6<small>TB</small></span>
       <span class="d"><span class="delta up">▲ 0.13 TB</span>今日新增，不含备份</span>
       <Sparkline :values="[7.9, 8.0, 8.05, 8.15, 8.2, 8.3, 8.37, 8.47, 8.6]" />
     </button>
     <button type="button" class="card kpi" @click="go('monitor')">
       <span class="k">多模态通道 <AppIcon name="right" size="sm" /></span>
-      <span class="v"><CountUp :value="5" :delay="410" /><small>/ 6 正常</small></span>
+      <span class="v">5<small>/ 6 正常</small></span>
       <span class="d"><span class="dot-s warn" />1 个通道掉帧告警</span>
       <Sparkline :values="[6, 6, 6, 6, 6, 6, 5, 6, 5]" color="var(--warn-solid)" />
     </button>
     <button type="button" class="card kpi" @click="go('storage')">
       <span class="k">存储使用率 <AppIcon name="right" size="sm" /></span>
-      <span class="v"><CountUp :value="53" :delay="490" /><small>%</small></span>
+      <span class="v">53<small>%</small></span>
       <span class="d">已用 11.6 TB / 已分配 22 TB</span>
       <Sparkline :values="[44, 45, 46, 47, 48, 49, 50, 51, 53]" />
     </button>
@@ -163,69 +161,10 @@ const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防
     </div>
     <div class="card-body">
       <div class="pipe">
-        <button v-for="(s, i) in STAGES" :key="s" type="button" class="pipe-stage" :class="{ fail: stageFail(i) }" :style="{ '--i': i }" @click="go('pipeline')">
-          <div class="n"><CountUp :value="pipeline.countAtStage(i)" :delay="500 + i * 80" /></div><div class="l">{{ s }}</div>
+        <button v-for="(s, i) in STAGES" :key="s" type="button" class="pipe-stage" :class="{ fail: stageFail(i) }" @click="go('pipeline')">
+          <div class="n">{{ fmt(pipeline.countAtStage(i)) }}</div><div class="l">{{ s }}</div>
         </button>
       </div>
     </div>
   </div>
-  </div>
 </template>
-
-<style>
-/* ---------- 首页动效：与训练场首页一致的入场 + 扫描光 + 数据流动，与训练场一致，动效始终播放 ---------- */
-.dash { position: relative; }
-.dash::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
-  background: linear-gradient(180deg, transparent, rgba(46,211,230,.05) 40%, rgba(46,211,230,.12) 50%, rgba(46,211,230,.05) 60%, transparent) no-repeat;
-  background-size: 100% 180px; background-position: 0 -180px; animation: dash-scan 10s cubic-bezier(.5,0,.5,1) 1.2s infinite; }
-@keyframes dash-scan { from { background-position: 0 -180px; } to { background-position: 0 calc(100% + 180px); } }
-
-/* 入场：标题下落，卡片依次上浮 */
-.dash > .page-head { animation: dash-down .7s cubic-bezier(.2,.7,.2,1) both; }
-.dash > .grid > *, .dash > .card { animation: dash-up .8s cubic-bezier(.2,.7,.2,1) both; }
-.dash > .grid:nth-of-type(1) > :nth-child(1) { animation-delay: .08s; }
-.dash > .grid:nth-of-type(1) > :nth-child(2) { animation-delay: .16s; }
-.dash > .grid:nth-of-type(1) > :nth-child(3) { animation-delay: .24s; }
-.dash > .grid:nth-of-type(1) > :nth-child(4) { animation-delay: .32s; }
-.dash > .grid:nth-of-type(2) > :nth-child(1) { animation-delay: .4s; }
-.dash > .grid:nth-of-type(2) > :nth-child(2) { animation-delay: .48s; }
-.dash > .grid:nth-of-type(3) > :nth-child(1) { animation-delay: .56s; }
-.dash > .grid:nth-of-type(3) > :nth-child(2) { animation-delay: .64s; }
-.dash > .card { animation-delay: .72s; }
-@keyframes dash-down { from { opacity: 0; transform: translateY(-10px); } }
-@keyframes dash-up { from { opacity: 0; transform: translateY(18px); } }
-
-/* KPI：顶部扫光 + 迷你曲线描线 + 末端呼吸光点 */
-.dash .kpi { position: relative; overflow: hidden; }
-.dash .kpi::after { content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 100%; pointer-events: none;
-  background: linear-gradient(100deg, transparent, rgba(127,243,255,.07) 45%, rgba(127,243,255,.13) 50%, transparent 60%);
-  transform: translateX(-120%); animation: dash-sweep 7s ease-in-out infinite; }
-.dash .grid:nth-of-type(1) > :nth-child(2)::after { animation-delay: 1.2s; }
-.dash .grid:nth-of-type(1) > :nth-child(3)::after { animation-delay: 2.4s; }
-.dash .grid:nth-of-type(1) > :nth-child(4)::after { animation-delay: 3.6s; }
-@keyframes dash-sweep { 0%, 55% { transform: translateX(-120%); } 85%, 100% { transform: translateX(320%); } }
-.dash .kpi .spark { animation: dash-draw 1.4s cubic-bezier(.4,0,.2,1) .5s both; }
-.dash .spark-dot { animation: dash-fade .4s 1.8s both; }
-.dash .spark-ring { transform-box: fill-box; transform-origin: center; animation: dash-ping 2.4s ease-out 2s infinite; opacity: 0; }
-@keyframes dash-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-@keyframes dash-fade { from { opacity: 0; } }
-@keyframes dash-ping { 0% { opacity: .9; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(3.4); } }
-
-/* 采集目标进度条：生长 + 流光 */
-.dash .progress > i { position: relative; overflow: hidden; transform-origin: left; animation: dash-grow 1.3s cubic-bezier(.2,.7,.2,1) .6s both; background: linear-gradient(90deg, #12B5CB, #2ED3E6); box-shadow: 0 0 10px rgba(46,211,230,.45); }
-.dash .progress > i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); width: 40%; animation: dash-shine 2.8s ease-in-out 2s infinite; transform: translateX(-100%); }
-@keyframes dash-grow { from { transform: scaleX(0); } }
-@keyframes dash-shine { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(260%); } }
-
-/* 进行中任务：采集中状态点闪烁 */
-.dash .li .badge.info::before { box-shadow: 0 0 6px currentColor; animation: dash-blink 1.6s ease-in-out infinite; }
-@keyframes dash-blink { 50% { opacity: .25; } }
-
-/* 处理管线：数据沿阶段依次流过 */
-.dash .pipe-stage { overflow: hidden; }
-.dash .pipe-stage::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, #2ED3E6, transparent); box-shadow: 0 0 8px #2ED3E6;
-  transform: translateX(-100%); opacity: 0; animation: dash-flow 5.6s linear infinite; animation-delay: calc(var(--i, 0) * .7s + 1.4s); }
-@keyframes dash-flow { 0% { transform: translateX(-100%); opacity: 0; } 2% { opacity: 1; } 12% { transform: translateX(100%); opacity: 1; } 13%, 100% { transform: translateX(100%); opacity: 0; } }
-
-</style>
