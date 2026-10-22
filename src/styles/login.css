@@ -96,3 +96,30 @@
 .lg-caption h2::before { animation: lg-blink 2s ease-in-out infinite; }
 @keyframes lg-blink { 50% { opacity: .3; } }
 
+/* ---------- 登录卡片：iOS 风格透明磨砂玻璃 ---------- */
+.lg-card { padding: 44px 40px 34px; border-radius: 28px; border: 1px solid rgba(255,255,255,.18);
+  background: linear-gradient(150deg, rgba(255,255,255,.16), rgba(255,255,255,.05) 55%, rgba(255,255,255,.08));
+  -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 30px 80px rgba(2,10,22,.42), inset 0 1px 0 rgba(255,255,255,.32), inset 0 -1px 0 rgba(255,255,255,.06); }
+/* 顶部高光：模拟玻璃反光，替代原来的青色光条 */
+.lg-card::before { left: 0; right: 0; top: 0; height: 55%; border-radius: 28px 28px 0 0; pointer-events: none; box-shadow: none; animation: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0)); }
+.lg-card .cn { display: none; }
+.lg-card::after { background: conic-gradient(from var(--lg-ang, 0deg), transparent 0 72%, rgba(190,248,255,.75) 86%, transparent 100%); }
+.lg-card h2 { letter-spacing: 1px; }
+.lg-card .sub { color: rgba(235,245,255,.72); }
+
+.lg-box { height: 50px; padding: 0 16px; border-radius: 14px; color: rgba(235,245,255,.65);
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.lg-box:hover { border-color: rgba(255,255,255,.26); background: rgba(255,255,255,.1); }
+.lg-box:focus-within { background: rgba(255,255,255,.12); border-color: rgba(46,211,230,.7); box-shadow: 0 0 0 4px rgba(46,211,230,.16); color: var(--cyan); }
+.lg-box.bad { border-color: var(--bad); }
+.lg-box input::placeholder { color: rgba(220,235,248,.45); }
+.lg-box input:-webkit-autofill { -webkit-box-shadow: none; box-shadow: none; }
+.lg-eye { border-radius: 8px; color: rgba(235,245,255,.6); }
+.lg-check { color: rgba(235,245,255,.78); }
+.lg-row { color: rgba(220,235,248,.6); }
+.lg-go { height: 50px; border-radius: 14px; letter-spacing: 4px; background: linear-gradient(90deg, rgba(0,172,193,.95), rgba(47,128,237,.95));
+  box-shadow: 0 10px 26px rgba(0,140,200,.32), inset 0 1px 0 rgba(255,255,255,.28); }
+.lg-err { border-radius: 12px; border-left: 0; border: 1px solid rgba(255,122,122,.35); background: rgba(255,107,107,.14); }
+@media (max-width: 960px) { .lg-card { padding: 32px 22px 24px; border-radius: 22px; } .lg-card::before { border-radius: 22px 22px 0 0; } }
