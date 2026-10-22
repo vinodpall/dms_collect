@@ -71,7 +71,6 @@
 @keyframes lg-ping { from { transform: scale(1); opacity: .9; } to { transform: scale(3.2); opacity: 0; } }
 @keyframes lg-blink { 50% { opacity: .35; } }
 @keyframes lg-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-@media (prefers-reduced-motion: reduce) { .lg *, .lg *::before { animation: none !important; } }
 
 @media (max-width: 960px) {
   .lg { grid-template-columns: 1fr; height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
@@ -97,6 +96,3 @@
 .lg-caption h2::before { animation: lg-blink 2s ease-in-out infinite; }
 @keyframes lg-blink { 50% { opacity: .3; } }
 
-@media (prefers-reduced-motion: reduce) {
-  .lg-card::after, .lg-card::before, .lg-card .cn, .lg-caption h2::before { animation: none; }
-}

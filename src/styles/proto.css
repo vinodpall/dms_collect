@@ -482,7 +482,7 @@
   /* 赛博皮肤（.cy）与各模块原型页（.pp / .ss-wrap）的动效自行控制，不受此全局规则影响；
      否则无限循环动画被压缩到 0.01ms 一轮，会表现为高频抖动/闪烁 */
   @media (prefers-reduced-motion: reduce) {
-    :where(*:not(.cy, .cy *, .pp, .pp *, .ss-wrap, .ss-wrap *)), :where(*:not(.cy *, .pp *, .ss-wrap *))::before, :where(*:not(.cy *, .pp *, .ss-wrap *))::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    :where(*:not(.cy, .cy *, .pp, .pp *, .ss-wrap, .ss-wrap *, .lg, .lg *)), :where(*:not(.cy *, .pp *, .ss-wrap *, .lg *))::before, :where(*:not(.cy *, .pp *, .ss-wrap *, .lg *))::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   }
   [hidden] { display: none !important; }
 

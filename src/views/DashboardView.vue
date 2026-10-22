@@ -173,7 +173,7 @@ const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防
 </template>
 
 <style>
-/* ---------- 首页动效：与训练场首页一致的入场 + 扫描光 + 数据流动，尊重“减少动态效果”设置 ---------- */
+/* ---------- 首页动效：与训练场首页一致的入场 + 扫描光 + 数据流动，与训练场一致，动效始终播放 ---------- */
 .dash { position: relative; }
 .dash::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
   background: linear-gradient(180deg, transparent, rgba(46,211,230,.05) 40%, rgba(46,211,230,.12) 50%, rgba(46,211,230,.05) 60%, transparent) no-repeat;
@@ -228,7 +228,4 @@ const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防
   transform: translateX(-100%); opacity: 0; animation: dash-flow 5.6s linear infinite; animation-delay: calc(var(--i, 0) * .7s + 1.4s); }
 @keyframes dash-flow { 0% { transform: translateX(-100%); opacity: 0; } 2% { opacity: 1; } 12% { transform: translateX(100%); opacity: 1; } 13%, 100% { transform: translateX(100%); opacity: 0; } }
 
-@media (prefers-reduced-motion: reduce) {
-  .dash *, .dash *::before, .dash *::after, .dash::after { animation: none !important; }
-}
 </style>

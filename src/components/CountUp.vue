@@ -6,7 +6,7 @@ import { fmt } from '@/utils'
 const props = withDefaults(defineProps<{ value: number; decimals?: number; duration?: number; delay?: number }>(), { decimals: 0, duration: 1100, delay: 0 })
 const shown = ref(0)
 let raf = 0, t0 = 0, from = 0, timer = 0
-const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const reduce = false // 与训练场一致：动效始终播放
 function run(to: number) {
   cancelAnimationFrame(raf)
   if (reduce) { shown.value = to; return }

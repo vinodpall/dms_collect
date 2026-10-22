@@ -42,7 +42,7 @@ onMounted(async () => {
   if (!canvas.value) return
   try {
     const { createHubLine } = await import('@/components/login/hubLine')
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const still = false // 与训练场一致：动效始终播放
     api = createHubLine(canvas.value, {
       reserve: () => (root.value && root.value.clientWidth > 960 ? Math.min(560, root.value.clientWidth * 0.36) : 0),
       onLayout: () => {},
