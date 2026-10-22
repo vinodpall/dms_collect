@@ -81,13 +81,7 @@
   .lg-card { width: 100%; max-width: 440px; padding: 32px 22px 24px; }
 }
 
-/* ---------- 动效：与「具身智能训练场」首页一致（卡片流光边框 / 呼吸光） ---------- */
-.lg-card::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
-  background: conic-gradient(from var(--lg-ang, 0deg), transparent 0 72%, rgba(127,243,255,.95) 86%, transparent 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: lg-border 8s linear 1.2s infinite; }
-@property --lg-ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-@keyframes lg-border { to { --lg-ang: 360deg; } }
+/* ---------- 动效：与「具身智能训练场」首页一致（呼吸光） ---------- */
 .lg-card::before { animation: lg-glow 3.2s ease-in-out infinite; }
 @keyframes lg-glow { 50% { opacity: .45; box-shadow: 0 0 6px rgba(46,211,230,.4); } }
 .lg-card .cn { animation: lg-corner 2.6s ease-in-out infinite; }
@@ -97,15 +91,7 @@
 @keyframes lg-blink { 50% { opacity: .3; } }
 
 /* ---------- 登录卡片：透明磨砂玻璃（iOS 风格） ---------- */
-/* 卡片背后的柔和色块与网格，让磨砂玻璃有内容可虚化 */
-.lg-fx { background:
-    radial-gradient(ellipse 60% 70% at 32% 52%, transparent 55%, rgba(16,35,58,.6) 100%),
-    linear-gradient(90deg, transparent 60%, rgba(16,35,58,.25) 80%, rgba(16,35,58,.4)),
-    linear-gradient(rgba(46,211,230,.05) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, rgba(46,211,230,.05) 1px, transparent 1px) 0 0 / 48px 48px; }
-.lg-side::before { content: ''; position: absolute; inset: 22% 10% 24% 4%; z-index: -1; pointer-events: none; filter: blur(10px);
-  background: radial-gradient(closest-side at 28% 30%, rgba(46,211,230,.45), transparent), radial-gradient(closest-side at 78% 72%, rgba(80,110,255,.42), transparent),
-    radial-gradient(closest-side at 70% 18%, rgba(160,120,255,.28), transparent), radial-gradient(closest-side at 20% 85%, rgba(69,227,168,.22), transparent); }
+/* 右侧遮罩调浅，让网格透过磨砂玻璃 */
 
 .lg-card { padding: 46px 44px 36px; border-radius: 30px; border: 1px solid rgba(255,255,255,.22);
   background: rgba(14,24,42,.28);
@@ -114,7 +100,6 @@
 .lg-card::before { left: 0; right: 0; top: 0; height: 40%; border-radius: 30px 30px 0 0; pointer-events: none; box-shadow: none; animation: none;
   background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0)); }
 .lg-card .cn { display: none; }
-.lg-card::after { background: conic-gradient(from var(--lg-ang, 0deg), transparent 0 74%, rgba(210,250,255,.7) 87%, transparent 100%); }
 .lg-card-head { text-align: center; margin-bottom: 30px; }
 .lg-card h2 { font-size: 34px; font-weight: 500; letter-spacing: 6px; text-shadow: 0 2px 18px rgba(0,0,0,.3); }
 .lg-card .sub { margin-top: 10px; font-size: 13.5px; color: rgba(235,245,255,.72); }
