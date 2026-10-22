@@ -57,7 +57,6 @@ onBeforeUnmount(() => { api?.dispose() })
   <div ref="root" class="lg">
     <canvas ref="canvas" class="lg-canvas" aria-hidden="true" />
     <div class="lg-fx" aria-hidden="true" />
-    <div class="lg-scan" aria-hidden="true" />
 
     <header class="lg-brand">
       <BrandMark />
