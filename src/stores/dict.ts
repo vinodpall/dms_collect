@@ -81,10 +81,45 @@ const DEFAULTS: DictItem[] = [
   A('D-E03', 'MISALIGN', '对位偏差', 'abnormal', 'fhd', ['偏位', '没对准'], '对准后仍明显偏离孔位，需要回退调整'),
 ]
 
+const DEFAULT_SCENES: SceneItem[] = [
+  {
+    id: 1,
+    scene_key: 'qmd',
+    code: 'VR_QMD',
+    name: '轮毂气密性检测',
+    short_name: '气密性检测',
+    default_mode: 'vr',
+    dur_min_s: 10,
+    dur_max_s: 40,
+    reset_desc: '轮毂工件摆放到位、气密工装复位、压力表归零',
+    lang_template: '对轮毂进行气密性检测',
+    specs: ['18', '19', '20'],
+    is_active: true,
+    sort_order: 1,
+    created_at: '2026-11-09T11:27:57+08:00',
+  },
+  {
+    id: 2,
+    scene_key: 'fhd',
+    code: 'UMI_FHD',
+    name: '防护堵安装',
+    short_name: '防护堵安装',
+    default_mode: 'umi',
+    dur_min_s: 6,
+    dur_max_s: 30,
+    reset_desc: '防护堵料盒补满、轮毂回到安装工位',
+    lang_template: '将防护堵安装到轮毂气阀孔',
+    specs: ['18', '19', '20'],
+    is_active: true,
+    sort_order: 2,
+    created_at: '2026-11-09T11:27:57+08:00',
+  },
+]
+
 export const useDict = defineStore('dict', () => {
   const items = ref<DictItem[]>(DEFAULTS.map((x) => ({ ...x, aliases: [...x.aliases] })))
   const version = ref('v1.3')
-  const scenes = ref<SceneItem[]>([])
+  const scenes = ref<SceneItem[]>(DEFAULT_SCENES)
   const changes = ref<DictChange[]>([
     { ver: 'v1.3', t: '2026-10-13 14:10', by: '陈静', op: '新增', target: '对位偏差', summary: '新增异常子任务「对位偏差」（防护堵安装）' },
     { ver: 'v1.2', t: '2026-10-12 16:00', by: '周工', op: '修改', target: '夹紧密封', summary: '调整定义：以密封胶垫完全压实为结束边界' },
@@ -309,6 +344,33 @@ export const useDict = defineStore('dict', () => {
     fetchAll()
   }
 
+  async function addScene(data: any) {
+    try {
+      const res = await dictApi.createScene(data)
+      if (res) {
+        scenes.value.push(res)
+        return res
+      }
+    } catch (e: any) {
+      console.warn('[dict] 新增场景失败', e)
+      throw e
+    }
+  }
+
+  async function updateScene(id: number, data: any) {
+    try {
+      const res = await dictApi.updateScene(id, data)
+      const idx = scenes.value.findIndex((s) => s.id === id)
+      if (idx >= 0 && res) {
+        scenes.value[idx] = res
+      }
+      return res
+    } catch (e: any) {
+      console.warn('[dict] 更新场景失败', e)
+      throw e
+    }
+  }
+
   return {
     items,
     version,
@@ -325,6 +387,8 @@ export const useDict = defineStore('dict', () => {
     update,
     remove,
     toggle,
+    addScene,
+    updateScene,
     byCode,
     byName,
     fetchAll,
