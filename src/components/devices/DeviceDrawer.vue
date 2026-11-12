@@ -38,6 +38,7 @@ function setCfg(k: keyof DevCfg, v: unknown) {
   if (!x || x.cfg[k] === v) return
   const before = cfgText(x.type, x.cfg)
   x.cfg = { ...x.cfg, [k]: v }
+  store.updateConfig(x, x.cfg)
   logs.addLog({ user: session.info.user, role: session.info.name, module: 'system', moduleName: '设备管理', action: '修改采集参数', target: x.id + ' ' + x.name, summary: before + ' → ' + cfgText(x.type, x.cfg) })
   toast(x.name + ' 采集参数已更新为 ' + cfgText(x.type, x.cfg) + '，之后的采集生效')
 }
@@ -53,9 +54,12 @@ async function calibrate() {
 function act(a: string) {
   const x = d.value
   if (!x) return
-  if (a === 'maint') { x.st = 'maint'; toast(x.name + ' 已转入维护，维修完成后建议重新标定') }
-  else if (a === 'up') {
-    x.st = 'online'; toast(x.name + ' 已恢复上线')
+  if (a === 'maint') {
+    store.setStatus(x, 'maint')
+    toast(x.name + ' 已转入维护，维修完成后建议重新标定')
+  } else if (a === 'up') {
+    store.setStatus(x, 'online')
+    toast(x.name + ' 已恢复上线')
     const al = alerts.list.find((y) => y.route === 'devices' && !y.ack)
     if (al && x.id === 'DV-003') alerts.ack(al.id)
   }

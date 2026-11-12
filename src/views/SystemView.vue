@@ -27,13 +27,17 @@ function addIp() {
   wl.err = ''
   if (!IP_RE.test(v)) { wl.err = '格式不正确，请输入 IPv4 或 CIDR'; return }
   if (sys.whitelist.includes(v)) { wl.err = '该地址已在白名单中'; return }
-  sys.whitelist.push(v); wl.v = ''; toast('已添加 ' + v)
+  sys.addWhitelist(v); wl.v = ''; toast('已添加 ' + v)
 }
 async function delIp(i: number) {
   const ok = await confirmDlg({ title: '移除 ' + sys.whitelist[i] + '？', msg: '该网段内的设备将无法再访问平台。', ok: '移除', danger: true })
-  if (ok) { sys.whitelist.splice(i, 1); toast('已移除') }
+  if (ok) { sys.removeWhitelist(i); toast('已移除') }
 }
-function toggleWl(v: boolean) { settings.cfg.whitelistOn = v; toast(v ? '已启用 IP 白名单' : '已关闭 IP 白名单', v ? {} : { type: 'warn' }) }
+function toggleWl(v: boolean) {
+  settings.cfg.whitelistOn = v
+  settings.saveSettings({ whitelistOn: v })
+  toast(v ? '已启用 IP 白名单' : '已关闭 IP 白名单', v ? {} : { type: 'warn' })
+}
 
 /* 审计日志 */
 const au = reactive({ k: 'all', page: 1 })
@@ -52,7 +56,12 @@ const bad = computed(() => ({
 }))
 const anyBad = computed(() => Object.values(bad.value).some(Boolean))
 const preview = computed(() => draft.naming.replace('{任务}', 'VR_QMD').replace('{日期}', TODAY).replace('{序号}', '001').replace('{操作员}', 'ZJ') + '.bag')
-function saveCfg() { if (anyBad.value) { toast('请先修正标红的字段', { type: 'warn' }); return } Object.assign(settings.cfg, draft); toast('系统设置已保存') }
+function saveCfg() {
+  if (anyBad.value) { toast('请先修正标红的字段', { type: 'warn' }); return }
+  Object.assign(settings.cfg, draft)
+  settings.saveSettings(draft)
+  toast('系统设置已保存')
+}
 function resetCfg() { Object.assign(draft, settings.cfg) }
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
 const auditCols = [{ title: '时间', key: 't', width: 130 }, { title: '用户', key: 'u', width: 90 }, { title: '类型', key: 'k', width: 90 }, { title: '操作', key: 'd' }, { title: '来源 IP', key: 'ip', width: 150 }]

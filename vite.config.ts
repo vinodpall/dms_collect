@@ -8,8 +8,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/ws': { target: 'ws://127.0.0.1:8000', ws: true },
+      '/api': { target: 'http://39.185.83.71:8001', changeOrigin: true },
+      '/ws': { target: 'ws://39.185.83.71:8001', ws: true },
     },
   },
   build: { chunkSizeWarningLimit: 1500 },

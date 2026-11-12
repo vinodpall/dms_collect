@@ -91,5 +91,4 @@ export const ACTIONS: { key: string; label: string; page: PageKey }[] = [
   { key: 'roles', label: '管理角色与权限', page: 'roles' },
 ]
 
-/** 演示账号：初始密码统一为 DEMO_PASSWORD，可在「用户管理」中新增账号或重置密码 */
-export const DEMO_PASSWORD = '123456'
+export const DEMO_PASSWORD = 'admin123'

@@ -14,8 +14,7 @@ function submit() {
   f.errDev = !f.dev
   f.errDesc = f.desc.trim().length < 5
   if (f.errDev || f.errDesc) return
-  store.faults.unshift({ dev: f.dev, t: '刚刚', lv: f.lv, d: f.desc.trim(), by: session.info.user })
-  if (f.lv === '严重') store.byId(f.dev)!.st = 'fault'
+  store.reportFault(f.dev, f.lv, f.desc.trim(), session.info.user)
   emit('close'); toast('故障已登记'); emit('done')
 }
 </script>
