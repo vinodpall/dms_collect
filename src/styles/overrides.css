@@ -37,3 +37,221 @@ body { font-family: var(--font-sans); }
 .tag.warn { background: var(--warn-soft); color: var(--warn); }
 .tag.crit { background: var(--crit-soft); color: var(--crit); }
 .tag.info { background: var(--accent-soft); color: var(--accent); }
+
+/* ================= 全局弹窗 (Modal) 与表单整体对齐与赛博风格美化 ================= */
+.ant-modal .ant-modal-content {
+  background: var(--surface, #162A45) !important;
+  border: 1px solid var(--line, #2B4A6D) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(38, 198, 218, 0.15) !important;
+  padding: 20px 24px !important;
+}
+.ant-modal .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--line, #2B4A6D) !important;
+  padding-bottom: 14px !important;
+  margin-bottom: 20px !important;
+}
+.ant-modal .ant-modal-title {
+  color: #fff !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.ant-modal .ant-modal-title::before {
+  content: '';
+  display: inline-block;
+  width: 3.5px;
+  height: 15px;
+  background: linear-gradient(180deg, #26C6DA, #1E88E5);
+  border-radius: 2px;
+}
+.ant-modal .ant-modal-close {
+  color: var(--muted, #B6CADC) !important;
+  top: 18px !important;
+  right: 20px !important;
+}
+.ant-modal .ant-modal-close:hover {
+  color: var(--accent, #26C6DA) !important;
+}
+.ant-modal .ant-modal-footer {
+  border-top: 1px solid var(--line, #2B4A6D) !important;
+  padding-top: 14px !important;
+  margin-top: 20px !important;
+  display: flex !important;
+  gap: 10px !important;
+  justify-content: flex-end !important;
+}
+
+/* 表单 Label 与 Item */
+.ant-form-item {
+  margin-bottom: 18px !important;
+}
+.ant-form-item-label {
+  padding-bottom: 6px !important;
+}
+.ant-form-item-label > label {
+  color: var(--text, #F3F8FC) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
+}
+.ant-form-item-extra {
+  font-size: 11.5px !important;
+  color: var(--muted, #B6CADC) !important;
+  margin-top: 4px !important;
+  line-height: 1.4 !important;
+}
+
+/* 输入控件全局尺寸与高质感边框背景 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select-selector {
+  background: var(--surface-2, #1B3352) !important;
+  border: 1px solid var(--line, #2B4A6D) !important;
+  border-radius: 6px !important;
+  color: var(--text, #F3F8FC) !important;
+  font-size: 13px !important;
+  transition: all 0.2s ease !important;
+}
+.ant-input {
+  height: 36px;
+  line-height: 36px;
+  padding: 0 11px;
+}
+.ant-input-affix-wrapper {
+  height: 36px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+}
+.ant-input-affix-wrapper .ant-input {
+  height: 32px;
+  line-height: 32px;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.ant-input-number {
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.ant-input-number-input {
+  height: 34px !important;
+  line-height: 34px !important;
+  color: var(--text, #F3F8FC) !important;
+}
+.ant-select-single .ant-select-selector {
+  height: 36px !important;
+  padding: 0 11px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.ant-select-selection-item {
+  line-height: 34px !important;
+  color: var(--text, #F3F8FC) !important;
+}
+.ant-input::placeholder,
+.ant-input-number-input::placeholder,
+.ant-select-selection-placeholder {
+  color: rgba(182, 202, 220, 0.45) !important;
+}
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-select-selector:hover {
+  border-color: rgba(38, 198, 218, 0.6) !important;
+}
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--accent, #26C6DA) !important;
+  box-shadow: 0 0 0 2px rgba(38, 198, 218, 0.18) !important;
+}
+
+/* 多行文本框 */
+textarea.ant-input {
+  height: auto !important;
+  line-height: 1.5 !important;
+  padding: 8px 11px !important;
+}
+
+/* 统一表单栅格对齐工具类 */
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.form-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.range-box {
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr;
+  align-items: center;
+  gap: 4px;
+}
+.range-sep {
+  text-align: center;
+  color: var(--muted, #B6CADC);
+  font-size: 13px;
+}
+
+/* 统一赛博风格胶囊页签切换器 (Cyber Capsule Tabs) */
+.cyber-tabs {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 31, 53, 0.65);
+  border: 1px solid var(--line, #2B4A6D);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+.cyber-tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted, #B6CADC);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.cyber-tab-item:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+.cyber-tab-item.active {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(38, 198, 218, 0.22), rgba(38, 198, 218, 0.08));
+  border-color: rgba(38, 198, 218, 0.5);
+  box-shadow: 0 0 10px rgba(38, 198, 218, 0.15);
+}
+.cyber-tab-item .count-badge {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted, #B6CADC);
+}
+.cyber-tab-item.active .count-badge {
+  background: rgba(38, 198, 218, 0.25);
+  color: #7FF3FF;
+}

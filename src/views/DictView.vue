@@ -158,21 +158,28 @@ async function del(x: DictItem) {
   toast('已删除，字典升级为 ' + dict.version)
 }
 
-function toggle(x: DictItem) {
-  dict.toggle(x.id, session.info.user)
-  toast((x.status === 'active' ? '已启用' : '已停用') + '，字典升级为 ' + dict.version)
+async function toggle(x: DictItem) {
+  const next = x.status === 'active' ? '停用' : '启用'
+  await dict.toggle(x.id, session.info.user)
+  toast(`已${next}「${x.name}」`)
 }
 
-/** 词条操作记录子页 */
+/* 变更记录视图：'list' | 'log' */
 const view = ref<'list' | 'log'>('list')
 const logQ = ref('')
 const logOp = ref<'all' | DictOp>('all')
 const logBy = ref('all')
 const OPS: DictOp[] = ['新增', '修改', '启用', '停用', '删除']
-const OP_CLS: Record<DictOp, string> = { 新增: 'good', 修改: 'info', 启用: 'good', 停用: 'warn', 删除: 'crit' }
+const OP_CLS: Record<DictOp, string> = {
+  新增: 'good',
+  修改: 'info',
+  启用: 'good',
+  停用: 'warn',
+  删除: 'crit',
+}
 const byOpts = computed(() => [
   { value: 'all', label: '全部操作人' },
-  ...[...new Set(dict.changes.map((c) => c.by))].map((v) => ({ value: v, label: v })),
+  ...Array.from(new Set(dict.changes.map((c) => c.by))).map((u) => ({ value: u, label: u })),
 ])
 const logs = computed(() =>
   dict.changes.filter((c) => {
@@ -299,13 +306,14 @@ async function saveScene() {
         reset_desc: sceneModal.reset_desc.trim() || null,
         lang_template: sceneModal.lang_template.trim() || null,
         specs,
+        is_active: sceneModal.is_active,
         sort_order: Number(sceneModal.sort_order),
       })
-      toast('已新增采集场景「' + sceneModal.name + '」')
+      toast('场景「' + sceneModal.name + '」已新增')
     }
     sceneModal.open = false
   } catch (err: any) {
-    toast(err.message || '保存场景失败', { type: 'warn' })
+    toast('保存失败: ' + err.message, { type: 'warn' })
   } finally {
     sceneModal.saving = false
   }
@@ -313,10 +321,8 @@ async function saveScene() {
 
 async function toggleSceneStatus(s: SceneItem) {
   try {
-    const next = !s.is_active
-    await dict.updateScene(s.id, { is_active: next })
-    s.is_active = next
-    toast(next ? `已启用场景「${s.name}」` : `已停用场景「${s.name}」`, next ? {} : { type: 'warn' })
+    await dict.updateScene(s.id, { is_active: !s.is_active })
+    toast(`已${!s.is_active ? '启用' : '停用'}场景「${s.name}」`)
   } catch (err: any) {
     toast('状态修改失败: ' + err.message, { type: 'warn' })
   }
@@ -328,26 +334,63 @@ function wordCountOfScene(sceneKey: string) {
 </script>
 
 <template>
-  <!-- 顶部主页签切换 -->
-  <div class="main-tabs-bar">
-    <a-radio-group v-model:value="mainTab" button-style="solid">
-      <a-radio-button value="dict">
-        <AppIcon name="layers" style="margin-right:6px" />
-        标注词条字典 ({{ dict.items.length }})
-      </a-radio-button>
-      <a-radio-button value="scenes">
-        <AppIcon name="grid" style="margin-right:6px" />
-        采集场景管理 ({{ dict.scenes.length }})
-      </a-radio-button>
-    </a-radio-group>
-  </div>
+  <!-- 统一顶部 PageHead：集成赛博胶囊页签，去除两截式割裂感 -->
+  <PageHead
+    :title="mainTab === 'dict' ? '标注字典' : '采集场景管理'"
+    :desc="mainTab === 'dict' ? '标注与审核共用一份字典 · 当前版本 ' + dict.version + '；子任务分标准 / 异常两类' : '规范化管理采集场景、默认遥操作/示教模式、节拍标准时长以及工件复位标准'"
+  >
+    <template #desc>
+      <div class="head-tabs-wrap">
+        <div class="cyber-tabs">
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: mainTab === 'dict' }"
+            @click="mainTab = 'dict'"
+          >
+            <AppIcon name="layers" size="sm" />
+            <span>标注词条字典</span>
+            <span class="count-badge">{{ dict.items.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: mainTab === 'scenes' }"
+            @click="mainTab = 'scenes'"
+          >
+            <AppIcon name="grid" size="sm" />
+            <span>采集场景管理</span>
+            <span class="count-badge">{{ dict.scenes.length }}</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- 右侧操作按钮联动 -->
+    <template v-if="mainTab === 'dict'">
+      <a-button @click="view = view === 'log' ? 'list' : 'log'">
+        <AppIcon :name="view === 'log' ? 'left' : 'clock'" />
+        <span>{{ view === 'log' ? '返回词条' : '操作记录' }}</span>
+      </a-button>
+      <a-button type="primary" @click="openAdd">
+        <AppIcon name="plus" />新增词条
+      </a-button>
+    </template>
+    <template v-else>
+      <a-button
+        type="primary"
+        :disabled="!session.isAdmin"
+        :title="session.isAdmin ? undefined : '仅系统管理员可新增场景'"
+        @click="openAddScene"
+      >
+        <AppIcon name="plus" />新增场景
+      </a-button>
+    </template>
+  </PageHead>
 
   <!-- ================= 词条字典视图 ================= -->
   <template v-if="mainTab === 'dict'">
     <template v-if="view === 'log'">
-      <PageHead title="字典操作记录" :desc="'当前版本 ' + dict.version + ' · 共 ' + dict.changes.length + ' 条记录，每次新增、修改、启停、删除都会升级版本'">
-        <a-button @click="view = 'list'"><AppIcon name="left" />返回字典</a-button>
-      </PageHead>
       <div class="card">
         <div class="toolbar">
           <a-input v-model:value="logQ" class="grow" allow-clear placeholder="搜索词条或内容" aria-label="搜索操作记录">
@@ -385,11 +428,6 @@ function wordCountOfScene(sceneKey: string) {
     </template>
 
     <template v-else>
-      <PageHead title="标注字典" :desc="'标注与审核共用一份字典 · 当前版本 ' + dict.version + '；子任务分标准 / 异常两类'">
-        <a-button @click="view = 'log'"><AppIcon name="clock" />操作记录</a-button>
-        <a-button type="primary" @click="openAdd"><AppIcon name="plus" />新增词条</a-button>
-      </PageHead>
-
       <div class="card">
         <div class="toolbar">
           <a-input v-model:value="q" class="grow" allow-clear placeholder="搜索名称、编码、别名" aria-label="搜索词条">
@@ -460,12 +498,6 @@ function wordCountOfScene(sceneKey: string) {
 
   <!-- ================= 采集场景管理视图 ================= -->
   <template v-else-if="mainTab === 'scenes'">
-    <PageHead title="采集场景管理" desc="规范化管理采集场景、默认遥操作/示教模式、节拍标准时长以及工装复位标准">
-      <a-button type="primary" :disabled="!session.isAdmin" :title="session.isAdmin ? undefined : '仅系统管理员可新增场景'" @click="openAddScene">
-        <AppIcon name="plus" />新增场景
-      </a-button>
-    </PageHead>
-
     <div class="card">
       <div class="toolbar">
         <a-input v-model:value="sceneSearch" class="grow" allow-clear placeholder="搜索场景名称、短名、标识或文件代号">
@@ -529,29 +561,54 @@ function wordCountOfScene(sceneKey: string) {
     </div>
   </template>
 
-  <!-- 词条编辑弹窗 -->
-  <a-modal v-model:open="modal.open" :title="modal.id ? '编辑词条' : '新增词条'" centered ok-text="保存" cancel-text="取消" @ok="save">
+  <!-- 词条编辑弹窗（整齐对齐化，640px 宽度） -->
+  <a-modal
+    v-model:open="modal.open"
+    :title="modal.id ? '编辑词条' : '新增词条'"
+    :width="640"
+    centered
+    ok-text="保存"
+    cancel-text="取消"
+    @ok="save"
+  >
     <a-form layout="vertical">
-      <div class="row" style="gap:12px">
-        <a-form-item label="编码" required style="flex:1"><a-input v-model:value="modal.code" placeholder="如 CLAMP" /></a-form-item>
-        <a-form-item label="名称" required style="flex:1"><a-input v-model:value="modal.name" placeholder="如 夹紧密封" /></a-form-item>
+      <div class="form-row-2">
+        <a-form-item label="编码" required>
+          <a-input v-model:value="modal.code" placeholder="如 CLAMP" />
+        </a-form-item>
+        <a-form-item label="名称" required>
+          <a-input v-model:value="modal.name" placeholder="如 夹紧密封" />
+        </a-form-item>
       </div>
-      <div class="row" style="gap:12px">
-        <a-form-item v-if="modal.category === 'action'" label="分级" style="flex:1"><a-select v-model:value="modal.level" :options="LEVEL_OPTS" /></a-form-item>
-        <a-form-item label="适用场景" style="flex:1"><a-select v-model:value="modal.scen" :options="[{ value: 'common', label: '通用' }, ...scenOpts]" /></a-form-item>
+
+      <div class="form-row-2">
+        <a-form-item v-if="modal.category === 'action'" label="分级">
+          <a-select v-model:value="modal.level" :options="LEVEL_OPTS" />
+        </a-form-item>
+        <a-form-item label="适用场景">
+          <a-select v-model:value="modal.scen" :options="[{ value: 'common', label: '通用' }, ...scenOpts]" />
+        </a-form-item>
       </div>
+
       <a-form-item v-if="modal.category === 'action' && modal.level === 'compound' && modal.scen !== 'common'">
         <a-checkbox v-model:checked="modal.required">该场景的必选子任务（未标注时提交会提示）</a-checkbox>
       </a-form-item>
-      <a-form-item label="别名（逗号或顿号分隔）"><a-input v-model:value="modal.aliases" placeholder="如 夹紧、闭合气缸" /></a-form-item>
-      <a-form-item label="定义"><a-textarea v-model:value="modal.desc" :rows="3" placeholder="清楚描述起止边界，便于标注员与审核员统一理解" /></a-form-item>
+
+      <a-form-item label="别名（逗号或顿号分隔）">
+        <a-input v-model:value="modal.aliases" placeholder="如 夹紧、闭合气缸" />
+      </a-form-item>
+
+      <a-form-item label="定义与边界说明" style="margin-bottom:0">
+        <a-textarea v-model:value="modal.desc" :rows="3" placeholder="清楚描述起止边界，便于标注员与审核员统一理解" />
+      </a-form-item>
     </a-form>
   </a-modal>
 
-  <!-- 场景编辑/新增弹窗 -->
+  <!-- 场景编辑/新增弹窗（解决附件2：严格整体对齐、宽高规范化、680px 宽） -->
   <a-modal
     v-model:open="sceneModal.open"
     :title="sceneModal.isEdit ? '编辑采集场景' : '新增采集场景'"
+    :width="680"
     centered
     :confirm-loading="sceneModal.saving"
     ok-text="保存场景"
@@ -559,26 +616,34 @@ function wordCountOfScene(sceneKey: string) {
     @ok="saveScene"
   >
     <a-form layout="vertical">
-      <div class="row" style="gap:12px">
-        <a-form-item label="场景名称" required style="flex:1">
+      <div class="form-row-2">
+        <a-form-item label="场景名称" required>
           <a-input v-model:value="sceneModal.name" placeholder="如 轮毂气密性检测" />
         </a-form-item>
-        <a-form-item label="场景简称" style="flex:1">
+        <a-form-item label="场景简称">
           <a-input v-model:value="sceneModal.short_name" placeholder="如 气密性检测" />
         </a-form-item>
       </div>
 
-      <div class="row" style="gap:12px">
-        <a-form-item label="场景代号（大写）" required style="flex:1" extra="用于文件与数据包命名前缀">
+      <div class="form-row-2">
+        <a-form-item required>
+          <template #label>
+            <span>场景代号（大写）</span>
+            <small class="hint-text">命名前缀</small>
+          </template>
           <a-input v-model:value="sceneModal.code" placeholder="如 VR_QMD" />
         </a-form-item>
-        <a-form-item label="系统标识 (Key)" required style="flex:1" extra="小写英文数字下划线">
+        <a-form-item required>
+          <template #label>
+            <span>系统标识 (Key)</span>
+            <small class="hint-text">英文小写</small>
+          </template>
           <a-input v-model:value="sceneModal.scene_key" :disabled="sceneModal.isEdit" placeholder="如 qmd" />
         </a-form-item>
       </div>
 
-      <div class="row" style="gap:12px">
-        <a-form-item label="推荐采集模式" required style="flex:1">
+      <div class="form-row-2">
+        <a-form-item label="推荐采集模式" required>
           <a-select
             v-model:value="sceneModal.default_mode"
             :options="[
@@ -587,10 +652,10 @@ function wordCountOfScene(sceneKey: string) {
             ]"
           />
         </a-form-item>
-        <a-form-item label="节拍时长范围 (秒)" required style="flex:1">
-          <div style="display:flex;align-items:center;gap:8px">
+        <a-form-item label="节拍时长范围 (秒)" required>
+          <div class="range-box">
             <a-input-number v-model:value="sceneModal.dur_min_s" :min="1" placeholder="最小" style="width:100%" />
-            <span>~</span>
+            <span class="range-sep">~</span>
             <a-input-number v-model:value="sceneModal.dur_max_s" :min="1" placeholder="最大" style="width:100%" />
           </div>
         </a-form-item>
@@ -604,7 +669,7 @@ function wordCountOfScene(sceneKey: string) {
         <a-input v-model:value="sceneModal.lang_template" placeholder="如 对轮毂进行气密性检测" />
       </a-form-item>
 
-      <a-form-item label="工件规格尺寸列表" extra="多个尺寸用英文逗号分隔">
+      <a-form-item label="工件规格尺寸列表" extra="多个尺寸用英文逗号分隔" style="margin-bottom:0">
         <a-input v-model:value="sceneModal.specsStr" placeholder="如 18, 19, 20" />
       </a-form-item>
     </a-form>
@@ -612,8 +677,14 @@ function wordCountOfScene(sceneKey: string) {
 </template>
 
 <style scoped>
-.main-tabs-bar {
-  margin-bottom: 16px;
+.head-tabs-wrap {
+  margin-top: 10px;
+}
+.hint-text {
+  font-size: 11.5px;
+  color: var(--muted, #B6CADC);
+  margin-left: 6px;
+  font-weight: 400;
 }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
@@ -642,11 +713,11 @@ function wordCountOfScene(sceneKey: string) {
   transition: all 0.2s ease;
 }
 .scene-card:hover {
-  border-color: var(--accent, #1677ff);
-  background: var(--surface-3, rgba(255, 255, 255, 0.05));
+  border-color: rgba(38, 198, 218, 0.4);
 }
 .scene-card.disabled {
-  opacity: 0.6;
+  opacity: 0.55;
+  filter: grayscale(0.6);
 }
 .sc-header {
   display: flex;
@@ -655,41 +726,36 @@ function wordCountOfScene(sceneKey: string) {
 }
 .sc-title-wrap {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: baseline;
+  gap: 8px;
 }
 .sc-name {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text, #fff);
+  color: var(--text);
 }
 .sc-code {
-  font-size: 12px;
-  color: var(--accent, #1677ff);
-  background: rgba(22, 119, 255, 0.12);
-  padding: 1px 6px;
-  border-radius: 4px;
-  display: inline-block;
-  width: fit-content;
+  font-size: 11.5px;
+  color: var(--accent);
 }
 .sc-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .sc-meta-row {
   display: flex;
   align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
-  gap: 8px;
 }
 .sc-stat-pill {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
-  color: var(--muted, #8c8c8c);
-  background: var(--surface-1, rgba(0, 0, 0, 0.2));
+  color: var(--muted);
+  background: var(--surface-3);
   padding: 2px 8px;
   border-radius: 4px;
 }
@@ -699,27 +765,25 @@ function wordCountOfScene(sceneKey: string) {
   gap: 4px;
 }
 .sc-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted, #8c8c8c);
-  text-transform: uppercase;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 .sc-desc {
   font-size: 12.5px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.85));
-  line-height: 1.5;
+  line-height: 1.4;
+  color: var(--text);
 }
 .sc-specs {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .spec-tag {
   font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 4px;
-  background: var(--surface-1, rgba(255, 255, 255, 0.06));
-  color: var(--text, #fff);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  color: var(--accent);
+  border: 1px solid var(--line);
 }
 </style>

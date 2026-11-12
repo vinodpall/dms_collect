@@ -246,6 +246,33 @@ function exportAlgCsv() {
 
 <template>
   <PageHead title="日志审计与算法日志中心" desc="用户操作安全审计流水与算法数据处理全链路实时日志追踪">
+    <template #desc>
+      <div style="margin-top:10px">
+        <div class="cyber-tabs">
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: activeMainTab === 'audit' }"
+            @click="activeMainTab === 'audit'"
+          >
+            <AppIcon name="shield" size="sm" />
+            <span>用户操作审计日志</span>
+            <span class="count-badge">{{ logsStore.list.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: activeMainTab === 'pipeline' }"
+            @click="activeMainTab === 'pipeline'"
+          >
+            <AppIcon name="activity" size="sm" />
+            <span>算法数据处理日志 (Pipeline)</span>
+            <span class="count-badge">{{ pipelineLogs.length }}</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
     <div class="row" style="gap:8px">
       <a-button v-if="activeMainTab === 'audit'" @click="exportCsv">
         <AppIcon name="download" size="sm" />导出审计流水 (CSV)
@@ -255,20 +282,6 @@ function exportAlgCsv() {
       </a-button>
     </div>
   </PageHead>
-
-  <!-- 顶部主页签切换：用户审计日志 vs 算法数据处理日志 -->
-  <div class="main-tabs-bar">
-    <a-radio-group v-model:value="activeMainTab" button-style="solid">
-      <a-radio-button value="audit">
-        <AppIcon name="shield" size="sm" style="margin-right:6px" />
-        用户操作审计日志 ({{ logsStore.list.length }})
-      </a-radio-button>
-      <a-radio-button value="pipeline">
-        <AppIcon name="activity" size="sm" style="margin-right:6px" />
-        算法数据处理日志 (Pipeline Logs) ({{ pipelineLogs.length }})
-      </a-radio-button>
-    </a-radio-group>
-  </div>
 
   <!-- TAB 1: 用户操作审计日志 -->
   <template v-if="activeMainTab === 'audit'">

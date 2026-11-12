@@ -254,6 +254,33 @@ async function saveStation() {
     title="设备与工位管理"
     desc="统一管理硬件设备台账、网络通信参数与物理数采工位（可跨任务灵活调配）"
   >
+    <template #desc>
+      <div style="margin-top:10px">
+        <div class="cyber-tabs">
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: activeTab === 'devices' }"
+            @click="activeTab = 'devices'"
+          >
+            <AppIcon name="cpu" size="sm" />
+            <span>设备台账管理</span>
+            <span class="count-badge">{{ store.list.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="cyber-tab-item"
+            :class="{ active: activeTab === 'stations' }"
+            @click="activeTab = 'stations'"
+          >
+            <AppIcon name="layers" size="sm" />
+            <span>采集工位配置</span>
+            <span class="count-badge">{{ stations.length }}</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
     <template v-if="activeTab === 'devices'">
       <a-button
         type="primary"
@@ -278,20 +305,6 @@ async function saveStation() {
       </a-button>
     </template>
   </PageHead>
-
-  <!-- 顶部主页签 -->
-  <div class="main-tabs-bar">
-    <a-radio-group v-model:value="activeTab" button-style="solid">
-      <a-radio-button value="devices">
-        <AppIcon name="cpu" size="sm" style="margin-right:6px" />
-        设备台账管理 ({{ store.list.length }})
-      </a-radio-button>
-      <a-radio-button value="stations">
-        <AppIcon name="layers" size="sm" style="margin-right:6px" />
-        采集工位配置 ({{ stations.length }})
-      </a-radio-button>
-    </a-radio-group>
-  </div>
 
   <!-- TAB 1: 设备台账 -->
   <template v-if="activeTab === 'devices'">
@@ -462,10 +475,11 @@ async function saveStation() {
   <DeviceDrawer :id="drawerId" @close="drawerId = null" />
   <FaultDialog :open="faultOpen" :dev-id="null" @close="faultOpen = false" @done="() => {}" />
 
-  <!-- 工位配置弹窗 -->
+  <!-- 工位配置弹窗（规范化宽度与网格对齐） -->
   <a-modal
     v-model:open="stationModal.open"
     :title="stationModal.isEdit ? '编辑工位配置' : '新增采集工位'"
+    :width="660"
     centered
     :confirm-loading="stationModal.saving"
     ok-text="保存工位"
@@ -473,15 +487,19 @@ async function saveStation() {
     @ok="saveStation"
   >
     <a-form layout="vertical">
-      <div class="row" style="gap:12px">
-        <a-form-item label="工位代码" required style="flex:1" extra="大写字母数字，如 WS-03">
+      <div class="form-row-2">
+        <a-form-item required>
+          <template #label>
+            <span>工位代码</span>
+            <small class="hint-text">如 WS-03</small>
+          </template>
           <a-input
             v-model:value="stationModal.code"
             :disabled="stationModal.isEdit"
             placeholder="如 WS-03"
           />
         </a-form-item>
-        <a-form-item label="工位名称" required style="flex:1">
+        <a-form-item label="工位名称" required>
           <a-input v-model:value="stationModal.name" placeholder="如 工位 3（双臂遥操）" />
         </a-form-item>
       </div>
@@ -494,7 +512,7 @@ async function saveStation() {
         <a-input-password v-model:value="stationModal.api_token" placeholder="输入工位边缘端通信鉴权 Token" />
       </a-form-item>
 
-      <a-form-item label="工位说明与配置备注">
+      <a-form-item label="工位说明与配置备注" style="margin-bottom:0">
         <a-textarea
           v-model:value="stationModal.remark"
           :rows="2"
