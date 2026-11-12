@@ -43,7 +43,14 @@ export interface Episode { file: string; dur: number; size: number; integrity: n
 export type HistSource = ModeKey | 'video' | 'lerobot'
 export type HistState = 'stored' | 'warn' | 'failed' | 'retry'
 export interface HistRow { file: string; source: HistSource; task: string; dataset: string; scen: ScenKey; dur: number; size: number; state: HistState; at: string }
-export const HIST_SRC: Record<HistSource, string> = { vr: 'VR 遥操作', umi: 'UMI 手持', video: '视频上传', lerobot: 'LeRobot 导入' }
+export const HIST_SRC: Record<string, string> = {
+  vr: 'VR 遥操作',
+  umi: 'UMI 手持',
+  teleop: '主从机械臂',
+  mocap: '多目动捕示教',
+  video: '视频上传',
+  lerobot: 'LeRobot 导入',
+}
 export const HIST_ST: Record<HistState, ['good' | 'warn' | 'crit' | 'info', string]> = { stored: ['good', '已入库'], warn: ['warn', '带警告入库'], failed: ['crit', '未入库'], retry: ['info', '待重传'] }
 
 const KIT_DEVS: Record<string, string[]> = {

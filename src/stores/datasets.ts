@@ -3,10 +3,30 @@ import { ref } from 'vue'
 import { OPS, SCEN, TODAY, type BadgeKind, type ScenKey } from '@/constants'
 import { SUB_NAMES, type Clip, type ClipStatus, type Seg } from './annotate'
 
-export type DsStatus = 'published' | 'review' | 'draft'
-export interface Dataset { id: string; name: string; ver: string; scen: ScenKey; spec: string; count: number; size: number; quality: number; status: DsStatus; tags: string[]; updated: string; owner: string }
-export const DS_ST: Record<DsStatus, [BadgeKind, string]> = { published: ['good', '已发布'], review: ['warn', '待审核'], draft: ['', '草稿'] }
-export const DS_QUERIES = ['20寸 气密性', '高质量 防护堵', 'UMI 混合规格', '草稿']
+export type DsStatus = 'published' | 'review' | 'draft' | 'raw'
+export interface Dataset {
+  id: string
+  name: string
+  ver: string
+  scen: ScenKey
+  spec: string
+  count: number
+  size: number
+  quality: number // 数据完整率 / 质检合格率 (0-100)
+  status: DsStatus
+  tags: string[]
+  updated: string
+  owner: string
+}
+
+export const DS_ST: Record<DsStatus, [BadgeKind, string]> = {
+  published: ['good', '已发布'],
+  review: ['warn', '待审核'],
+  draft: ['', '草稿'],
+  raw: ['info', '原始数据包 (Raw)'],
+}
+
+export const DS_QUERIES = ['原始数据', '20寸 气密性', '高质量 防护堵', 'UMI 混合规格', '草稿']
 
 export interface DatasetSample extends Clip {
   sampleName: string
@@ -36,7 +56,7 @@ export function getDatasetSamples(ds: Dataset): DatasetSample[] {
         { name: '样本 04 · 抽检质检样本', desc: '端到端装配及接触力反馈', dur: 19.0, qOffset: -2, cuts: [0, 4.4, 9.1, 15.2, 19.0], op: OPS[2].n, opCode: OPS[2].c },
       ]
 
-  const status: ClipStatus = ds.status === 'draft' ? 'todo' : ds.status === 'review' ? 'submitted' : 'approved'
+  const status: ClipStatus = ds.status === 'draft' || ds.status === 'raw' ? 'todo' : ds.status === 'review' ? 'submitted' : 'approved'
   const specLabel = ds.spec === 'mix' ? 'MIX' : ds.spec + 'INCH'
 
   return sampleConfigs.map((cfg, idx) => {
@@ -51,7 +71,7 @@ export function getDatasetSamples(ds: Dataset): DatasetSample[] {
       })
     }
     const epNum = String(idx + 1).padStart(3, '0')
-    const file = `${TODAY}_${SCEN[scen].code}_${specLabel}_${epNum}_${cfg.opCode}.bag`
+    const file = `${TODAY}_${SCEN[scen]?.code || 'DMS'}_${specLabel}_${epNum}_${cfg.opCode}.bag`
     return {
       id: `${ds.id}-S${epNum}`,
       file,
@@ -70,6 +90,8 @@ export function getDatasetSamples(ds: Dataset): DatasetSample[] {
 
 export const useDatasets = defineStore('datasets', () => {
   const list = ref<Dataset[]>([
+    { id: 'DS-RAW-001', name: '轮毂气密性原始采集包 (Bag / MCAP)', ver: 'raw-20261013', scen: 'qmd', spec: '19', count: 320, size: 840, quality: 100, status: 'raw', tags: ['原始数据', 'RawBag', '气密性'], updated: '今天 10:15', owner: '张杰' },
+    { id: 'DS-RAW-002', name: '防护堵安装原始多模态包 (ROS2 Bag)', ver: 'raw-20261012', scen: 'fhd', spec: '18', count: 180, size: 460, quality: 100, status: 'raw', tags: ['原始数据', 'RawBag', '防护堵'], updated: '昨天 17:40', owner: '陈浩' },
     { id: 'DS-014', name: '轮毂气密性检测 · 19 寸', ver: 'v1.3', scen: 'qmd', spec: '19', count: 1240, size: 1198, quality: 96, status: 'published', tags: ['气密性', '19寸', '高质量', 'VR'], updated: '10-12 18:20', owner: '林悦' },
     { id: 'DS-013', name: '轮毂气密性检测 · 20 寸', ver: 'v1.1', scen: 'qmd', spec: '20', count: 640, size: 622, quality: 94, status: 'published', tags: ['气密性', '20寸', '高质量', 'VR'], updated: '10-10 17:05', owner: '林悦' },
     { id: 'DS-012', name: '防护堵安装 · 18 寸', ver: 'v1.0', scen: 'fhd', spec: '18', count: 520, size: 498, quality: 92, status: 'published', tags: ['防护堵', '18寸', 'UMI'], updated: '10-09 16:40', owner: '陈浩' },
@@ -83,7 +105,7 @@ export const useDatasets = defineStore('datasets', () => {
   /** 新建采集任务时快速新建的数据集（草稿），后续在数据集管理中完善 */
   function create(name: string, scen: ScenKey, owner: string): Dataset {
     const id = 'DS-' + String(Math.max(...list.value.map((d) => parseInt(d.id.slice(3), 10))) + 1).padStart(3, '0')
-    const d: Dataset = { id, name, ver: 'v0.1', scen, spec: 'mix', count: 0, size: 0, quality: 0, status: 'draft', tags: [SCEN[scen].short], updated: '刚刚', owner }
+    const d: Dataset = { id, name, ver: 'v0.1', scen, spec: 'mix', count: 0, size: 0, quality: 0, status: 'draft', tags: [SCEN[scen]?.short || '数据'], updated: '刚刚', owner }
     list.value.unshift(d)
     return d
   }

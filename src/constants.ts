@@ -40,20 +40,22 @@ export const PAGE_META: Record<PageKey, { title: string; icon: string }> = {
 }
 
 export const OPS = [{ n: '张杰', c: 'ZJ' }, { n: '李明', c: 'LM' }, { n: '王芳', c: 'WF' }, { n: '陈浩', c: 'CH' }]
-export type ScenKey = 'qmd' | 'fhd'
-/** 采集模式：与场景解耦，场景只给出推荐模式 */
-export type ModeKey = 'vr' | 'umi'
-export const MODES: Record<ModeKey, { name: string; short: string; desc: string }> = {
+export type ScenKey = 'qmd' | 'fhd' | (string & {})
+/** 采集模式：可插拔模式注册表，与场景解耦，场景只给出推荐模式 */
+export type ModeKey = 'vr' | 'umi' | 'teleop' | 'mocap' | (string & {})
+export const MODES: Record<string, { name: string; short: string; desc: string }> = {
   vr: { name: 'VR 遥操作', short: 'VR', desc: 'VR 头显 + 动捕手套遥操作机械臂，适合需要真机执行与多模态对齐的工序' },
   umi: { name: 'UMI 手持', short: 'UMI', desc: '手持 UMI 夹爪直接示教，不需要机械臂，适合快速节拍的工序' },
+  teleop: { name: '主从机械臂', short: '主从', desc: '主端机械臂/外骨骼驱动从端双臂，适合高精度装配与双臂协调任务' },
+  mocap: { name: '多目动捕示教', short: '动捕', desc: '基于空间红外多目相机追踪末端示教笔/夹爪，适合大工作空间轨迹采集' },
 }
-export const SCEN: Record<ScenKey, { name: string; short: string; code: string; mode: string; defMode: ModeKey; dur: [number, number]; reset: string }> = {
+export const SCEN: Record<string, { name: string; short: string; code: string; mode: string; defMode: ModeKey; dur: [number, number]; reset: string }> = {
   qmd: { name: '轮毂气密性检测', short: '气密性检测', code: 'VR_QMD', mode: 'VR 遥操作', defMode: 'vr', dur: [10, 40], reset: '轮毂工件摆放到位、气密工装复位、压力表归零' },
   fhd: { name: '防护堵安装', short: '防护堵安装', code: 'UMI_FHD', mode: 'UMI 手持', defMode: 'umi', dur: [6, 30], reset: '防护堵料盒补满、轮毂回到安装工位' },
 }
 /** 采集模式需要的设备槽位：设备按类型匹配，不再按场景归属 */
 export interface DevSlot { key: string; label: string; types: string[]; min: number; max: number; hint: string }
-export const MODE_SLOTS: Record<ModeKey, DevSlot[]> = {
+export const MODE_SLOTS: Record<string, DevSlot[]> = {
   vr: [
     { key: 'vr', label: 'VR 头显', types: ['VR 一体机'], min: 1, max: 1, hint: '操作员佩戴，采集头部位姿与第一视角' },
     { key: 'glove', label: '动捕手套', types: ['动捕手套'], min: 0, max: 2, hint: '可选，左右各一，采集手部关节' },
@@ -65,6 +67,17 @@ export const MODE_SLOTS: Record<ModeKey, DevSlot[]> = {
     { key: 'umi', label: 'UMI 手持夹爪', types: ['UMI'], min: 1, max: 2, hint: '单手 1 台，双手 2 台；UMI 自带腕部相机' },
     { key: 'cam', label: '外部相机', types: ['相机'], min: 0, max: 4, hint: '可选，补充第三视角' },
     { key: 'ft', label: '力觉传感器', types: ['力觉'], min: 0, max: 2, hint: '可选' },
+  ],
+  teleop: [
+    { key: 'master', label: '主控端手柄/臂', types: ['机械臂', '其他'], min: 1, max: 2, hint: '操作员操纵的主端输入设备' },
+    { key: 'arm', label: '从动从端臂', types: ['机械臂'], min: 1, max: 2, hint: '真实执行端协作臂' },
+    { key: 'cam', label: '外部与腕部相机', types: ['相机'], min: 1, max: 6, hint: '环境视觉与末端视角' },
+    { key: 'ft', label: '力觉反馈', types: ['力觉'], min: 0, max: 2, hint: '腕部力/力矩传感器' },
+  ],
+  mocap: [
+    { key: 'mocap_cam', label: '动捕追踪仪/相机', types: ['相机'], min: 2, max: 8, hint: '多目红外动捕相机组' },
+    { key: 'arm', label: '执行机构', types: ['机械臂', 'UMI'], min: 0, max: 2, hint: '可选配套机械臂或末端夹爪' },
+    { key: 'cam', label: '工作区全景相机', types: ['相机'], min: 1, max: 4, hint: '全景工作台视角' },
   ],
 }
 export type BadgeKind = '' | 'good' | 'warn' | 'crit' | 'info'
