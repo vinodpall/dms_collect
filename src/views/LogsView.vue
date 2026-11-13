@@ -253,7 +253,7 @@ function exportAlgCsv() {
             type="button"
             class="cyber-tab-item"
             :class="{ active: activeMainTab === 'audit' }"
-            @click="activeMainTab === 'audit'"
+            @click="activeMainTab = 'audit'"
           >
             <AppIcon name="shield" size="sm" />
             <span>用户操作审计日志</span>
@@ -263,7 +263,7 @@ function exportAlgCsv() {
             type="button"
             class="cyber-tab-item"
             :class="{ active: activeMainTab === 'pipeline' }"
-            @click="activeMainTab === 'pipeline'"
+            @click="activeMainTab = 'pipeline'"
           >
             <AppIcon name="activity" size="sm" />
             <span>算法数据处理日志 (Pipeline)</span>
@@ -304,36 +304,34 @@ function exportAlgCsv() {
       </div>
     </div>
 
-    <div class="card" style="padding:16px;margin-top:14px">
-      <div class="row between" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
-        <div class="row" style="gap:10px;flex-wrap:wrap">
-          <a-input
-            v-model:value="search"
-            placeholder="搜索流水号 / 操作人 / 目标 / 行为"
-            style="width:240px"
-            size="small"
-            allow-clear
-          >
-            <template #prefix><AppIcon name="search" size="sm" /></template>
-          </a-input>
+    <div class="card" style="margin-top:14px">
+      <div class="toolbar">
+        <a-input
+          v-model:value="search"
+          class="grow"
+          allow-clear
+          placeholder="搜索流水号 / 操作人 / 目标 / 行为"
+          aria-label="搜索审计日志"
+        >
+          <template #prefix><AppIcon name="search" /></template>
+        </a-input>
 
-          <a-select v-model:value="filterModule" size="small" style="width:130px">
-            <a-select-option value="all">全部业务模块</a-select-option>
-            <a-select-option value="annotate">标注工作台</a-select-option>
-            <a-select-option value="review">审核工作台</a-select-option>
-            <a-select-option value="vocab">字典管理</a-select-option>
-            <a-select-option value="collect">采集任务</a-select-option>
-            <a-select-option value="pipeline">数据流水线</a-select-option>
-            <a-select-option value="system">系统管理</a-select-option>
-          </a-select>
+        <a-select v-model:value="filterModule" style="width:150px" aria-label="业务模块">
+          <a-select-option value="all">全部业务模块</a-select-option>
+          <a-select-option value="annotate">标注工作台</a-select-option>
+          <a-select-option value="review">审核工作台</a-select-option>
+          <a-select-option value="vocab">字典管理</a-select-option>
+          <a-select-option value="collect">采集任务</a-select-option>
+          <a-select-option value="pipeline">数据流水线</a-select-option>
+          <a-select-option value="system">系统管理</a-select-option>
+        </a-select>
 
-          <a-select v-model:value="filterStatus" size="small" style="width:105px">
-            <a-select-option value="all">全部状态</a-select-option>
-            <a-select-option value="success">成功</a-select-option>
-            <a-select-option value="warn">质检告警</a-select-option>
-            <a-select-option value="failed">执行失败</a-select-option>
-          </a-select>
-        </div>
+        <a-select v-model:value="filterStatus" style="width:130px" aria-label="执行状态">
+          <a-select-option value="all">全部状态</a-select-option>
+          <a-select-option value="success">成功</a-select-option>
+          <a-select-option value="warn">质检告警</a-select-option>
+          <a-select-option value="failed">执行失败</a-select-option>
+        </a-select>
       </div>
 
       <div style="overflow-x:auto">
@@ -383,35 +381,33 @@ function exportAlgCsv() {
 
   <!-- TAB 2: 算法数据处理日志 (需求 8) -->
   <template v-else-if="activeMainTab === 'pipeline'">
-    <div class="card" style="padding:16px">
-      <div class="row between" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
-        <div class="row" style="gap:10px;flex-wrap:wrap">
-          <a-input
-            v-model:value="algSearch"
-            placeholder="搜索批次 / 算法节点 / 异常信息"
-            style="width:260px"
-            size="small"
-            allow-clear
-          >
-            <template #prefix><AppIcon name="search" size="sm" /></template>
-          </a-input>
+    <div class="card">
+      <div class="toolbar">
+        <a-input
+          v-model:value="algSearch"
+          class="grow"
+          allow-clear
+          placeholder="搜索批次 / 算法节点 / 异常信息"
+          aria-label="搜索算法处理日志"
+        >
+          <template #prefix><AppIcon name="search" /></template>
+        </a-input>
 
-          <a-select v-model:value="algFilterLevel" size="small" style="width:110px">
-            <a-select-option value="all">全部级别</a-select-option>
-            <a-select-option value="INFO">INFO 正常</a-select-option>
-            <a-select-option value="WARN">WARN 预警</a-select-option>
-            <a-select-option value="ERROR">ERROR 异常</a-select-option>
-          </a-select>
+        <a-select v-model:value="algFilterLevel" style="width:140px" aria-label="日志级别">
+          <a-select-option value="all">全部级别</a-select-option>
+          <a-select-option value="INFO">INFO 正常</a-select-option>
+          <a-select-option value="WARN">WARN 预警</a-select-option>
+          <a-select-option value="ERROR">ERROR 异常</a-select-option>
+        </a-select>
 
-          <a-select v-model:value="algFilterStage" size="small" style="width:160px">
-            <a-select-option value="all">全部算法阶段</a-select-option>
-            <a-select-option value="时间戳对齐 (Sync)">时间戳对齐 (Sync)</a-select-option>
-            <a-select-option value="ROS2 Bag 解包">ROS2 Bag 解包</a-select-option>
-            <a-select-option value="深度点云生成">深度点云生成</a-select-option>
-            <a-select-option value="轨迹平滑与位姿滤波">轨迹平滑与位姿滤波</a-select-option>
-            <a-select-option value="LeRobot / OpenX 格式转换">格式转换与打包</a-select-option>
-          </a-select>
-        </div>
+        <a-select v-model:value="algFilterStage" style="width:190px" aria-label="算法阶段">
+          <a-select-option value="all">全部算法阶段</a-select-option>
+          <a-select-option value="时间戳对齐 (Sync)">时间戳对齐 (Sync)</a-select-option>
+          <a-select-option value="ROS2 Bag 解包">ROS2 Bag 解包</a-select-option>
+          <a-select-option value="深度点云生成">深度点云生成</a-select-option>
+          <a-select-option value="轨迹平滑与位姿滤波">轨迹平滑与位姿滤波</a-select-option>
+          <a-select-option value="LeRobot / OpenX 格式转换">格式转换与打包</a-select-option>
+        </a-select>
       </div>
 
       <div style="overflow-x:auto">
@@ -535,8 +531,8 @@ function exportAlgCsv() {
 .stat-card .lbl { font-size: 12px; color: var(--muted); }
 
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
-.stbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.stbl td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 
 .ell-code { cursor: pointer; text-decoration: underline; color: var(--accent); }
 .text-accent { color: var(--accent); }

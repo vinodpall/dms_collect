@@ -9,12 +9,14 @@ import TaskWizard from '@/components/tasks/TaskWizard.vue'
 import ImportDialog from '@/components/tasks/ImportDialog.vue'
 import { MODES, NO_PERM, OPS, SCEN, TASK_ST, type ModeKey, type TaskStatus } from '@/constants'
 import { HIST_SRC, HIST_ST, useTasks, type HistSource, type HistState, type Task } from '@/stores/tasks'
+import { useDict } from '@/stores/dict'
 import { useSession } from '@/stores/session'
 import { useUi } from '@/stores/ui'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
 
 const tasks = useTasks()
+const dict = useDict()
 const session = useSession()
 const ui = useUi()
 const mayEdit = computed(() => session.can('tasks'))
@@ -22,13 +24,23 @@ const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
 
 const st = reactive({ status: 'all' as 'all' | TaskStatus, scen: 'all', q: '', key: 'ts', dir: 'descend' as 'ascend' | 'descend' | null, page: 1 })
 const selected = ref<string[]>([])
-const chips: ['all' | TaskStatus, string][] = [['all', '全部'], ['running', '采集中'], ['ready', '待开始'], ['paused', '已暂停'], ['done', '已完成'], ['draft', '草稿'], ['cancel', '已取消']]
-const count = (k: 'all' | TaskStatus) => (k === 'all' ? tasks.list.length : tasks.list.filter((t) => t.status === k).length)
+const STATUS_KEYS: TaskStatus[] = ['running', 'ready', 'paused', 'done', 'draft', 'cancel']
+const STATUS_OPTS = [{ value: 'all', label: '全部状态' }, ...STATUS_KEYS.map((k) => ({ value: k, label: TASK_ST[k][1] }))]
+const SCEN_OPTS = computed(() => {
+  const list = dict.scenes?.length
+    ? dict.scenes.map((s) => ({ value: s.scene_key, label: s.short_name || s.name }))
+    : [
+        { value: 'qmd', label: '气密性检测' },
+        { value: 'fhd', label: '防护堵安装' },
+      ]
+  return [{ value: 'all', label: '全部场景' }, ...list]
+})
+const scenShort = (key: string) => dict.scenes?.find((s) => s.scene_key === key)?.short_name || SCEN[key]?.short || key
 
 const rows = computed(() => {
   const q = st.q.toLowerCase()
-  const out = tasks.list.filter((t) => (st.status === 'all' || t.status === st.status) && (st.scen === 'all' || t.scen === st.scen) && (!q || (t.id + t.name + OPS[t.op].n + SCEN[t.scen].name).toLowerCase().includes(q)))
-  const keyFn: Record<string, (t: Task) => number | string> = { id: (t) => t.id, progress: (t) => t.done, status: (t) => TASK_ST[t.status][1], ts: (t) => t.ts }
+  const out = tasks.list.filter((t) => (st.status === 'all' || t.status === st.status) && (st.scen === 'all' || t.scen === st.scen) && (!q || (t.id + t.name + OPS[t.op].n + scenShort(t.scen)).toLowerCase().includes(q)))
+  const keyFn: Record<string, (t: Task) => number | string> = { id: (t) => t.id, progress: (t: Task) => t.done, status: (t) => TASK_ST[t.status][1], ts: (t) => t.ts }
   const f = keyFn[st.key]
   const d = st.dir === 'ascend' ? 1 : -1
   return out.slice().sort((a, b) => { const x = f(a), y = f(b); return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'zh')) * d })
@@ -78,8 +90,7 @@ const histRows = computed(() => {
   return hist.value.filter((r) => (hs.src === 'all' || r.source === hs.src) && (hs.state === 'all' || r.state === hs.state) && (!q || (r.file + r.task + r.dataset).toLowerCase().includes(q)))
 })
 const SRC_OPTS = [{ value: 'all', label: '全部来源' }, ...(Object.keys(HIST_SRC) as HistSource[]).map((k) => ({ value: k, label: HIST_SRC[k] }))]
-const HIST_CHIPS: ['all' | HistState, string][] = [['all', '全部'], ...(Object.keys(HIST_ST) as HistState[]).map((k): [HistState, string] => [k, HIST_ST[k][1]])]
-const histCount = (k: 'all' | HistState) => (k === 'all' ? hist.value.length : hist.value.filter((r) => r.state === k).length)
+const HIST_ST_OPTS = [{ value: 'all', label: '全部状态' }, ...(Object.keys(HIST_ST) as HistState[]).map((k) => ({ value: k, label: HIST_ST[k][1] }))]
 const histCols = [
   { title: '文件', key: 'file' },
   { title: '来源', key: 'source', width: 120 },
@@ -131,15 +142,13 @@ function created(id: string) {
     <div class="toolbar">
       <a-input v-model:value="hs.q" class="grow" allow-clear placeholder="搜索文件名、任务、数据集" aria-label="搜索采集历史"><template #prefix><AppIcon name="search" /></template></a-input>
       <a-select v-model:value="hs.src" style="width:140px" aria-label="来源" :options="SRC_OPTS" />
+      <a-select v-model:value="hs.state" style="width:140px" aria-label="状态" :options="HIST_ST_OPTS" />
       <a-button :disabled="!kpi.retry" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
-    </div>
-    <div class="toolbar" style="border-bottom:0;padding-bottom:0">
-      <div class="chips"><button v-for="c in HIST_CHIPS" :key="c[0]" type="button" class="chip" :aria-pressed="hs.state === c[0]" @click="hs.state = c[0]">{{ c[1] }} <span class="n num">{{ histCount(c[0]) }}</span></button></div>
     </div>
     <a-table :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :scroll="{ x: 900 }" :pagination="{ pageSize: 12, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 条` }">
       <template #bodyCell="{ column, record }">
         <span v-if="column.key === 'file'" class="mono" style="font-size:12.5px">{{ record.file }}</span>
-        <span v-else-if="column.key === 'source'">{{ HIST_SRC[record.source as HistSource] }}</span>
+        <span v-else-if="column.key === 'source'">{{ HIST_SRC[record.source as HistSource] || record.source }}</span>
         <a v-else-if="column.key === 'task' && record.task !== '—'" class="mono" @click="openTask(record.task)">{{ record.task }}</a>
         <span v-else-if="column.key === 'dataset'" class="mono muted">{{ record.dataset }}</span>
         <span v-else-if="column.key === 'dur'" class="num">{{ record.dur }} s</span>
@@ -154,10 +163,8 @@ function created(id: string) {
   <div v-else class="card">
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="搜索任务编号、名称、操作员" aria-label="搜索任务"><template #prefix><AppIcon name="search" /></template></a-input>
-      <a-select v-model:value="st.scen" style="width:150px" aria-label="场景" :options="[{ value: 'all', label: '全部场景' }, { value: 'qmd', label: '气密性检测' }, { value: 'fhd', label: '防护堵安装' }]" />
-    </div>
-    <div class="toolbar" style="border-bottom:0;padding-bottom:0">
-      <div class="chips"><button v-for="c in chips" :key="c[0]" type="button" class="chip" :aria-pressed="st.status === c[0]" @click="st.status = c[0]">{{ c[1] }} <span class="n num">{{ count(c[0]) }}</span></button></div>
+      <a-select v-model:value="st.scen" style="width:150px" aria-label="场景" :options="SCEN_OPTS" />
+      <a-select v-model:value="st.status" style="width:140px" aria-label="状态" :options="STATUS_OPTS" />
     </div>
     <div v-if="selected.length" class="bulkbar">
       <span>已选 {{ selected.length }} 项</span>
@@ -169,7 +176,7 @@ function created(id: string) {
       :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个任务` }" @change="onTableChange as never">
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'id'" class="cell-main"><span class="mono">{{ record.id }}</span><span>{{ record.name }}</span></div>
-        <div v-else-if="column.key === 'scen'" class="cell-main"><span>{{ SCEN[record.scen as 'qmd' | 'fhd'].short }}</span><small class="muted">{{ MODES[record.mode as ModeKey].name }} · {{ record.devices.length }} 台设备</small></div>
+        <div v-else-if="column.key === 'scen'" class="cell-main"><span>{{ scenShort(record.scen) }}</span><small class="muted">{{ MODES[record.mode as ModeKey]?.name || record.mode }} · {{ record.devices.length }} 台设备</small></div>
         <span v-else-if="column.key === 'op'">{{ OPS[record.op].n }}</span>
         <span v-else-if="column.key === 'progress'" class="num"><b>{{ record.done }}</b> <span class="muted">条</span></span>
         <StatusBadge v-else-if="column.key === 'status'" :kind="TASK_ST[record.status as TaskStatus][0]" :text="TASK_ST[record.status as TaskStatus][1]" />

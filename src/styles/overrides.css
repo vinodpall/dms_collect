@@ -255,3 +255,17 @@ textarea.ant-input {
   background: rgba(38, 198, 218, 0.25);
   color: #7FF3FF;
 }
+
+/* ================= 统一列表顶部工具栏 (.toolbar) 控件对齐 ================= */
+.toolbar .ant-input-affix-wrapper.grow,
+.toolbar .ant-input.grow {
+  width: auto !important;
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.toolbar .ant-select {
+  flex: none;
+}
+.toolbar .ant-btn {
+  height: 36px;
+}

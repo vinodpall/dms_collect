@@ -24,12 +24,6 @@ type Tab = 'all' | ActLevel
 const tab = ref<Tab>('all')
 const scen = ref<'all' | ScenKey | 'common'>('all')
 const q = ref('')
-const TABS: [Tab, string][] = [
-  ['all', '全部'],
-  ['compound', '标准子任务'],
-  ['abnormal', '异常子任务'],
-]
-const count = (t: Tab) => dict.items.filter((x) => match(x, t)).length
 function match(x: DictItem, t: Tab) {
   if (t === 'all') return true
   return x.category === 'action' && (x.level ?? 'compound') === t
@@ -192,16 +186,20 @@ const logs = computed(() =>
 
 /* ================= 场景管理相关 ================= */
 const sceneSearch = ref('')
+const sceneStatus = ref<'all' | 'active' | 'disabled'>('all')
 const sceneList = computed(() => {
   const q = sceneSearch.value.trim().toLowerCase()
-  if (!q) return dict.scenes
-  return dict.scenes.filter(
-    (s) =>
+  return dict.scenes.filter((s) => {
+    if (sceneStatus.value === 'active' && !s.is_active) return false
+    if (sceneStatus.value === 'disabled' && s.is_active) return false
+    if (!q) return true
+    return (
       s.name.toLowerCase().includes(q) ||
       s.code.toLowerCase().includes(q) ||
       s.scene_key.toLowerCase().includes(q) ||
       (s.short_name && s.short_name.toLowerCase().includes(q))
-  )
+    )
+  })
 })
 
 const sceneModal = reactive({
@@ -439,20 +437,16 @@ function wordCountOfScene(sceneKey: string) {
             aria-label="按场景筛选"
             :options="[{ value: 'all', label: '全部场景' }, { value: 'common', label: '通用' }, ...scenOpts]"
           />
-        </div>
-        <div class="toolbar" style="border-bottom:0;padding-bottom:0">
-          <div class="chips">
-            <button
-              v-for="t in TABS"
-              :key="t[0]"
-              type="button"
-              class="chip"
-              :aria-pressed="tab === t[0]"
-              @click="tab = t[0]"
-            >
-              {{ t[1] }} <span class="n num">{{ count(t[0]) }}</span>
-            </button>
-          </div>
+          <a-select
+            v-model:value="tab"
+            style="width:140px"
+            aria-label="按分级筛选"
+            :options="[
+              { value: 'all', label: '全部分级' },
+              { value: 'compound', label: '标准子任务' },
+              { value: 'abnormal', label: '异常子任务' },
+            ]"
+          />
         </div>
         <table class="stbl" aria-label="字典词条">
           <thead>
@@ -500,9 +494,19 @@ function wordCountOfScene(sceneKey: string) {
   <template v-else-if="mainTab === 'scenes'">
     <div class="card">
       <div class="toolbar">
-        <a-input v-model:value="sceneSearch" class="grow" allow-clear placeholder="搜索场景名称、短名、标识或文件代号">
+        <a-input v-model:value="sceneSearch" class="grow" allow-clear placeholder="搜索场景名称、短名、标识或文件代号" aria-label="搜索采集场景">
           <template #prefix><AppIcon name="search" /></template>
         </a-input>
+        <a-select
+          v-model:value="sceneStatus"
+          style="width:140px"
+          aria-label="按状态筛选"
+          :options="[
+            { value: 'all', label: '全部状态' },
+            { value: 'active', label: '已启用' },
+            { value: 'disabled', label: '已停用' },
+          ]"
+        />
       </div>
 
       <div class="scenes-grid">
@@ -687,8 +691,8 @@ function wordCountOfScene(sceneKey: string) {
   font-weight: 400;
 }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
-.stbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.stbl td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .stbl tr.off td { opacity: .5; }
 .alias { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 3px 1px 0; border-radius: 4px; background: var(--surface-3); color: var(--muted); }
 .vlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
@@ -700,7 +704,7 @@ function wordCountOfScene(sceneKey: string) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 16px;
-  padding: 16px 0;
+  padding: 16px;
 }
 .scene-card {
   background: var(--surface-2, rgba(255, 255, 255, 0.03));

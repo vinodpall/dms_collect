@@ -35,15 +35,6 @@ const st = reactive({
 const drawerId = ref<string | null>(null)
 const faultOpen = ref(false)
 const addOpen = ref(false)
-const chips: ['all' | DevStatus, string][] = [
-  ['all', '全部'],
-  ['online', '在线'],
-  ['offline', '离线'],
-  ['maint', '维护中'],
-  ['fault', '故障'],
-]
-const count = (k: 'all' | DevStatus) =>
-  k === 'all' ? store.list.length : store.list.filter((d) => d.st === k).length
 
 const rows = computed(() => {
   const q = st.q.toLowerCase()
@@ -123,6 +114,7 @@ const stations = ref<StationItem[]>([
 ])
 
 const stationSearch = ref('')
+const stationStatus = ref<'all' | 'online' | 'offline'>('all')
 const stationModal = reactive({
   open: false,
   isEdit: false,
@@ -152,14 +144,17 @@ onMounted(() => {
 
 const filteredStations = computed(() => {
   const q = stationSearch.value.trim().toLowerCase()
-  if (!q) return stations.value
-  return stations.value.filter(
-    (s) =>
+  return stations.value.filter((s) => {
+    if (stationStatus.value === 'online' && !s.is_online) return false
+    if (stationStatus.value === 'offline' && s.is_online) return false
+    if (!q) return true
+    return (
       s.name.toLowerCase().includes(q) ||
       s.code.toLowerCase().includes(q) ||
       (s.ip && s.ip.includes(q)) ||
       (s.remark && s.remark.toLowerCase().includes(q))
-  )
+    )
+  })
 })
 
 function openAddStation() {
@@ -341,20 +336,18 @@ async function saveStation() {
             { value: 'no', label: '未标定' },
           ]"
         />
-      </div>
-      <div class="toolbar" style="border-bottom:0;padding-bottom:0">
-        <div class="chips">
-          <button
-            v-for="c in chips"
-            :key="c[0]"
-            type="button"
-            class="chip"
-            :aria-pressed="st.s === c[0]"
-            @click="st.s = c[0]"
-          >
-            {{ c[1] }} <span class="n num">{{ count(c[0]) }}</span>
-          </button>
-        </div>
+        <a-select
+          v-model:value="st.s"
+          style="width:130px"
+          aria-label="按状态筛选"
+          :options="[
+            { value: 'all', label: '全部状态' },
+            { value: 'online', label: '在线' },
+            { value: 'offline', label: '离线' },
+            { value: 'maint', label: '维护中' },
+            { value: 'fault', label: '故障' },
+          ]"
+        />
       </div>
       <a-table
         row-key="id"
@@ -407,6 +400,16 @@ async function saveStation() {
         >
           <template #prefix><AppIcon name="search" /></template>
         </a-input>
+        <a-select
+          v-model:value="stationStatus"
+          style="width:140px"
+          aria-label="按工位状态筛选"
+          :options="[
+            { value: 'all', label: '全部状态' },
+            { value: 'online', label: '在线就绪' },
+            { value: 'offline', label: '离线断连' },
+          ]"
+        />
       </div>
 
       <div class="stations-grid">

@@ -7,7 +7,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import DatasetDrawer from '@/components/datasets/DatasetDrawer.vue'
 import DatasetPreviewModal from '@/components/datasets/DatasetPreviewModal.vue'
 import { SCEN } from '@/constants'
-import { DS_QUERIES, DS_ST, useDatasets, type Dataset } from '@/stores/datasets'
+import { DS_ST, useDatasets, type Dataset } from '@/stores/datasets'
 import { useUi } from '@/stores/ui'
 import { toast } from '@/composables/toast'
 
@@ -153,21 +153,6 @@ function handleDownloadRaw(d: Dataset) {
           { value: 'draft', label: '草稿' },
         ]"
       />
-    </div>
-    <div class="toolbar" style="border-bottom:0;padding-bottom:0">
-      <span class="muted" style="font-size:12.5px">快捷检索：</span>
-      <div class="chips">
-        <button
-          v-for="q in DS_QUERIES"
-          :key="q"
-          type="button"
-          class="chip"
-          :aria-pressed="st.q === q"
-          @click="st.q = q"
-        >
-          {{ q }}
-        </button>
-      </div>
     </div>
     <a-table
       row-key="id"

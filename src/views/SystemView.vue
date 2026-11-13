@@ -40,10 +40,15 @@ function toggleWl(v: boolean) {
 }
 
 /* 审计日志 */
-const au = reactive({ k: 'all', page: 1 })
+const au = reactive({ q: '', k: 'all', page: 1 })
 const kinds = computed(() => ['all', ...Array.from(new Set(sys.audit.map((a) => a.k)))])
-const auRows = computed(() => sys.audit.filter((a) => au.k === 'all' || a.k === au.k))
-watch(() => au.k, () => { au.page = 1 })
+const auRows = computed(() => {
+  const q = au.q.trim().toLowerCase()
+  return sys.audit.filter(
+    (a) => (au.k === 'all' || a.k === au.k) && (!q || (a.u + ' ' + a.d + ' ' + a.ip).toLowerCase().includes(q))
+  )
+})
+watch(() => [au.q, au.k], () => { au.page = 1 })
 
 /* 系统设置 */
 const draft = reactive<Cfg>({ ...settings.cfg })
@@ -84,7 +89,17 @@ const auditCols = [{ title: '时间', key: 't', width: 130 }, { title: '用户',
   </div>
 
   <div v-else-if="tab === 'audit'" class="card">
-    <div class="toolbar"><div class="chips"><button v-for="k in kinds" :key="k" type="button" class="chip" :aria-pressed="au.k === k" @click="au.k = k">{{ k === 'all' ? '全部' : k }}</button></div></div>
+    <div class="toolbar">
+      <a-input v-model:value="au.q" class="grow" allow-clear placeholder="搜索用户、操作详情或来源 IP" aria-label="搜索审计日志">
+        <template #prefix><AppIcon name="search" /></template>
+      </a-input>
+      <a-select
+        v-model:value="au.k"
+        style="width:150px"
+        aria-label="按日志类型筛选"
+        :options="kinds.map((k) => ({ value: k, label: k === 'all' ? '全部类型' : k }))"
+      />
+    </div>
     <a-table row-key="t" :columns="auditCols" :data-source="auRows.map((r, i) => ({ ...r, i }))" :scroll="{ x: 620 }" :pagination="{ current: au.page, pageSize: 10, showSizeChanger: false, showTotal: (n: number) => `共 ${n} 条记录，保留 180 天` }" @change="(p: { current?: number }) => (au.page = p.current ?? 1)">
       <template #bodyCell="{ column, record }">
         <span v-if="column.key === 't'" class="num muted">{{ record.t }}</span>

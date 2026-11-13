@@ -134,7 +134,16 @@ const columns = [
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="搜索姓名、账号、部门、邮箱" aria-label="搜索用户"><template #prefix><AppIcon name="search" /></template></a-input>
       <a-select v-model:value="st.role" style="width:150px" aria-label="按角色筛选" :options="[{ value: 'all', label: '全部角色' }, ...roleOpts]" />
-      <div class="chips"><button v-for="c in [['all', '全部'], ['on', '启用'], ['off', '停用']]" :key="c[0]" type="button" class="chip" :aria-pressed="st.s === c[0]" @click="st.s = c[0]">{{ c[1] }}</button></div>
+      <a-select
+        v-model:value="st.s"
+        style="width:130px"
+        aria-label="按状态筛选"
+        :options="[
+          { value: 'all', label: '全部状态' },
+          { value: 'on', label: '启用' },
+          { value: 'off', label: '停用' },
+        ]"
+      />
     </div>
     <a-table row-key="id" :columns="columns" :data-source="rows" :scroll="{ x: 1100 }" :pagination="{ pageSize: 10, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 个账号` }">
       <template #bodyCell="{ column, record }">
