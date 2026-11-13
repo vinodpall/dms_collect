@@ -77,14 +77,14 @@ watch(
 
 const sortOf = (k: string) => (st.key === k ? st.dir : null)
 const columns = computed(() => [
-  { title: '数据集', key: 'name', sorter: true, sortOrder: sortOf('name') },
-  { title: '标签', key: 'tags' },
-  { title: '条数 / 片段', key: 'count', align: 'right' as const, sorter: true, sortOrder: sortOf('count') },
-  { title: '体量大小', key: 'size', align: 'right' as const, sorter: true, sortOrder: sortOf('size') },
-  { title: '完整率 / 质检状态', key: 'quality', align: 'right' as const, sorter: true, sortOrder: sortOf('quality') },
-  { title: '状态', key: 'status' },
-  { title: '更新时间', key: 'updated', align: 'right' as const, sorter: true, sortOrder: sortOf('updated') },
-  { title: '操作', key: 'action', align: 'center' as const, width: 140, fixed: 'right' },
+  { title: '数据集', key: 'name', width: 240, sorter: true, sortOrder: sortOf('name') },
+  { title: '标签', key: 'tags', width: 175 },
+  { title: '条数 / 片段', key: 'count', width: 108, align: 'right' as const, sorter: true, sortOrder: sortOf('count') },
+  { title: '体量大小', key: 'size', width: 96, align: 'right' as const, sorter: true, sortOrder: sortOf('size') },
+  { title: '完整率 / 质检状态', key: 'quality', width: 152, align: 'right' as const, sorter: true, sortOrder: sortOf('quality') },
+  { title: '状态', key: 'status', width: 132 },
+  { title: '更新时间', key: 'updated', width: 130, align: 'right' as const, sorter: true, sortOrder: sortOf('updated') },
+  { title: '操作', key: 'action', align: 'center' as const, width: 146, fixed: 'right' },
 ])
 
 function onChange(

@@ -31,9 +31,12 @@
 .pp-ico { color: var(--muted) !important; font-size: 16px; }
 .pp-ico:hover { color: var(--cyan) !important; }
 .pp-clock { font: 500 14px var(--mono); color: var(--text); padding: 0 12px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); margin: 0 8px; letter-spacing: 1px; }
-.pp-user { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
-.pp-user > span:last-child { display: flex; flex-direction: column; }
+.pp-user { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; line-height: 1.25; padding: 4px 8px 4px 4px; border-radius: 6px; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+.pp-user:hover { background: rgba(var(--glow),.08); border-color: rgba(var(--glow),.24); }
+.pp-user-info, .pp-user > span:nth-child(2) { display: flex; flex-direction: column; }
 .pp-user small { color: var(--muted); font-size: 11px; }
+.pp-caret { color: var(--muted); opacity: .75; transition: color .15s, opacity .15s; }
+.pp-user:hover .pp-caret { color: var(--cyan); opacity: 1; }
 .pp .av { width: 30px; height: 30px; display: grid; place-items: center; background: linear-gradient(135deg, #12B5CB, #1E88E5); color: #fff; font-weight: 600; clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px)); }
 
 .pp-body { flex: 1; min-height: 0; display: flex; }

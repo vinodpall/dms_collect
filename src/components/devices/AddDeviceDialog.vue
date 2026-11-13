@@ -20,7 +20,7 @@ function submit() {
 }
 </script>
 <template>
-  <a-modal :open="open" title="新增设备" centered ok-text="新增" cancel-text="取消" destroy-on-close @ok="submit" @cancel="emit('close')">
+  <a-modal :open="open" title="新增设备" width="600px" centered ok-text="新增" cancel-text="取消" destroy-on-close @ok="submit" @cancel="emit('close')">
     <a-form layout="vertical">
       <a-form-item label="设备名称" :validate-status="f.e.name ? 'error' : ''" :help="f.e.name"><a-input v-model:value="f.name" placeholder="如：PICO VR 一体机 #5" :maxlength="40" /></a-form-item>
       <div class="two">
@@ -28,23 +28,24 @@ function submit() {
         <a-form-item label="所属工位" :validate-status="f.e.station ? 'error' : ''" :help="f.e.station" extra="设备不绑定场景，按类型用于任意场景的采集任务"><a-select v-model:value="f.station" placeholder="请选择工位" :options="STATIONS.map((x) => ({ value: x }))" /></a-form-item>
       </div>
       <div class="two">
-        <a-form-item label="安装位置"><a-input v-model:value="f.loc" placeholder="如：采集工位 A" :maxlength="30" /></a-form-item>
-        <a-form-item label="固件版本"><a-input v-model:value="f.fw" placeholder="如：5.9.2" :maxlength="20" /></a-form-item>
+        <a-form-item label="安装位置" :class="{ 'mb-0': !f.type }"><a-input v-model:value="f.loc" placeholder="如：采集工位 A" :maxlength="30" /></a-form-item>
+        <a-form-item label="固件版本" :class="{ 'mb-0': !f.type }"><a-input v-model:value="f.fw" placeholder="如：5.9.2" :maxlength="20" /></a-form-item>
       </div>
       <template v-if="f.type">
         <div class="label-row">采集参数 <span class="muted">配置一次，所有采集任务沿用，不需要每次新建任务时选择</span></div>
         <div class="three">
-          <a-form-item :label="cfgDef(f.type).label"><a-select v-model:value="f.cfg.rate" :options="cfgDef(f.type).rates.map((v) => ({ value: v, label: v + ' ' + cfgDef(f.type!).unit }))" /></a-form-item>
+          <a-form-item :label="cfgDef(f.type).label" class="mb-0"><a-select v-model:value="f.cfg.rate" :options="cfgDef(f.type).rates.map((v) => ({ value: v, label: v + ' ' + cfgDef(f.type!).unit }))" /></a-form-item>
           <template v-if="cfgDef(f.type).video">
-            <a-form-item label="分辨率"><a-select v-model:value="f.cfg.res" :options="RES_OPTS.map((v) => ({ value: v }))" /></a-form-item>
-            <a-form-item label="视频编码"><a-select v-model:value="f.cfg.codec" :options="CODEC_OPTS.map((v) => ({ value: v }))" /></a-form-item>
+            <a-form-item label="分辨率" class="mb-0"><a-select v-model:value="f.cfg.res" :options="RES_OPTS.map((v) => ({ value: v }))" /></a-form-item>
+            <a-form-item label="视频编码" class="mb-0"><a-select v-model:value="f.cfg.codec" :options="CODEC_OPTS.map((v) => ({ value: v }))" /></a-form-item>
           </template>
         </div>
       </template>
     </a-form>
   </a-modal>
 </template>
-<style scoped>.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+<style scoped>.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
 .label-row { font-weight: 600; margin: 4px 0 8px; font-size: 13.5px; }
-.label-row .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }</style>
+.label-row .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
+:deep(.mb-0.ant-form-item) { margin-bottom: 0 !important; }</style>

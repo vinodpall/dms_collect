@@ -69,7 +69,13 @@ function saveCfg() {
 }
 function resetCfg() { Object.assign(draft, settings.cfg) }
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
-const auditCols = [{ title: '时间', key: 't', width: 130 }, { title: '用户', key: 'u', width: 90 }, { title: '类型', key: 'k', width: 90 }, { title: '操作', key: 'd' }, { title: '来源 IP', key: 'ip', width: 150 }]
+const auditCols = [
+  { title: '时间', dataIndex: 't', key: 't', width: 130 },
+  { title: '用户', dataIndex: 'u', key: 'u', width: 90 },
+  { title: '类型', dataIndex: 'k', key: 'k', width: 90 },
+  { title: '操作', dataIndex: 'd', key: 'd' },
+  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 150 },
+]
 </script>
 
 <template>

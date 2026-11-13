@@ -55,13 +55,13 @@ const rows = computed(() => {
 const sortOf = (k: string) => (st.key === k ? st.dir : null)
 const columns = computed(() => [
   { title: '设备', key: 'name', sorter: true, sortOrder: sortOf('name') },
-  { title: '类型', key: 'type' },
-  { title: '所属工位', key: 'station' },
-  { title: '位置', key: 'loc' },
+  { title: '类型', dataIndex: 'type', key: 'type' },
+  { title: '所属工位', dataIndex: 'station', key: 'station' },
+  { title: '位置', dataIndex: 'loc', key: 'loc' },
   { title: '状态', key: 'st', sorter: true, sortOrder: sortOf('st') },
   { title: '标定', key: 'calib', sorter: true, sortOrder: sortOf('calib') },
   { title: '当前占用', key: 'occ' },
-  { title: '固件', key: 'fw' },
+  { title: '固件', dataIndex: 'fw', key: 'fw' },
 ])
 
 function onChange(_p: unknown, _f: unknown, s: { columnKey?: string; order?: 'ascend' | 'descend' | null }) {

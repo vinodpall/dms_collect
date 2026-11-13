@@ -1,6 +1,9 @@
 /* Ant Design Vue 与原型视觉对齐的少量覆盖 */
 body { font-family: var(--font-sans); }
-.ant-table-wrapper .ant-table-thead > tr > th { font-weight: 500; font-size: 13px; }
+.ic { display: inline-block; vertical-align: -0.18em; flex: none; }
+.hint-text { font-size: 11.5px; color: var(--muted, #B6CADC); margin-left: 6px; font-weight: 400; }
+.fmtcard > span { flex: 1; min-width: 0; }
+.ant-table-wrapper .ant-table-thead > tr > th { font-weight: 500; font-size: 13px; white-space: nowrap; }
 .ant-table-wrapper .ant-table-tbody > tr.row-click { cursor: pointer; }
 .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td { background: var(--accent-soft) !important; }
 .ant-table-wrapper .ant-table-pagination.ant-pagination { margin: 14px 16px; }
@@ -269,3 +272,75 @@ textarea.ant-input {
 .toolbar .ant-btn {
   height: 36px;
 }
+
+/* ================= 下拉菜单 (Dropdown) 与右上角用户面板对齐美化 ================= */
+.ant-dropdown .ant-dropdown-menu {
+  min-width: 152px;
+  padding: 6px !important;
+  background: var(--surface, #162A45) !important;
+  border: 1px solid var(--line-strong, #3d6691) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(46, 211, 230, 0.14) !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  color: var(--text, #F3F8FC) !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  white-space: nowrap !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item:hover:not(.ant-dropdown-menu-item-disabled) {
+  background: rgba(46, 211, 230, 0.12) !important;
+  color: #fff !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger {
+  color: var(--crit, #FF7A7A) !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:hover:not(.ant-dropdown-menu-item-disabled) {
+  background: rgba(255, 107, 107, 0.14) !important;
+  color: #ff9a9a !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-icon {
+  margin-inline-end: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: none !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-title-content {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  white-space: nowrap !important;
+  flex: 1 1 auto !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-divider {
+  background: rgba(43, 74, 109, 0.75) !important;
+  margin: 5px 4px !important;
+}
+.pp-user-drop .ant-dropdown-menu {
+  min-width: 176px;
+}
+.pp-user-drop .pp-who-item {
+  cursor: default !important;
+  padding: 6px 12px 8px !important;
+}
+.pp-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+.pp-who b {
+  color: var(--text, #F3F8FC);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.pp-who .mono {
+  color: var(--muted, #B6CADC);
+  font-size: 11.5px;
+}
+

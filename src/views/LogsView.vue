@@ -285,22 +285,22 @@ function exportAlgCsv() {
 
   <!-- TAB 1: 用户操作审计日志 -->
   <template v-if="activeMainTab === 'audit'">
-    <div class="stats-row">
-      <div class="stat-card">
-        <span class="num">{{ stats.total }}</span>
-        <span class="lbl">累计操作流水</span>
+    <div class="grid g4" style="margin-bottom:14px">
+      <div class="card kpi l-kpi">
+        <span class="k">累计操作流水</span>
+        <span class="v">{{ stats.total }}<small>条</small></span>
       </div>
-      <div class="stat-card">
-        <span class="num" style="color:var(--good-solid)">{{ stats.success }}</span>
-        <span class="lbl">正常执行成功</span>
+      <div class="card kpi l-kpi">
+        <span class="k">正常执行成功</span>
+        <span class="v" style="color:var(--good)">{{ stats.success }}<small>条</small></span>
       </div>
-      <div class="stat-card">
-        <span class="num" style="color:var(--warn-solid)">{{ stats.warn }}</span>
-        <span class="lbl">审核打回 / 质检告警</span>
+      <div class="card kpi l-kpi">
+        <span class="k">审核打回 / 质检告警</span>
+        <span class="v" style="color:var(--warn)">{{ stats.warn }}<small>条</small></span>
       </div>
-      <div class="stat-card">
-        <span class="num" style="color:var(--crit-solid)">{{ stats.failed }}</span>
-        <span class="lbl">流水线异常 / 拦截</span>
+      <div class="card kpi l-kpi">
+        <span class="k">流水线异常 / 拦截</span>
+        <span class="v" style="color:var(--crit)">{{ stats.failed }}<small>条</small></span>
       </div>
     </div>
 
@@ -525,10 +525,8 @@ function exportAlgCsv() {
 
 <style scoped>
 .main-tabs-bar { margin-bottom: 16px; }
-.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow-sm); }
-.stat-card .num { display: block; font: 700 22px var(--font-mono); margin-bottom: 2px; }
-.stat-card .lbl { font-size: 12px; color: var(--muted); }
+.l-kpi { cursor: default; padding: 14px 18px; }
+.l-kpi .v { font-size: 26px; }
 
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
@@ -544,6 +542,4 @@ function exportAlgCsv() {
 .detail-row .v { color: var(--text); }
 
 .diff-pre { font: 11.5px var(--font-mono); margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow-y: auto; }
-
-@media (max-width: 900px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
 </style>

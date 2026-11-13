@@ -577,8 +577,10 @@ function create(status: 'ready' | 'draft') {
 </template>
 
 <style scoped>
-.wz-body { display: flex; flex-direction: column; gap: 16px; max-height: 64vh; overflow-y: auto; padding-right: 4px; }
-.wz-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 22px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); }
+.wz-body { display: flex; flex-direction: column; gap: 13px; max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+.wz-body :deep(.fmtcard) { padding: 11px 14px; }
+.wz-body :deep(.ant-form-item) { margin-bottom: 14px !important; }
+.wz-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 18px -24px -20px; padding: 14px 24px; border-top: 1px solid var(--line); }
 .wz-foot .l { margin-right: auto; color: var(--muted); font-size: 13px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -605,6 +607,8 @@ function create(status: 'ready' | 'draft') {
   padding: 10px 14px;
 }
 .sec-title {
+  display: inline-flex;
+  align-items: center;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--accent);

@@ -137,13 +137,29 @@ watch(current, (p) => { document.title = PAGE_META[p].title + ' · 数采管理�
           </button>
         </a-popover>
         <span class="pp-clock">{{ time }}</span>
-        <a-dropdown placement="bottomRight" :trigger="['click']">
-          <div class="pp-user" role="button" tabindex="0"><span class="av">{{ session.info.init }}</span><span>{{ session.info.user }}<small>{{ session.info.name }}</small></span></div>
+        <a-dropdown placement="bottomRight" :trigger="['click']" overlay-class-name="pp-user-drop">
+          <div class="pp-user" role="button" tabindex="0">
+            <span class="av">{{ session.info.init }}</span>
+            <span class="pp-user-info">{{ session.info.user }}<small>{{ session.info.name }}</small></span>
+            <AppIcon name="down" size="sm" class="pp-caret" />
+          </div>
           <template #overlay>
-            <a-menu>
-              <a-menu-item key="who" disabled><span class="mono">{{ session.info.account }}</span></a-menu-item>
-              <a-menu-item key="pwd" @click="openPwd"><AppIcon name="lock" size="sm" /> 修改密码</a-menu-item>
-              <a-menu-item key="out" danger @click="logout"><AppIcon name="logout" size="sm" /> 退出登录</a-menu-item>
+            <a-menu class="pp-user-menu">
+              <a-menu-item key="who" disabled class="pp-who-item">
+                <div class="pp-who">
+                  <b>{{ session.info.user }}</b>
+                  <span class="mono">@{{ session.info.account }}</span>
+                </div>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item key="pwd" @click="openPwd">
+                <template #icon><AppIcon name="lock" size="sm" /></template>
+                修改密码
+              </a-menu-item>
+              <a-menu-item key="out" danger @click="logout">
+                <template #icon><AppIcon name="logout" size="sm" /></template>
+                退出登录
+              </a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>
