@@ -79,9 +79,48 @@ const auditCols = [
 </script>
 
 <template>
-  <PageHead title="系统管理" desc="IP 白名单、审计日志与系统参数" />
+  <PageHead title="系统管理" desc="IP 白名单、审计日志与系统参数">
+    <template #desc>
+      <div style="margin-top:10px">
+        <div class="cyber-tabs" role="tablist" aria-label="系统管理视图切换">
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'ip' }"
+            :aria-selected="tab === 'ip'"
+            @click="tab = 'ip'"
+          >
+            <AppIcon name="shield" size="sm" />
+            <span>IP 白名单</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'audit' }"
+            :aria-selected="tab === 'audit'"
+            @click="tab = 'audit'"
+          >
+            <AppIcon name="file" size="sm" />
+            <span>审计日志</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'cfg' }"
+            :aria-selected="tab === 'cfg'"
+            @click="tab = 'cfg'"
+          >
+            <AppIcon name="settings" size="sm" />
+            <span>系统设置</span>
+          </button>
+        </div>
+      </div>
+    </template>
+  </PageHead>
   <div v-if="!isAdmin" class="callout info"><AppIcon name="lock" /><span>当前角色只有查看权限，修改请联系系统管理员。</span></div>
-  <a-tabs v-model:active-key="tab"><a-tab-pane key="ip" tab="IP 白名单" /><a-tab-pane key="audit" tab="审计日志" /><a-tab-pane key="cfg" tab="系统设置" /></a-tabs>
 
   <div v-if="tab === 'ip'" class="card">
     <div class="card-head"><div><h2>IP 白名单</h2><div class="sub">仅白名单内的地址可以访问平台</div></div><div class="row"><span class="muted">启用</span><a-switch :checked="settings.cfg.whitelistOn" :disabled="!isAdmin" aria-label="启用白名单" @change="toggleWl as never" /></div></div>

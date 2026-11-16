@@ -29,12 +29,6 @@ const rows = computed(() => access.users.filter((u) => {
 }))
 const roleOpts = computed(() => access.roles.map((r) => ({ value: r.key, label: r.name })))
 const roleName = (k: string) => access.roleMap[k]?.name ?? '未分配'
-const kpi = computed(() => ({
-  all: access.users.length,
-  on: access.users.filter((u) => u.on).length,
-  off: access.users.filter((u) => !u.on).length,
-  tmp: access.users.filter((u) => u.mustReset).length,
-}))
 
 /* 新增 / 编辑 */
 const ACC_RE = /^[a-z][a-z0-9_.-]{2,23}$/
@@ -123,13 +117,6 @@ const columns = [
   </PageHead>
   <div v-if="!mayEdit" class="callout info"><AppIcon name="lock" /><span>当前角色只有查看权限，如需调整请联系系统管理员。</span></div>
 
-  <div class="grid g4" style="margin-bottom:16px">
-    <div class="card kpi u-kpi"><div class="k">账号总数</div><div class="v">{{ kpi.all }}</div></div>
-    <div class="card kpi u-kpi"><div class="k">启用中</div><div class="v" style="color:var(--good)">{{ kpi.on }}</div></div>
-    <div class="card kpi u-kpi"><div class="k">已停用</div><div class="v" style="color:var(--faint)">{{ kpi.off }}</div></div>
-    <div class="card kpi u-kpi"><div class="k">待修改临时密码</div><div class="v" style="color:var(--warn)">{{ kpi.tmp }}</div></div>
-  </div>
-
   <div class="card">
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="搜索姓名、账号、部门、邮箱" aria-label="搜索用户"><template #prefix><AppIcon name="search" /></template></a-input>
@@ -145,7 +132,7 @@ const columns = [
         ]"
       />
     </div>
-    <a-table row-key="id" :columns="columns" :data-source="rows" :scroll="{ x: 1100 }" :pagination="{ pageSize: 10, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 个账号` }">
+    <a-table row-key="id" :columns="columns" :data-source="rows" :scroll="{ x: 1100 }" :pagination="{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个账号` }">
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'user'" class="u-cell">
           <span class="u-av" :class="{ off: !record.on }">{{ record.name.slice(0, 1) }}</span>
@@ -197,7 +184,6 @@ const columns = [
 </template>
 
 <style scoped>
-.u-kpi { cursor: default; }
 .u-cell { display: flex; align-items: center; gap: 10px; }
 .u-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); }
 .u-av.off { background: var(--surface-3); color: var(--faint); }

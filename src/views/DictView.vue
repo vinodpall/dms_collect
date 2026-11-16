@@ -691,8 +691,9 @@ function wordCountOfScene(sceneKey: string) {
   font-weight: 400;
 }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
 .stbl td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.stbl tbody tr:last-child td { border-bottom: 0; }
 .stbl tr.off td { opacity: .5; }
 .alias { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 3px 1px 0; border-radius: 4px; background: var(--surface-3); color: var(--muted); }
 .vlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }

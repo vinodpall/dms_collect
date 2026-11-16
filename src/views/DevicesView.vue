@@ -355,7 +355,7 @@ async function saveStation() {
         :data-source="rows"
         :custom-row="customRow"
         :scroll="{ x: 820 }"
-        :pagination="{ pageSize: 20, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 台设备` }"
+        :pagination="{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
         @change="onChange as never"
       >
         <template #bodyCell="{ column, record }">
@@ -382,9 +382,6 @@ async function saveStation() {
           <EmptyState icon="search" title="没有符合条件的设备" desc="换个关键词或状态试试" />
         </template>
       </a-table>
-      <div class="tbl-foot">
-        <span>共 {{ rows.length }} 台设备</span>
-      </div>
     </div>
   </template>
 

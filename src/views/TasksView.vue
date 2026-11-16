@@ -107,12 +107,7 @@ function retryAll() {
   tasks.list.forEach((t) => [...t.retry].forEach((f) => { tasks.retryUpload(t, f); n++ }))
   toast(n ? `已重传 ${n} 个文件` : '没有待重传的文件', { type: n ? undefined : 'warn' })
 }
-const kpi = computed(() => ({
-  running: tasks.list.filter((t) => t.status === 'running').length,
-  today: tasks.list.reduce((a, t) => a + (t.session?.eps ?? 0), 0),
-  retry: tasks.list.reduce((a, t) => a + t.retry.length, 0),
-  imported: tasks.imports.length,
-}))
+const retryCount = computed(() => tasks.list.reduce((a, t) => a + t.retry.length, 0))
 function clearFilters() { st.q = ''; st.status = 'all'; st.scen = 'all' }
 function created(id: string) {
   st.status = 'all'; st.page = 1
@@ -122,30 +117,47 @@ function created(id: string) {
 
 <template>
   <PageHead title="采集任务" desc="每次采集：设备自检 → 场景复位与采集 → 数据校验 → 入库；也可上传视频或导入 LeRobot 数据">
-    <div class="seg" role="tablist">
-      <button type="button" role="tab" :aria-selected="tab === 'tasks'" @click="tab = 'tasks'"><span>采集任务</span></button>
-      <button type="button" role="tab" :aria-selected="tab === 'hist'" @click="tab = 'hist'"><span>采集历史</span></button>
-    </div>
+    <template #desc>
+      <div style="margin-top:10px">
+        <div class="cyber-tabs" role="tablist" aria-label="任务视图切换">
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'tasks' }"
+            :aria-selected="tab === 'tasks'"
+            @click="tab = 'tasks'"
+          >
+            <AppIcon name="task" size="sm" />
+            <span>采集任务</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'hist' }"
+            :aria-selected="tab === 'hist'"
+            @click="tab = 'hist'"
+          >
+            <AppIcon name="clock" size="sm" />
+            <span>采集历史</span>
+          </button>
+        </div>
+      </div>
+    </template>
     <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'video'; imp.open = true"><AppIcon name="camera" />视频上传</a-button>
     <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'lerobot'; imp.open = true"><AppIcon name="db" />LeRobot 导入</a-button>
     <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="ui.wizardOpen = true"><AppIcon name="plus" />新建任务</a-button>
   </PageHead>
-
-  <div class="grid g4" style="margin-bottom:16px">
-    <button type="button" class="card kpi" @click="tab = 'tasks'; st.status = 'running'"><span class="k">采集中任务 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.running }}<small>个</small></span><span class="d">设备按工位占用，互不冲突</span></button>
-    <div class="card kpi"><span class="k">本次会话采集</span><span class="v">{{ kpi.today }}<small>条</small></span><span class="d">进行中任务的当前会话合计</span></div>
-    <button type="button" class="card kpi" @click="tab = 'hist'; hs.state = 'retry'"><span class="k">待重传 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.retry }}<small>个文件</small></span><span class="d">上传中断，自动重试失败</span></button>
-    <button type="button" class="card kpi" @click="tab = 'hist'; hs.src = 'all'; hs.state = 'all'"><span class="k">外部导入 <AppIcon name="right" size="sm" /></span><span class="v">{{ kpi.imported }}<small>批</small></span><span class="d">视频上传 / LeRobot 导入</span></button>
-  </div>
 
   <div v-if="tab === 'hist'" class="card">
     <div class="toolbar">
       <a-input v-model:value="hs.q" class="grow" allow-clear placeholder="搜索文件名、任务、数据集" aria-label="搜索采集历史"><template #prefix><AppIcon name="search" /></template></a-input>
       <a-select v-model:value="hs.src" style="width:140px" aria-label="来源" :options="SRC_OPTS" />
       <a-select v-model:value="hs.state" style="width:140px" aria-label="状态" :options="HIST_ST_OPTS" />
-      <a-button :disabled="!kpi.retry" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
+      <a-button :disabled="!retryCount" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
     </div>
-    <a-table :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :scroll="{ x: 900 }" :pagination="{ pageSize: 12, hideOnSinglePage: true, showTotal: (n: number) => `共 ${n} 条` }">
+    <a-table :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :scroll="{ x: 900 }" :pagination="{ pageSize: 12, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 条` }">
       <template #bodyCell="{ column, record }">
         <span v-if="column.key === 'file'" class="mono" style="font-size:12.5px">{{ record.file }}</span>
         <span v-else-if="column.key === 'source'">{{ HIST_SRC[record.source as HistSource] || record.source }}</span>

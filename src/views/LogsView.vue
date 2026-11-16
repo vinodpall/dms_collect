@@ -16,23 +16,11 @@ const activeMainTab = ref<'audit' | 'pipeline'>('audit')
 const search = ref('')
 const filterModule = ref<string>('all')
 const filterStatus = ref<string>('all')
-const filterUser = ref<string>('all')
-const filterTime = ref<'all' | 'today' | '3days' | '7days'>('all')
 
 const filteredList = computed(() => {
-  const now = Date.now()
   return logsStore.list.filter((l) => {
     if (filterModule.value !== 'all' && l.module !== filterModule.value) return false
     if (filterStatus.value !== 'all' && l.status !== filterStatus.value) return false
-    if (filterUser.value !== 'all' && l.user !== filterUser.value) return false
-
-    if (filterTime.value === 'today') {
-      if (now - l.timestamp > 1000 * 60 * 60 * 24) return false
-    } else if (filterTime.value === '3days') {
-      if (now - l.timestamp > 1000 * 60 * 60 * 24 * 3) return false
-    } else if (filterTime.value === '7days') {
-      if (now - l.timestamp > 1000 * 60 * 60 * 24 * 7) return false
-    }
 
     if (search.value) {
       const q = search.value.toLowerCase()
@@ -45,16 +33,6 @@ const filteredList = computed(() => {
     }
     return true
   })
-})
-
-const stats = computed(() => {
-  const all = logsStore.list
-  return {
-    total: all.length,
-    success: all.filter((l) => l.status === 'success').length,
-    warn: all.filter((l) => l.status === 'warn').length,
-    failed: all.filter((l) => l.status === 'failed').length,
-  }
 })
 
 const detailModal = reactive<{
@@ -285,26 +263,7 @@ function exportAlgCsv() {
 
   <!-- TAB 1: 用户操作审计日志 -->
   <template v-if="activeMainTab === 'audit'">
-    <div class="grid g4" style="margin-bottom:14px">
-      <div class="card kpi l-kpi">
-        <span class="k">累计操作流水</span>
-        <span class="v">{{ stats.total }}<small>条</small></span>
-      </div>
-      <div class="card kpi l-kpi">
-        <span class="k">正常执行成功</span>
-        <span class="v" style="color:var(--good)">{{ stats.success }}<small>条</small></span>
-      </div>
-      <div class="card kpi l-kpi">
-        <span class="k">审核打回 / 质检告警</span>
-        <span class="v" style="color:var(--warn)">{{ stats.warn }}<small>条</small></span>
-      </div>
-      <div class="card kpi l-kpi">
-        <span class="k">流水线异常 / 拦截</span>
-        <span class="v" style="color:var(--crit)">{{ stats.failed }}<small>条</small></span>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:14px">
+    <div class="card">
       <div class="toolbar">
         <a-input
           v-model:value="search"
@@ -524,13 +483,10 @@ function exportAlgCsv() {
 </template>
 
 <style scoped>
-.main-tabs-bar { margin-bottom: 16px; }
-.l-kpi { cursor: default; padding: 14px 18px; }
-.l-kpi .v { font-size: 26px; }
-
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
 .stbl td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.stbl tbody tr:last-child td { border-bottom: 0; }
 
 .ell-code { cursor: pointer; text-decoration: underline; color: var(--accent); }
 .text-accent { color: var(--accent); }
