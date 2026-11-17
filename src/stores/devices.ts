@@ -5,33 +5,46 @@ import {
   devicesApi,
   stationsApi,
   getToken,
+  type DeviceEventItem,
   type DeviceItem as ApiDeviceItem,
+  type DeviceUpdatePayload,
   type StationItem,
   type DeviceKitItem,
   type DeviceTypeItem,
+  type StationCreatePayload,
+  type StationUpdatePayload,
 } from '@/api'
 
 export type DevStatus = 'online' | 'offline' | 'maint' | 'fault'
-
-export interface Device {
-  id: string
-  numericId?: number
-  name: string
-  type: string
-  st: DevStatus
-  loc: string
-  station: string
-  stationId?: number
-  fw: string
-  calib: { at: string; by: string; items: string[] } | null
-  cfg: DevCfg
-  version?: number
-}
 
 export interface DevCfg {
   rate: number
   res?: string
   codec?: string
+}
+
+export interface Device {
+  id: string
+  numericId: number
+  name: string
+  type: string
+  typeCode: string
+  st: DevStatus
+  loc: string
+  station: string
+  stationId: number
+  model: string
+  vendor: string
+  serialNo: string
+  fw: string
+  connIp: string
+  connPort: number | null
+  occupiedTaskId: number | null
+  occupiedTaskCode: string
+  calib: { at: string; by: string; items: string[] } | null
+  cfg: DevCfg
+  version: number
+  updatedAt: string
 }
 
 export const CFG_DEF: Record<string, { label: string; unit: string; rates: number[]; video: boolean; def: DevCfg }> = {
@@ -53,13 +66,6 @@ export function cfgText(type: string, c: DevCfg) {
   return [r, c.res, c.codec].filter(Boolean).join(' · ')
 }
 
-export interface Fault {
-  dev: string
-  t: string
-  lv: string
-  d: string
-  by: string
-}
 export const DV_ST: Record<DevStatus, [BadgeKind, string]> = {
   online: ['good', '在线'],
   offline: ['crit', '离线'],
@@ -68,7 +74,20 @@ export const DV_ST: Record<DevStatus, [BadgeKind, string]> = {
 }
 
 export const DEV_TYPES = ['VR 一体机', '动捕手套', 'UMI', '相机', '力觉', '机械臂', '其他']
-export const STATIONS = ['采集工位 A', '采集工位 B', '采集工位 C']
+
+export const TYPE_LABEL_TO_CODE: Record<string, string> = {
+  'VR 一体机': 'vr',
+  '动捕手套': 'glove',
+  UMI: 'umi',
+  '相机': 'camera',
+  '力觉': 'ft',
+  '机械臂': 'arm',
+  '其他': 'other',
+}
+
+export const TYPE_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(TYPE_LABEL_TO_CODE).map(([label, code]) => [code, label])
+)
 
 export const CALIB_ITEMS: Record<string, string[]> = {
   'VR 一体机': ['VR 坐标系与机械臂基坐标系对齐'],
@@ -92,8 +111,8 @@ export const DEV_PARAMS: Record<string, { ch: string; gb: number }> = {
 const RES_K: Record<string, number> = { '720p': 0.55, '1080p': 1, '4K': 3.2 }
 
 export function sizeOf(d: Device) {
-  const p = DEV_PARAMS[d.type] ?? DEV_PARAMS['其他'],
-    df = cfgDef(d.type)
+  const p = DEV_PARAMS[d.type] ?? DEV_PARAMS['其他']
+  const df = cfgDef(d.type)
   if (!df.video) return p.gb * (d.cfg.rate / df.def.rate)
   return (
     p.gb *
@@ -109,6 +128,7 @@ export interface Kit {
   mode: ModeKey
   devices: string[]
 }
+/** 保留供未对接 API 的任务创建向导(TaskWizard)使用 */
 export const KITS: Kit[] = [
   { id: 'KIT-A', name: '工位 A · VR 单臂', mode: 'vr', devices: ['DV-001', 'DV-005', 'DV-006', 'DV-012', 'DV-010', 'DV-011'] },
   { id: 'KIT-A2', name: '工位 A · VR 双臂', mode: 'vr', devices: ['DV-002', 'DV-012', 'DV-013', 'DV-010', 'DV-011'] },
@@ -116,251 +136,289 @@ export const KITS: Kit[] = [
   { id: 'KIT-C', name: '工位 C · UMI 双手', mode: 'umi', devices: ['DV-007', 'DV-008', 'DV-014'] },
 ]
 
-const cal = (at: string, type: string) => ({ at, by: '赵工', items: CALIB_ITEMS[type] ?? CALIB_ITEMS['其他'] })
-const dv = (
-  id: string,
-  name: string,
-  type: string,
-  st: DevStatus,
-  loc: string,
-  station: string,
-  fw: string,
-  calAt: string | null
-): Device => ({
-  id,
-  name,
-  type,
-  st,
-  loc,
-  station,
-  fw,
-  calib: calAt ? cal(calAt, type) : null,
-  cfg: { ...cfgDef(type).def },
-})
-
-const INITIAL_DEVICES: Device[] = [
-  dv('DV-001', 'PICO VR 一体机 #1', 'VR 一体机', 'online', '采集工位 A', '采集工位 A', '5.9.2', '09-28'),
-  dv('DV-002', 'PICO VR 一体机 #2', 'VR 一体机', 'online', '采集工位 A', '采集工位 A', '5.9.2', '09-28'),
-  dv('DV-003', 'PICO VR 一体机 #3', 'VR 一体机', 'online', '采集工位 B', '采集工位 B', '5.9.1', '09-30'),
-  dv('DV-004', 'PICO VR 一体机 #4', 'VR 一体机', 'maint', '维修间', '采集工位 B', '5.9.0', null),
-  dv('DV-005', '动捕手套 左', '动捕手套', 'online', '采集工位 A', '采集工位 A', '2.4.0', '09-28'),
-  dv('DV-006', '动捕手套 右', '动捕手套', 'online', '采集工位 A', '采集工位 A', '2.4.0', '09-28'),
-  dv('DV-007', 'UMI 手持设备 #1', 'UMI', 'online', '采集工位 C', '采集工位 C', '1.8.3', '10-02'),
-  dv('DV-008', 'UMI 手持设备 #2', 'UMI', 'online', '采集工位 C', '采集工位 C', '1.8.3', '10-02'),
-  dv('DV-009', 'RealSense D405（腕部视角）', '相机', 'fault', '机械臂末端', '采集工位 A', '5.16.0', '09-28'),
-  dv('DV-010', 'RealSense D435（第三视角）', '相机', 'online', '工位上方', '采集工位 A', '5.16.0', '09-28'),
-  dv('DV-011', '六维力传感器', '力觉', 'online', '机械臂腕部', '采集工位 A', '3.1.0', '09-28'),
-  dv('DV-012', '7DOF 机械臂 #1', '机械臂', 'online', '采集工位 A', '采集工位 A', '7.2.1', '09-28'),
-  dv('DV-013', '7DOF 机械臂 #2', '机械臂', 'online', '采集工位 A', '采集工位 A', '7.2.1', '09-28'),
-  dv('DV-014', 'RealSense D435（UMI 第三视角）', '相机', 'online', '工位侧上方', '采集工位 C', '5.16.0', '10-02'),
-  dv('DV-015', 'RealSense D435（工位 B）', '相机', 'online', '工位上方', '采集工位 B', '5.16.0', '10-06'),
-  dv('DV-016', '7DOF 机械臂 #3', '机械臂', 'online', '采集工位 B', '采集工位 B', '7.2.1', '10-06'),
-]
-
 export const useDevices = defineStore('devices', () => {
-  const list = ref<Device[]>(INITIAL_DEVICES)
+  const list = ref<Device[]>([])
+  const deviceTotal = ref(0)
   const stations = ref<StationItem[]>([])
   const kits = ref<DeviceKitItem[]>([])
   const types = ref<DeviceTypeItem[]>([])
-  const faults = ref<Fault[]>([
-    { dev: 'DV-009', t: '10-13 16:07', lv: '一般', d: '掉帧率 2.4%，疑似 USB 带宽不足', by: '赵工' },
-  ])
+  const eventsByDevice = ref<Record<number, DeviceEventItem[]>>({})
   const loading = ref(false)
+  const loadingStations = ref(false)
 
   const byId = (id: string) => list.value.find((d) => d.id === id || String(d.numericId) === id)
-  const nextId = () =>
-    'DV-' +
-    String(Math.max(0, ...list.value.map((d) => parseInt(d.id.replace(/\D/g, '') || '0', 10))) + 1).padStart(
-      3,
-      '0'
-    )
+
+  function typeMeta(typeNameOrCode: string) {
+    const t = types.value.find((x) => x.type === typeNameOrCode || x.label === typeNameOrCode)
+    if (t) {
+      return {
+        code: t.type,
+        label: t.rate_label,
+        unit: t.unit,
+        rates: t.rates,
+        video: t.video,
+        resolutions: t.resolutions?.length ? t.resolutions : RES_OPTS,
+        codecs: t.codecs?.length ? t.codecs : CODEC_OPTS,
+        def: (t.default_config && t.default_config.rate
+          ? t.default_config
+          : { rate: t.rates?.[0] ?? 30, ...(t.video ? { res: t.resolutions?.[0] ?? '1080p', codec: t.codecs?.[0] ?? 'H.265' } : {}) }) as DevCfg,
+        calibItems: t.calib_items?.length ? t.calib_items : (CALIB_ITEMS[t.label] ?? CALIB_ITEMS['其他']),
+      }
+    }
+    const label = TYPE_CODE_TO_LABEL[typeNameOrCode] || typeNameOrCode
+    const c = cfgDef(label)
+    return {
+      code: TYPE_LABEL_TO_CODE[label] || 'other',
+      label: c.label,
+      unit: c.unit,
+      rates: c.rates,
+      video: c.video,
+      resolutions: RES_OPTS,
+      codecs: CODEC_OPTS,
+      def: { ...c.def },
+      calibItems: CALIB_ITEMS[label] ?? CALIB_ITEMS['其他'],
+    }
+  }
+
+  function mapApiDevice(item: ApiDeviceItem): Device {
+    const typeName = item.type_label || TYPE_CODE_TO_LABEL[item.device_type] || item.device_type
+    const meta = typeMeta(item.device_type || typeName)
+    return {
+      id: item.code,
+      numericId: item.id,
+      name: item.name,
+      type: typeName,
+      typeCode: item.device_type,
+      st: item.status,
+      loc: item.location || '',
+      station: item.station_name || '',
+      stationId: item.station_id,
+      model: item.model || '',
+      vendor: item.vendor || '',
+      serialNo: item.serial_no || '',
+      fw: item.firmware || '',
+      connIp: item.conn_ip || '',
+      connPort: item.conn_port ?? null,
+      occupiedTaskId: item.occupied_task_id ?? null,
+      occupiedTaskCode: item.occupied_task_code || '',
+      calib: item.is_calibrated
+        ? {
+            at: item.calibrated_at ? item.calibrated_at.replace('T', ' ').slice(0, 16) : '',
+            by: item.calibrated_by_name || '—',
+            items: item.calib_items?.length ? item.calib_items : meta.calibItems,
+          }
+        : null,
+      cfg: item.config && item.config.rate ? (item.config as DevCfg) : { ...meta.def },
+      version: item.version ?? 0,
+      updatedAt: item.updated_at ? item.updated_at.replace('T', ' ').slice(0, 16) : '',
+    }
+  }
+
+  async function fetchStations(params?: { is_online?: boolean; keyword?: string }) {
+    if (!getToken()) return []
+    loadingStations.value = true
+    try {
+      const res = await stationsApi.list(params)
+      stations.value = Array.isArray(res) ? res : []
+      return stations.value
+    } finally {
+      loadingStations.value = false
+    }
+  }
+
+  async function fetchDevices(params?: {
+    page?: number
+    size?: number
+    station_id?: number
+    device_type?: string
+    status?: string
+    keyword?: string
+  }) {
+    if (!getToken()) return
+    const res = await devicesApi.list({ page: 1, size: 100, ...params })
+    const items: ApiDeviceItem[] = res?.items || []
+    list.value = items.map(mapApiDevice)
+    deviceTotal.value = res?.total ?? items.length
+  }
 
   /** 从后端同步设备、工位、套装与类型 */
   async function fetchAll() {
     if (!getToken()) return
     loading.value = true
     try {
-      const [devRes, stList, kitList, typeList] = await Promise.allSettled([
-        devicesApi.list({ size: 100 }),
+      const [typeList, stList, kitList, devRes] = await Promise.allSettled([
+        devicesApi.getTypes(),
         stationsApi.list(),
         devicesApi.getKits(),
-        devicesApi.getTypes(),
+        devicesApi.list({ page: 1, size: 100 }),
       ])
 
-      if (stList.status === 'fulfilled') {
-        stations.value = stList.value
-      }
-      if (kitList.status === 'fulfilled') {
-        kits.value = kitList.value
-      }
-      if (typeList.status === 'fulfilled') {
+      if (typeList.status === 'fulfilled' && Array.isArray(typeList.value)) {
         types.value = typeList.value
       }
-
-      if (devRes.status === 'fulfilled') {
-        const items: ApiDeviceItem[] = (devRes.value as any).items || []
-        list.value = items.map((item) => {
-          const typeName = item.type_label || item.device_type
-          return {
-            id: item.code,
-            numericId: item.id,
-            name: item.name,
-            type: typeName,
-            st: item.status,
-            loc: item.location || item.station_name,
-            station: item.station_name,
-            stationId: item.station_id,
-            fw: item.firmware || '—',
-            calib: item.is_calibrated
-              ? {
-                  at: item.calibrated_at ? item.calibrated_at.slice(5, 10) : '',
-                  by: item.calibrated_by_name || '赵工',
-                  items: item.calib_items || CALIB_ITEMS[typeName] || CALIB_ITEMS['其他'],
-                }
-              : null,
-            cfg: item.config && item.config.rate ? (item.config as DevCfg) : { ...cfgDef(typeName).def },
-            version: item.version,
-          }
-        })
+      if (stList.status === 'fulfilled' && Array.isArray(stList.value)) {
+        stations.value = stList.value
       }
-    } catch (e) {
-      console.warn('[devices] 从后端加载失败', e)
+      if (kitList.status === 'fulfilled' && Array.isArray(kitList.value)) {
+        kits.value = kitList.value
+      }
+      if (devRes.status === 'fulfilled') {
+        const items: ApiDeviceItem[] = devRes.value?.items || []
+        list.value = items.map(mapApiDevice)
+        deviceTotal.value = devRes.value?.total ?? items.length
+      }
     } finally {
       loading.value = false
     }
   }
 
-  function add(x: {
+  async function fetchDeviceDetail(numericId: number): Promise<Device> {
+    const res = await devicesApi.get(numericId)
+    const mapped = mapApiDevice(res)
+    const idx = list.value.findIndex((x) => x.numericId === numericId)
+    if (idx >= 0) list.value[idx] = mapped
+    else list.value.unshift(mapped)
+    return mapped
+  }
+
+  async function fetchDeviceEvents(numericId: number): Promise<DeviceEventItem[]> {
+    const events = await devicesApi.getEvents(numericId)
+    const rows = Array.isArray(events) ? events : []
+    eventsByDevice.value[numericId] = rows
+    return rows
+  }
+
+  async function add(x: {
     name: string
-    type: string
-    loc: string
-    fw: string
-    station: string
+    typeCode: string
+    stationId: number
+    loc?: string
+    model?: string
+    vendor?: string
+    serialNo?: string
+    fw?: string
+    connIp?: string
+    connPort?: number | null
     cfg?: DevCfg
-  }): Device {
-    const code = nextId()
-    const d: Device = {
-      id: code,
+  }): Promise<Device> {
+    const created = await devicesApi.create({
       name: x.name,
-      type: x.type,
-      st: 'offline',
-      loc: x.loc || x.station,
-      station: x.station,
-      fw: x.fw || '—',
-      calib: null,
-      cfg: x.cfg ? { ...x.cfg } : { ...cfgDef(x.type).def },
-    }
-    list.value.unshift(d)
-
-    // 异步同步至后端
-    if (getToken()) {
-      const targetStation = stations.value.find((s) => s.name === x.station) || stations.value[0]
-      const stationId = targetStation ? targetStation.id : 1
-      devicesApi
-        .create({
-          name: x.name,
-          device_type:
-            x.type === 'VR 一体机'
-              ? 'vr'
-              : x.type === '动捕手套'
-                ? 'glove'
-                : x.type === '相机'
-                  ? 'camera'
-                  : x.type === '力觉'
-                    ? 'ft'
-                    : x.type === '机械臂'
-                      ? 'arm'
-                      : 'other',
-          station_id: stationId,
-          location: x.loc || x.station,
-          firmware: x.fw || undefined,
-          config: x.cfg ? { ...x.cfg } : undefined,
-        })
-        .then((res) => {
-          if (res) {
-            d.numericId = res.id
-            d.id = res.code
-          }
-        })
-        .catch((e) => {
-          console.warn('[devices] 后端创建设备失败', e)
-        })
-    }
-
-    return d
+      device_type: x.typeCode,
+      station_id: x.stationId,
+      location: x.loc || null,
+      model: x.model || null,
+      vendor: x.vendor || null,
+      serial_no: x.serialNo || null,
+      firmware: x.fw || null,
+      conn_ip: x.connIp || null,
+      conn_port: x.connPort ?? null,
+      config: x.cfg ? { ...x.cfg } : undefined,
+    })
+    const mapped = mapApiDevice(created)
+    list.value.unshift(mapped)
+    deviceTotal.value += 1
+    // 刷新工位挂载设备计数
+    fetchStations().catch(() => {})
+    return mapped
   }
 
-  async function calibrate(d: Device, by: string) {
-    const items = CALIB_ITEMS[d.type] ?? CALIB_ITEMS['其他']
-    d.calib = { at: '今天', by, items }
-    if (d.numericId) {
-      try {
-        await devicesApi.calibrate(d.numericId, items)
-      } catch (e) {
-        console.warn('[devices] 后端标定失败', e)
-      }
-    }
+  async function updateDevice(d: Device, payload: Omit<DeviceUpdatePayload, 'version'>): Promise<Device> {
+    const res = await devicesApi.update(d.numericId, {
+      ...payload,
+      version: d.version,
+    })
+    const mapped = mapApiDevice(res)
+    const idx = list.value.findIndex((x) => x.numericId === d.numericId)
+    if (idx >= 0) list.value[idx] = mapped
+    fetchStations().catch(() => {})
+    return mapped
   }
 
-  async function updateConfig(d: Device, cfg: DevCfg) {
-    d.cfg = { ...cfg }
-    if (d.numericId) {
-      try {
-        await devicesApi.updateConfig(d.numericId, cfg as any, d.version ?? 0)
-        d.version = (d.version ?? 0) + 1
-      } catch (e) {
-        console.warn('[devices] 后端更新配置失败', e)
-      }
-    }
+  async function calibrate(d: Device): Promise<Device> {
+    const items = typeMeta(d.typeCode || d.type).calibItems
+    await devicesApi.calibrate(d.numericId, items)
+    return await fetchDeviceDetail(d.numericId)
   }
 
-  async function reportFault(devCode: string, lv: string, desc: string, by: string) {
-    faults.value.unshift({ dev: devCode, t: '刚刚', lv, d: desc, by })
+  async function updateConfig(d: Device, cfg: DevCfg): Promise<Device> {
+    await devicesApi.updateConfig(d.numericId, { ...cfg }, d.version)
+    return await fetchDeviceDetail(d.numericId)
+  }
+
+  async function reportFault(devCode: string, lv: '一般' | '严重', desc: string): Promise<void> {
     const d = byId(devCode)
-    if (d) {
-      if (lv === '严重') d.st = 'fault'
-      if (d.numericId) {
-        try {
-          await devicesApi.reportFault(d.numericId, lv === '严重' ? 'severe' : 'normal', desc)
-        } catch (e) {
-          console.warn('[devices] 后端登记故障失败', e)
-        }
-      }
-    }
+    if (!d) throw new Error('设备不存在')
+    await devicesApi.reportFault(d.numericId, lv === '严重' ? 'severe' : 'normal', desc)
+    await Promise.allSettled([fetchDeviceDetail(d.numericId), fetchDeviceEvents(d.numericId)])
   }
 
-  async function setStatus(d: Device, st: DevStatus) {
-    d.st = st
-    if (d.numericId) {
-      try {
-        if (st === 'maint') await devicesApi.maintain(d.numericId)
-        else if (st === 'online') await devicesApi.recover(d.numericId)
-      } catch (e) {
-        console.warn('[devices] 后端状态流转失败', e)
-      }
-    }
+  async function setStatus(d: Device, st: 'maint' | 'online', description?: string): Promise<Device> {
+    if (st === 'maint') await devicesApi.maintain(d.numericId, description)
+    else await devicesApi.recover(d.numericId, description)
+    const updated = await fetchDeviceDetail(d.numericId)
+    fetchDeviceEvents(d.numericId).catch(() => {})
+    return updated
   }
 
-  const ofTypes = (types: string[]) => list.value.filter((d) => types.includes(d.type))
+  async function createStation(data: StationCreatePayload) {
+    const res = await stationsApi.create(data)
+    await fetchStations()
+    return res
+  }
+
+  async function updateStation(id: number, data: StationUpdatePayload) {
+    const res = await stationsApi.update(id, data)
+    await fetchStations()
+    return res
+  }
+
+  const ofTypes = (typeLabels: string[]) => list.value.filter((d) => typeLabels.includes(d.type))
+
+  function reset() {
+    list.value = []
+    deviceTotal.value = 0
+    stations.value = []
+    kits.value = []
+    types.value = []
+    eventsByDevice.value = {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dms:login', () => {
+      fetchAll().catch(() => {})
+    })
+    window.addEventListener('dms:logout', reset)
+  }
 
   if (getToken()) {
-    fetchAll()
+    fetchAll().catch((e) => console.warn('[devices] 初始化失败', e))
   }
 
   return {
     list,
+    deviceTotal,
     stations,
     kits,
     types,
-    faults,
+    eventsByDevice,
     loading,
+    loadingStations,
+    typeMeta,
     byId,
     add,
+    updateDevice,
     calibrate,
     updateConfig,
     reportFault,
     setStatus,
     ofTypes,
     fetchAll,
+    fetchDevices,
+    fetchStations,
+    fetchDeviceDetail,
+    fetchDeviceEvents,
+    createStation,
+    updateStation,
+    reset,
   }
 })

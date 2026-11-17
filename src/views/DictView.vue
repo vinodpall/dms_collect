@@ -1,23 +1,29 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { SCEN, MODES, type ScenKey, type ModeKey } from '@/constants'
+import EmptyState from '@/components/EmptyState.vue'
+import { MODES, type ScenKey, type ModeKey } from '@/constants'
 import { LEVELS, useDict, type ActLevel, type DictCat, type DictItem, type DictOp } from '@/stores/dict'
-import { useAnnotate } from '@/stores/annotate'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
 import type { SceneItem } from '@/api'
 
-/** 标注字典与场景管理 */
+/** 标注字典与采集场景管理 */
 const dict = useDict()
-const ann = useAnnotate()
 const session = useSession()
 
-// 主页签：'dict' | 'scenes'
 const mainTab = ref<'dict' | 'scenes'>('dict')
+
+onMounted(async () => {
+  try {
+    await dict.fetchAll()
+  } catch (err: any) {
+    toast('加载字典与场景数据失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
+})
 
 /* ================= 词条字典相关 ================= */
 type Tab = 'all' | ActLevel
@@ -57,33 +63,27 @@ const itemCols = [
 const logCols = [
   { title: '时间', key: 't', width: 150, align: 'center' as const },
   { title: '版本', key: 'ver', width: 90, align: 'center' as const },
-  { title: '操作人', key: 'by', width: 90, align: 'center' as const },
+  { title: '操作人', key: 'by', width: 100, align: 'center' as const },
   { title: '操作', key: 'op', width: 80, align: 'center' as const },
   { title: '词条', key: 'target', width: 140, align: 'center' as const },
   { title: '内容', key: 'summary', align: 'center' as const },
 ]
-/** 被标注引用的次数 */
-const usage = (name: string) =>
-  ann.clips.reduce((a, c) => a + c.segs.filter((s) => s.n === name).length, 0)
 
-const scenOpts = computed(() => {
-  if (dict.scenes?.length) {
-    return dict.scenes.map((s) => ({ value: s.scene_key, label: s.short_name || s.name }))
-  }
-  return (Object.keys(SCEN) as ScenKey[]).map((k) => ({ value: k, label: SCEN[k].short }))
-})
+const scenOpts = computed(() =>
+  dict.scenes.map((s) => ({ value: s.scene_key, label: s.short_name || s.name }))
+)
 
 const LEVEL_OPTS = (Object.keys(LEVELS) as ActLevel[]).map((k) => ({ value: k, label: LEVELS[k] }))
 const levelLabel = (lv?: ActLevel) => LEVELS[lv ?? 'compound'] ?? '标准子任务'
 const scenLabel = (s: DictItem['scen']) => {
   if (s === 'common') return '通用'
   const found = dict.scenes.find((sc) => sc.scene_key === s)
-  if (found) return found.short_name || found.name
-  return (SCEN as any)[s]?.short ?? s
+  return found ? (found.short_name || found.name) : s
 }
 
 const modal = reactive({
   open: false,
+  saving: false,
   id: '',
   code: '',
   name: '',
@@ -98,6 +98,7 @@ const modal = reactive({
 function openAdd() {
   Object.assign(modal, {
     open: true,
+    saving: false,
     id: '',
     code: '',
     name: '',
@@ -113,6 +114,7 @@ function openAdd() {
 function openEdit(x: DictItem) {
   Object.assign(modal, {
     open: true,
+    saving: false,
     id: x.id,
     code: x.code,
     name: x.name,
@@ -126,11 +128,12 @@ function openEdit(x: DictItem) {
 }
 
 async function save() {
-  const name = modal.name.trim(),
-    code = modal.code.trim().toUpperCase()
+  const name = modal.name.trim()
+  const code = modal.code.trim().toUpperCase()
   if (!name || !code) return toast('请填写编码与名称', { type: 'warn' })
-  if (dict.items.some((x) => x.id !== modal.id && (x.name === name || x.code === code)))
+  if (dict.items.some((x) => x.id !== modal.id && (x.name === name || x.code === code))) {
     return toast('名称或编码与已有词条重复', { type: 'warn' })
+  }
 
   const isAct = modal.category === 'action'
   const data = {
@@ -147,25 +150,25 @@ async function save() {
     required: isAct && modal.level === 'compound' && modal.scen !== 'common' ? modal.required : false,
   }
 
-  if (modal.id) {
-    const old = dict.items.find((x) => x.id === modal.id)
-    if (old && old.name !== name)
-      ann.clips.forEach((c) =>
-        c.segs.forEach((s) => {
-          if (s.n === old.name) s.n = name
-        })
-      )
-    await dict.update(modal.id, data, session.info.user)
-    toast('已保存，字典升级为 ' + dict.version)
-  } else {
-    await dict.add(data, session.info.user)
-    toast('已新增，字典升级为 ' + dict.version)
+  modal.saving = true
+  try {
+    if (modal.id) {
+      await dict.update(modal.id, data)
+      toast('已保存，字典当前版本 ' + dict.version)
+    } else {
+      await dict.add(data)
+      toast('已新增，字典当前版本 ' + dict.version)
+    }
+    modal.open = false
+  } catch (err: any) {
+    toast('保存失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
+    modal.saving = false
   }
-  modal.open = false
 }
 
 async function del(x: DictItem) {
-  const n = usage(x.name)
+  const n = x.refCount
   const ok = await confirmDlg({
     title: '删除词条？',
     msg: n
@@ -175,14 +178,22 @@ async function del(x: DictItem) {
     danger: true,
   })
   if (!ok) return
-  await dict.remove(x.id, session.info.user)
-  toast('已删除，字典升级为 ' + dict.version)
+  try {
+    await dict.remove(x.id)
+    toast('已删除，字典当前版本 ' + dict.version)
+  } catch (err: any) {
+    toast('删除失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
 
 async function toggle(x: DictItem) {
   const next = x.status === 'active' ? '停用' : '启用'
-  await dict.toggle(x.id, session.info.user)
-  toast(`已${next}「${x.name}」`)
+  try {
+    await dict.toggle(x.id)
+    toast(`已${next}「${x.name}」`)
+  } catch (err: any) {
+    toast(`${next}失败：` + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
 
 /* 变更记录视图：'list' | 'log' */
@@ -206,8 +217,8 @@ const logs = computed(() =>
   dict.changes.filter((c) => {
     if (logOp.value !== 'all' && c.op !== logOp.value) return false
     if (logBy.value !== 'all' && c.by !== logBy.value) return false
-    const k = logQ.value.trim()
-    return !k || c.target.includes(k) || c.summary.includes(k)
+    const k = logQ.value.trim().toLowerCase()
+    return !k || c.target.toLowerCase().includes(k) || c.summary.toLowerCase().includes(k)
   })
 )
 
@@ -238,6 +249,11 @@ watch([tab, scen, q], () => { itemPage.value = 1 })
 watch([logOp, logBy, logQ], () => { logPage.value = 1 })
 watch([sceneSearch, sceneStatus], () => { scenePage.value = 1 })
 
+const modeOpts = Object.entries(MODES).map(([value, m]) => ({
+  value,
+  label: `${m.name} (${m.short})`,
+}))
+
 const sceneModal = reactive({
   open: false,
   isEdit: false,
@@ -246,12 +262,12 @@ const sceneModal = reactive({
   code: '',
   name: '',
   short_name: '',
-  default_mode: 'vr' as 'vr' | 'umi',
+  default_mode: 'vr' as ModeKey,
   dur_min_s: 10,
   dur_max_s: 40,
   reset_desc: '',
   lang_template: '',
-  specsStr: '18, 19, 20',
+  specsStr: '',
   is_active: true,
   sort_order: 1,
   saving: false,
@@ -271,7 +287,7 @@ function openAddScene() {
     dur_max_s: 40,
     reset_desc: '',
     lang_template: '',
-    specsStr: '18, 19, 20',
+    specsStr: '',
     is_active: true,
     sort_order: dict.scenes.length + 1,
     saving: false,
@@ -316,6 +332,7 @@ async function saveScene() {
   try {
     if (sceneModal.isEdit) {
       await dict.updateScene(sceneModal.id, {
+        code: sceneModal.code.trim().toUpperCase(),
         name: sceneModal.name.trim(),
         short_name: sceneModal.short_name.trim() || sceneModal.name.trim(),
         default_mode: sceneModal.default_mode,
@@ -347,7 +364,7 @@ async function saveScene() {
     }
     sceneModal.open = false
   } catch (err: any) {
-    toast('保存失败: ' + err.message, { type: 'warn' })
+    toast('保存失败: ' + (err?.message || '请稍后重试'), { type: 'crit' })
   } finally {
     sceneModal.saving = false
   }
@@ -358,7 +375,7 @@ async function toggleSceneStatus(s: SceneItem) {
     await dict.updateScene(s.id, { is_active: !s.is_active })
     toast(`已${!s.is_active ? '启用' : '停用'}场景「${s.name}」`)
   } catch (err: any) {
-    toast('状态修改失败: ' + err.message, { type: 'warn' })
+    toast('状态修改失败: ' + (err?.message || '请稍后重试'), { type: 'crit' })
   }
 }
 
@@ -368,7 +385,6 @@ function wordCountOfScene(sceneKey: string) {
 </script>
 
 <template>
-  <!-- 统一顶部 PageHead：集成赛博胶囊页签，去除两截式割裂感 -->
   <PageHead
     :title="mainTab === 'dict' ? '标注字典' : '采集场景管理'"
     :desc="mainTab === 'dict' ? '标注与审核共用一份字典 · 当前版本 ' + dict.version + '；子任务分标准 / 异常两类' : '规范化管理采集场景、默认遥操作/示教模式、节拍标准时长以及工件复位标准'"
@@ -398,7 +414,6 @@ function wordCountOfScene(sceneKey: string) {
       </div>
     </template>
 
-    <!-- 右侧操作按钮联动 -->
     <template v-if="mainTab === 'dict'">
       <a-button @click="view = view === 'log' ? 'list' : 'log'">
         <AppIcon :name="view === 'log' ? 'left' : 'clock'" />
@@ -434,7 +449,8 @@ function wordCountOfScene(sceneKey: string) {
         <a-table
           :data-source="logs"
           :columns="logCols"
-          row-key="t"
+          :loading="dict.loading"
+          row-key="id"
           size="middle"
           :pagination="{
             current: logPage,
@@ -456,7 +472,7 @@ function wordCountOfScene(sceneKey: string) {
               <span>{{ record.by }}</span>
             </template>
             <template v-else-if="column.key === 'op'">
-              <span class="tag" :class="OP_CLS[record.op as DictOp]">{{ record.op }}</span>
+              <span class="tag" :class="OP_CLS[record.op as DictOp] || 'info'">{{ record.op }}</span>
             </template>
             <template v-else-if="column.key === 'target'">
               <b>{{ record.target }}</b>
@@ -465,6 +481,7 @@ function wordCountOfScene(sceneKey: string) {
               <span class="muted">{{ record.summary }}</span>
             </template>
           </template>
+          <template #emptyText><EmptyState icon="clock" title="暂无操作记录" desc="当前筛选条件下没有字典变更历史" /></template>
         </a-table>
       </div>
     </template>
@@ -495,6 +512,7 @@ function wordCountOfScene(sceneKey: string) {
         <a-table
           :data-source="rows"
           :columns="itemCols"
+          :loading="dict.loading"
           row-key="id"
           size="middle"
           :row-class-name="(r: DictItem) => r.status !== 'active' ? 'off' : ''"
@@ -524,26 +542,28 @@ function wordCountOfScene(sceneKey: string) {
               <span class="muted" style="white-space:nowrap">{{ scenLabel(record.scen) }}</span>
             </template>
             <template v-else-if="column.key === 'desc'">
-              <span class="muted" style="font-size:12.5px">{{ record.desc }}</span>
+              <span class="muted" style="font-size:12.5px">{{ record.desc || '—' }}</span>
             </template>
             <template v-else-if="column.key === 'aliases'">
-              <div class="row" style="gap:4px;flex-wrap:wrap">
+              <div v-if="record.aliases.length" class="row" style="gap:4px;flex-wrap:wrap;justify-content:center">
                 <span v-for="a in record.aliases" :key="a" class="alias">{{ a }}</span>
               </div>
+              <span v-else class="muted">—</span>
             </template>
             <template v-else-if="column.key === 'usage'">
-              <span class="num muted">{{ usage(record.name) }}</span>
+              <span class="num muted">{{ record.refCount }}</span>
             </template>
             <template v-else-if="column.key === 'status'">
               <a-switch size="small" :checked="record.status === 'active'" :aria-label="'启用 ' + record.name" @change="toggle(record)" />
             </template>
             <template v-else-if="column.key === 'act'">
-              <div class="row" style="gap:8px">
+              <div class="row" style="gap:8px;justify-content:center">
                 <a-button size="small" type="link" @click="openEdit(record)">编辑</a-button>
                 <a-button size="small" type="link" danger @click="del(record)">删除</a-button>
               </div>
             </template>
           </template>
+          <template #emptyText><EmptyState icon="layers" title="暂无字典词条" desc="请检查筛选条件或点击右上角新增词条" /></template>
         </a-table>
       </div>
     </template>
@@ -568,7 +588,7 @@ function wordCountOfScene(sceneKey: string) {
         />
       </div>
 
-      <div class="scenes-grid">
+      <div v-if="paginatedScenes.length" class="scenes-grid">
         <div v-for="s in paginatedScenes" :key="s.id" class="scene-card" :class="{ disabled: !s.is_active }">
           <div class="sc-header">
             <div class="sc-title-wrap">
@@ -621,6 +641,7 @@ function wordCountOfScene(sceneKey: string) {
           </div>
         </div>
       </div>
+      <EmptyState v-else icon="grid" title="暂无采集场景" desc="请检查筛选条件或点击右上角新增场景" style="padding:32px 16px" />
 
       <div class="grid-pager">
         <a-pagination
@@ -635,12 +656,13 @@ function wordCountOfScene(sceneKey: string) {
     </div>
   </template>
 
-  <!-- 词条编辑弹窗（整齐对齐化，640px 宽度） -->
+  <!-- 词条编辑弹窗 -->
   <a-modal
     v-model:open="modal.open"
     :title="modal.id ? '编辑词条' : '新增词条'"
     :width="640"
     centered
+    :confirm-loading="modal.saving"
     ok-text="保存"
     cancel-text="取消"
     @ok="save"
@@ -678,7 +700,7 @@ function wordCountOfScene(sceneKey: string) {
     </a-form>
   </a-modal>
 
-  <!-- 场景编辑/新增弹窗（解决附件2：严格整体对齐、宽高规范化、680px 宽） -->
+  <!-- 场景编辑/新增弹窗 -->
   <a-modal
     v-model:open="sceneModal.open"
     :title="sceneModal.isEdit ? '编辑采集场景' : '新增采集场景'"
@@ -718,13 +740,7 @@ function wordCountOfScene(sceneKey: string) {
 
       <div class="form-row-2">
         <a-form-item label="推荐采集模式" required>
-          <a-select
-            v-model:value="sceneModal.default_mode"
-            :options="[
-              { value: 'vr', label: 'VR 遥操作 (机械臂/头显/手套)' },
-              { value: 'umi', label: 'UMI 手持 (手持夹爪快速采集)' },
-            ]"
-          />
+          <a-select v-model:value="sceneModal.default_mode" :options="modeOpts" />
         </a-form-item>
         <a-form-item label="节拍时长范围 (秒)" required>
           <div class="range-box">
@@ -760,17 +776,9 @@ function wordCountOfScene(sceneKey: string) {
   margin-left: 6px;
   font-weight: 400;
 }
-.stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
-.stbl td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.stbl tbody tr:last-child td { border-bottom: 0; }
-.stbl tr.off td { opacity: .5; }
 .alias { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 3px 1px 0; border-radius: 4px; background: var(--surface-3); color: var(--muted); }
-.vlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-.vlog li { display: flex; gap: 10px; }
 .ver { flex: none; font-size: 12px; padding: 1px 6px; height: 20px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
 
-/* 场景卡片网格样式 */
 .scenes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
@@ -860,5 +868,13 @@ function wordCountOfScene(sceneKey: string) {
   background: var(--surface-3);
   color: var(--accent);
   border: 1px solid var(--line);
+}
+.range-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range-sep {
+  color: var(--muted);
 }
 </style>

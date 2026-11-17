@@ -1,65 +1,138 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import SaveBar from '@/components/SaveBar.vue'
-import { NO_PERM, TODAY } from '@/constants'
+import { NO_PERM, type BadgeKind } from '@/constants'
 import { useSystem } from '@/stores/system'
 import { useSession } from '@/stores/session'
 import { useSettings, type Cfg } from '@/stores/settings'
+import { useLogs } from '@/stores/logs'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
+import type { WhitelistItem } from '@/api'
 
 const sys = useSystem()
 const session = useSession()
 const settings = useSettings()
+const logsStore = useLogs()
 const isAdmin = computed(() => session.can('system'))
 const dis = computed(() => (isAdmin.value ? undefined : NO_PERM))
 const tab = ref('ip')
 
 /* IP 白名单 */
-const wl = reactive({ v: '', err: '' })
+const wl = reactive({ v: '', remark: '', err: '', busy: false })
 const wlPage = ref(1)
 const wlCols = [
-  { title: '序号', key: 'idx', width: 80, align: 'center' as const },
-  { title: 'IP 地址 / CIDR 网段', dataIndex: 'ip', key: 'ip', align: 'center' as const },
-  { title: '访问策略', key: 'st', width: 120, align: 'center' as const },
-  { title: '操作', key: 'act', width: 120, align: 'center' as const },
+  { title: '序号', key: 'idx', width: 70, align: 'center' as const },
+  { title: 'IP 地址 / CIDR 网段', dataIndex: 'cidr', key: 'cidr', align: 'center' as const },
+  { title: '备注', key: 'remark', align: 'center' as const },
+  { title: '添加时间', key: 'created', width: 160, align: 'center' as const },
+  { title: '访问策略', key: 'st', width: 110, align: 'center' as const },
+  { title: '操作', key: 'act', width: 110, align: 'center' as const },
 ]
-const wlData = computed(() => sys.whitelist.map((ip, i) => ({ ip, i })))
+const wlData = computed(() => sys.whitelist.map((item, i) => ({ ...item, idx: i + 1 })))
 const IP_RE = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)(\/(3[0-2]|[12]?\d))?$/
-function addIp() {
+
+async function addIp() {
   const v = wl.v.trim()
   wl.err = ''
   if (!IP_RE.test(v)) { wl.err = '格式不正确，请输入 IPv4 或 CIDR'; return }
-  if (sys.whitelist.includes(v)) { wl.err = '该地址已在白名单中'; return }
-  sys.addWhitelist(v); wl.v = ''; toast('已添加 ' + v)
-}
-async function delIp(i: number) {
-  const ok = await confirmDlg({ title: '移除 ' + sys.whitelist[i] + '？', msg: '该网段内的设备将无法再访问平台。', ok: '移除', danger: true })
-  if (ok) { sys.removeWhitelist(i); toast('已移除') }
-}
-function toggleWl(v: boolean) {
-  settings.cfg.whitelistOn = v
-  settings.saveSettings({ whitelistOn: v })
-  toast(v ? '已启用 IP 白名单' : '已关闭 IP 白名单', v ? {} : { type: 'warn' })
+  if (sys.whitelist.some((item) => item.cidr === v)) { wl.err = '该地址已在白名单中'; return }
+  wl.busy = true
+  try {
+    await sys.addWhitelist(v, wl.remark.trim() || undefined)
+    wl.v = ''
+    wl.remark = ''
+    toast('已添加 ' + v)
+  } catch (err: any) {
+    toast('添加失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
+    wl.busy = false
+  }
 }
 
-/* 审计日志 */
-const au = reactive({ q: '', k: 'all', page: 1 })
-const kinds = computed(() => ['all', ...Array.from(new Set(sys.audit.map((a) => a.k)))])
-const auRows = computed(() => {
-  const q = au.q.trim().toLowerCase()
-  return sys.audit.filter(
-    (a) => (au.k === 'all' || a.k === au.k) && (!q || (a.u + ' ' + a.d + ' ' + a.ip).toLowerCase().includes(q))
-  )
-})
-watch(() => [au.q, au.k], () => { au.page = 1 })
+async function delIp(item: WhitelistItem) {
+  const ok = await confirmDlg({ title: '移除 ' + item.cidr + '？', msg: '该网段内的设备将无法再访问平台。', ok: '移除', danger: true })
+  if (!ok) return
+  try {
+    await sys.removeWhitelist(item.id)
+    toast('已移除 ' + item.cidr)
+  } catch (err: any) {
+    toast('移除失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
+}
 
-/* 系统设置 */
+async function toggleWl(v: boolean) {
+  try {
+    await settings.saveSettings({ whitelistOn: v })
+    toast(v ? '已启用 IP 白名单' : '已关闭 IP 白名单', v ? {} : { type: 'warn' })
+  } catch (err: any) {
+    toast('切换白名单开关失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
+}
+
+/* 审计日志（对接真实 GET /audit-logs 接口） */
+const au = reactive({ q: '', module: 'all', page: 1 })
+const moduleOpts = [
+  { value: 'all', label: '全部模块' },
+  { value: 'auth', label: '认证中心' },
+  { value: 'users', label: '用户管理' },
+  { value: 'roles', label: '角色权限' },
+  { value: 'devices', label: '设备管理' },
+  { value: 'stations', label: '工位配置' },
+  { value: 'dict', label: '标注字典' },
+  { value: 'scenes', label: '采集场景' },
+  { value: 'system', label: '系统管理' },
+]
+
+async function loadSysAudit() {
+  try {
+    await logsStore.fetchLogs({
+      page: au.page,
+      size: 10,
+      module: au.module === 'all' ? undefined : au.module,
+      keyword: au.q.trim() || undefined,
+    })
+  } catch (err: any) {
+    toast('加载审计日志失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
+}
+
+let auTimer: number | undefined
+watch(
+  () => au.q,
+  () => {
+    au.page = 1
+    clearTimeout(auTimer)
+    auTimer = window.setTimeout(() => loadSysAudit(), 250)
+  }
+)
+watch(
+  () => au.module,
+  () => {
+    au.page = 1
+    loadSysAudit()
+  }
+)
+onBeforeUnmount(() => clearTimeout(auTimer))
+
+/* 系统设置（同步真实 fetchSettings 并防止未保存状态假阳性） */
 const draft = reactive<Cfg>({ ...settings.cfg })
+const syncedSnap = ref(JSON.stringify(settings.cfg))
+
+watch(
+  () => JSON.stringify(settings.cfg),
+  (nextSnap) => {
+    if (JSON.stringify(draft) === syncedSnap.value || !settings.loaded) {
+      Object.assign(draft, settings.cfg)
+    }
+    syncedSnap.value = nextSnap
+  }
+)
+
 const cfgDirty = computed(() => JSON.stringify(draft) !== JSON.stringify(settings.cfg))
 const bad = computed(() => ({
   integrity: !(draft.integrity >= 90 && draft.integrity <= 100),
@@ -68,22 +141,46 @@ const bad = computed(() => ({
   naming: !(draft.naming.includes('{任务}') && draft.naming.includes('{序号}')),
 }))
 const anyBad = computed(() => Object.values(bad.value).some(Boolean))
-const preview = computed(() => draft.naming.replace('{任务}', 'VR_QMD').replace('{日期}', TODAY).replace('{序号}', '001').replace('{操作员}', 'ZJ') + '.bag')
-function saveCfg() {
+const todayStr = (() => {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+})()
+const preview = computed(() =>
+  draft.naming.replace('{任务}', 'VR_QMD').replace('{日期}', todayStr).replace('{序号}', '001').replace('{操作员}', 'ZJ') + '.bag'
+)
+
+async function saveCfg() {
   if (anyBad.value) { toast('请先修正标红的字段', { type: 'warn' }); return }
-  Object.assign(settings.cfg, draft)
-  settings.saveSettings(draft)
-  toast('系统设置已保存')
+  try {
+    await settings.saveSettings({ ...draft })
+    Object.assign(draft, settings.cfg)
+    syncedSnap.value = JSON.stringify(settings.cfg)
+    toast('系统设置已保存')
+  } catch (err: any) {
+    toast('保存系统设置失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
-function resetCfg() { Object.assign(draft, settings.cfg) }
+
+function resetCfg() {
+  Object.assign(draft, settings.cfg)
+  syncedSnap.value = JSON.stringify(settings.cfg)
+}
+
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
 const auditCols = [
-  { title: '时间', dataIndex: 't', key: 't', width: 140, align: 'center' as const },
-  { title: '用户', dataIndex: 'u', key: 'u', width: 100, align: 'center' as const },
-  { title: '类型', dataIndex: 'k', key: 'k', width: 100, align: 'center' as const },
-  { title: '操作', dataIndex: 'd', key: 'd', align: 'center' as const },
-  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 150, align: 'center' as const },
+  { title: '时间', key: 'time', width: 165, align: 'center' as const },
+  { title: '操作人', dataIndex: 'user', key: 'user', width: 110, align: 'center' as const },
+  { title: '所属模块', key: 'moduleName', width: 110, align: 'center' as const },
+  { title: '动作', dataIndex: 'action', key: 'action', width: 120, align: 'center' as const },
+  { title: '操作详情', key: 'summary', align: 'center' as const },
+  { title: '状态', key: 'status', width: 90, align: 'center' as const },
+  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 140, align: 'center' as const },
 ]
+
+onMounted(async () => {
+  await Promise.allSettled([sys.fetchWhitelist(), settings.fetchSettings(), loadSysAudit()])
+})
 </script>
 
 <template>
@@ -133,14 +230,21 @@ const auditCols = [
   <div v-if="tab === 'ip'" class="card">
     <div class="card-head"><div><h2>IP 白名单</h2><div class="sub">仅白名单内的地址可以访问平台</div></div><div class="row"><span class="muted">启用</span><a-switch :checked="settings.cfg.whitelistOn" :disabled="!isAdmin" aria-label="启用白名单" @change="toggleWl as never" /></div></div>
     <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
-      <a-form layout="vertical"><a-form-item label="添加地址" extra="支持单个 IPv4 或 CIDR 网段" :validate-status="wl.err ? 'error' : ''" :help="wl.err">
-        <div class="row"><a-input v-model:value="wl.v" class="mono" placeholder="如 10.20.1.0/24 或 192.168.1.8" :disabled="!isAdmin" @press-enter="addIp" /><a-button type="primary" :disabled="!isAdmin" :title="dis" @click="addIp">添加</a-button></div>
-      </a-form-item></a-form>
+      <a-form layout="vertical">
+        <a-form-item label="添加地址" extra="支持单个 IPv4 或 CIDR 网段" :validate-status="wl.err ? 'error' : ''" :help="wl.err">
+          <div class="row">
+            <a-input v-model:value="wl.v" class="mono grow" placeholder="如 10.20.1.0/24 或 192.168.1.8" :disabled="!isAdmin" @press-enter="addIp" />
+            <a-input v-model:value="wl.remark" style="width:220px" placeholder="备注说明（可选）" :disabled="!isAdmin" @press-enter="addIp" />
+            <a-button type="primary" :loading="wl.busy" :disabled="!isAdmin" :title="dis" @click="addIp">添加</a-button>
+          </div>
+        </a-form-item>
+      </a-form>
       <div v-if="sys.whitelist.length">
         <a-table
           :data-source="wlData"
           :columns="wlCols"
-          row-key="ip"
+          :loading="sys.loading"
+          row-key="id"
           size="middle"
           :pagination="{
             current: wlPage,
@@ -153,64 +257,79 @@ const auditCols = [
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'idx'">
-              <span class="num muted">{{ record.i + 1 }}</span>
+              <span class="num muted">{{ record.idx }}</span>
             </template>
-            <template v-else-if="column.key === 'ip'">
-              <span class="mono font-bold">{{ record.ip }}</span>
+            <template v-else-if="column.key === 'cidr'">
+              <span class="mono font-bold">{{ record.cidr }}</span>
+            </template>
+            <template v-else-if="column.key === 'remark'">
+              <span class="muted">{{ record.remark || '—' }}</span>
+            </template>
+            <template v-else-if="column.key === 'created'">
+              <span class="num muted">{{ record.created_at ? record.created_at.replace('T', ' ').slice(0, 16) : '—' }}</span>
             </template>
             <template v-else-if="column.key === 'st'">
               <span class="tag good">允许访问</span>
             </template>
             <template v-else-if="column.key === 'act'">
-              <a-button size="small" type="link" danger :disabled="!isAdmin" :title="dis" @click="delIp(record.i)">
+              <a-button size="small" type="link" danger :disabled="!isAdmin" :title="dis" @click="delIp(record as WhitelistItem)">
                 <AppIcon name="trash" size="sm" />移除
               </a-button>
             </template>
           </template>
         </a-table>
       </div>
-      <EmptyState v-else icon="shield" title="白名单为空" desc="启用状态下将拒绝所有访问" />
+      <EmptyState v-else icon="shield" :title="sys.loading ? '正在加载白名单…' : '白名单为空'" desc="启用状态下将按白名单策略校验访问来源" />
     </div>
   </div>
 
   <div v-else-if="tab === 'audit'" class="card">
     <div class="toolbar">
-      <a-input v-model:value="au.q" class="grow" allow-clear placeholder="搜索用户、操作详情或来源 IP" aria-label="搜索审计日志">
+      <a-input v-model:value="au.q" class="grow" allow-clear placeholder="搜索用户、操作详情、目标或来源 IP" aria-label="搜索审计日志">
         <template #prefix><AppIcon name="search" /></template>
       </a-input>
       <a-select
-        v-model:value="au.k"
+        v-model:value="au.module"
         style="width:150px"
-        aria-label="按日志类型筛选"
-        :options="kinds.map((k) => ({ value: k, label: k === 'all' ? '全部类型' : k }))"
+        aria-label="按模块筛选"
+        :options="moduleOpts"
       />
     </div>
     <a-table
-      row-key="t"
+      row-key="id"
       :columns="auditCols"
-      :data-source="auRows.map((r, i) => ({ ...r, i }))"
-      :scroll="{ x: 620 }"
+      :data-source="logsStore.list"
+      :loading="logsStore.loading"
+      :scroll="{ x: 760 }"
       :pagination="{
         current: au.page,
         pageSize: 10,
+        total: logsStore.total,
         showSizeChanger: false,
         hideOnSinglePage: false,
-        showTotal: (n: number) => `共 ${n} 条记录，保留 180 天`,
+        showTotal: (n: number) => `共 ${n} 条记录`,
+        onChange: (p: number) => { au.page = p; loadSysAudit() },
       }"
-      @change="(p: { current?: number }) => (au.page = p.current ?? 1)"
     >
       <template #bodyCell="{ column, record }">
-        <span v-if="column.key === 't'" class="num muted">{{ record.t }}</span>
-        <StatusBadge v-else-if="column.key === 'k'" kind="" :text="record.k" plain />
+        <span v-if="column.key === 'time'" class="num muted">{{ record.time }}</span>
+        <span v-else-if="column.key === 'moduleName'" class="tag info">{{ record.moduleName }}</span>
+        <span v-else-if="column.key === 'summary'">{{ record.summary }}</span>
+        <StatusBadge
+          v-else-if="column.key === 'status'"
+          :kind="(record.status === 'success' ? 'good' : record.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
+          :text="record.status === 'success' ? '成功' : record.status === 'warn' ? '告警' : '失败'"
+        />
         <span v-else-if="column.key === 'ip'" class="mono muted">{{ record.ip }}</span>
       </template>
+      <template #emptyText><EmptyState icon="file" title="暂无审计日志" desc="当前筛选条件下没有操作记录" /></template>
     </a-table>
   </div>
 
   <template v-else>
     <div class="grid g2">
       <div class="card">
-        <div class="card-head"><div><h2>质检阈值</h2><div class="sub">方案书各处表述不一，默认取较严格值</div></div></div>
+        <div class="card-head"><div><h2>质检阈值</h2><div class="sub">用于采集校验与实时告警阈值判定</div></div></div>
         <div class="card-body"><a-form layout="vertical">
           <a-form-item label="数据完整率下限（%）" extra="低于该值的数据会被隔离" :validate-status="bad.integrity ? 'error' : ''" :help="bad.integrity ? '请输入 90–100' : ''"><a-input-number v-model:value="draft.integrity" :step="0.1" :disabled="!isAdmin" style="width:100%" /></a-form-item>
           <a-form-item label="时间同步误差上限（ms）" extra="多模态通道之间的时间戳偏差" :validate-status="bad.sync ? 'error' : ''" :help="bad.sync ? '请输入 1–100' : ''"><a-input-number v-model:value="draft.sync" :step="0.5" :disabled="!isAdmin" style="width:100%" /></a-form-item>

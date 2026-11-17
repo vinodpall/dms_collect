@@ -1,27 +1,42 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { useLogs, type LogEntry, type LogModule } from '@/stores/logs'
+import EmptyState from '@/components/EmptyState.vue'
+import { useLogs, type LogEntry } from '@/stores/logs'
+import { getToken, logsApi } from '@/api'
 import { toast } from '@/composables/toast'
 import type { BadgeKind } from '@/constants'
 
 const logsStore = useLogs()
 
-// 主页签：'audit' | 'pipeline'
 const activeMainTab = ref<'audit' | 'pipeline'>('audit')
 
-/* ================= 用户操作审计日志 ================= */
+/* ================= 用户操作审计日志（对接 GET /audit-logs, /audit-logs/{id}, /audit-logs/export） ================= */
 const search = ref('')
 const filterModule = ref<string>('all')
 const filterStatus = ref<string>('all')
 const auditPage = ref(1)
+const auditPageSize = 10
+const exporting = ref(false)
+
+const moduleOptions = [
+  { value: 'all', label: '全部业务模块' },
+  { value: 'auth', label: '认证中心' },
+  { value: 'users', label: '用户管理' },
+  { value: 'roles', label: '角色权限' },
+  { value: 'devices', label: '设备管理' },
+  { value: 'stations', label: '工位配置' },
+  { value: 'dict', label: '标注字典' },
+  { value: 'scenes', label: '采集场景' },
+  { value: 'system', label: '系统管理' },
+]
 
 const auditCols = [
   { title: 'TraceID', key: 'traceId', width: 130, align: 'center' as const },
-  { title: '操作时间', key: 'time', width: 160, align: 'center' as const },
-  { title: '操作人', key: 'user', width: 130, align: 'center' as const },
+  { title: '操作时间', key: 'time', width: 165, align: 'center' as const },
+  { title: '操作人', key: 'user', width: 140, align: 'center' as const },
   { title: '业务模块', key: 'moduleName', width: 110, align: 'center' as const },
   { title: '操作动作', key: 'action', width: 120, align: 'center' as const },
   { title: '目标对象', key: 'target', width: 130, align: 'center' as const },
@@ -30,72 +45,125 @@ const auditCols = [
   { title: '操作', key: 'act', width: 80, align: 'center' as const },
 ]
 
-const filteredList = computed(() => {
-  return logsStore.list.filter((l) => {
-    if (filterModule.value !== 'all' && l.module !== filterModule.value) return false
-    if (filterStatus.value !== 'all' && l.status !== filterStatus.value) return false
+function buildQueryParams() {
+  return {
+    page: auditPage.value,
+    size: auditPageSize,
+    module: filterModule.value !== 'all' ? filterModule.value : undefined,
+    status: filterStatus.value !== 'all' ? filterStatus.value : undefined,
+    keyword: search.value.trim() || undefined,
+  }
+}
 
-    if (search.value) {
-      const q = search.value.toLowerCase()
-      const matchTrace = l.traceId.toLowerCase().includes(q)
-      const matchTarget = l.target.toLowerCase().includes(q)
-      const matchSummary = l.summary.toLowerCase().includes(q)
-      const matchAction = l.action.toLowerCase().includes(q)
-      const matchUser = l.user.toLowerCase().includes(q)
-      if (!matchTrace && !matchTarget && !matchSummary && !matchAction && !matchUser) return false
-    }
-    return true
-  })
+async function loadAuditLogs() {
+  try {
+    await logsStore.fetchLogs(buildQueryParams())
+  } catch (err: any) {
+    toast('加载操作审计日志失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
+}
+
+let searchTimer: number | undefined
+watch(search, () => {
+  auditPage.value = 1
+  clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => loadAuditLogs(), 250)
+})
+watch([filterModule, filterStatus], () => {
+  auditPage.value = 1
+  loadAuditLogs()
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
+
+onMounted(() => {
+  loadAuditLogs()
 })
 
 const detailModal = reactive<{
   open: boolean
+  loading: boolean
   entry: LogEntry | null
 }>({
   open: false,
+  loading: false,
   entry: null,
 })
 
-function viewDetail(entry: LogEntry) {
+async function viewDetail(entry: LogEntry) {
   detailModal.entry = entry
   detailModal.open = true
+  if (entry.numericId) {
+    detailModal.loading = true
+    try {
+      detailModal.entry = await logsStore.fetchDetail(entry.numericId)
+    } catch (err: any) {
+      toast('获取日志详情失败：' + (err?.message || '请稍后重试'), { type: 'warn' })
+    } finally {
+      detailModal.loading = false
+    }
+  }
+}
+
+function formatJson(v: unknown) {
+  if (v === undefined || v === null || v === '') return ''
+  if (typeof v === 'string') return v
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
+  }
 }
 
 function copyText(txt: string) {
-  navigator.clipboard?.writeText(txt)
-  toast('已复制到剪贴板')
+  navigator.clipboard?.writeText(txt).then(
+    () => toast('已复制到剪贴板'),
+    () => toast('复制失败，请手动复制', { type: 'warn' })
+  )
 }
 
-function exportCsv() {
-  const rows = [
-    ['日志ID', 'TraceID', '时间', '操作人', '角色', '所属模块', '操作行为', '目标对象', '状态', '耗时(ms)', '客户端IP', '业务说明'],
-    ...filteredList.value.map((l) => [
-      l.id,
-      l.traceId,
-      l.time,
-      l.user,
-      l.role,
-      l.moduleName,
-      l.action,
-      l.target,
-      l.status,
-      l.duration,
-      l.ip,
-      `"${l.summary.replace(/"/g, '""')}"`,
-    ]),
-  ]
-  const csvContent = '\uFEFF' + rows.map((e) => e.join(',')).join('\n')
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `dms_audit_logs_${Date.now()}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-  toast('已成功导出审计日志 CSV 文件')
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const query: Record<string, string> = {}
+    if (filterModule.value !== 'all') query.module = filterModule.value
+    if (filterStatus.value !== 'all') query.status = filterStatus.value
+    if (search.value.trim()) query.keyword = search.value.trim()
+    const url = logsApi.exportUrl(query)
+    const token = getToken()
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`
+      try {
+        const errJson = await res.json()
+        if (errJson?.message) msg = errJson.message
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg)
+    }
+    const ctype = res.headers.get('content-type') || ''
+    if (ctype.includes('application/json')) {
+      const json = await res.json()
+      if (json?.code && json.code !== 0) throw new Error(json.message || '导出失败')
+    }
+    const blob = await res.blob()
+    const dlUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = dlUrl
+    a.download = `dms_audit_logs_${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(dlUrl)
+    toast('已成功导出审计日志')
+  } catch (err: any) {
+    toast('导出审计日志失败：' + (err?.message || '后端导出接口异常'), { type: 'crit' })
+  } finally {
+    exporting.value = false
+  }
 }
 
-/* ================= 需求 8：算法数据处理日志 (Pipeline Execution Logs) ================= */
+/* ================= 算法数据处理日志（后端暂未提供专用接口，已清理所有模拟数据） ================= */
 export interface PipelineLogItem {
   id: string
   batchId: string
@@ -108,72 +176,7 @@ export interface PipelineLogItem {
   details?: string
 }
 
-const pipelineLogs = ref<PipelineLogItem[]>([
-  {
-    id: 'ALG-1024',
-    batchId: 'B-1012-01',
-    time: '2026-10-13 14:28:11',
-    stage: '时间戳对齐 (Sync)',
-    node: 'node_time_align_ptp',
-    level: 'INFO',
-    durationMs: 340,
-    message: '完成多模态数据流时间基准对齐：RGB (30fps) 与 FT力觉 (1000Hz) 插值对齐，最大时间偏差 2.1ms (阈值 10ms)',
-    details: 'PTP 硬件时钟同步锁相环正常锁定；插值方式：Hermite 立方样条；丢失帧数: 0',
-  },
-  {
-    id: 'ALG-1023',
-    batchId: 'B-1012-01',
-    time: '2026-10-13 14:28:05',
-    stage: 'ROS2 Bag 解包',
-    node: 'node_bag_demuxer',
-    level: 'INFO',
-    durationMs: 820,
-    message: '成功解析 raw_bag 文件：包含 3 路视频流与 2 路传感器时序，有效帧数 620 帧',
-  },
-  {
-    id: 'ALG-1022',
-    batchId: 'B-1012-02',
-    time: '2026-10-13 14:26:40',
-    stage: '深度点云生成',
-    node: 'node_depth_reconstruction',
-    level: 'WARN',
-    durationMs: 1420,
-    message: '腕部相机左边缘存在反光噪点，已自动启动双边滤波去噪 (残差率 1.4%)',
-    details: '深度图有效区域: 98.6%；滤波核半径: 5px；去噪后已满足几何一致性校验',
-  },
-  {
-    id: 'ALG-1021',
-    batchId: 'B-1012-03',
-    time: '2026-10-13 14:22:15',
-    stage: '轨迹平滑与位姿滤波',
-    node: 'node_kinematics_filter',
-    level: 'ERROR',
-    durationMs: 210,
-    message: '机械臂关节角速度突变检测超标：J4 轴角加速度达到 18.2 rad/s²，超过机器人动力学安全阈值',
-    details: '异常位于时间片段 12.4s ~ 13.1s；已打上 [KINEMATIC_JITTER] 标记并通知标注端复核',
-  },
-  {
-    id: 'ALG-1020',
-    batchId: 'B-1012-04',
-    time: '2026-10-13 14:15:02',
-    stage: 'LeRobot / OpenX 格式转换',
-    node: 'node_format_converter',
-    level: 'INFO',
-    durationMs: 950,
-    message: '数据标准化打包完成，生成 LeRobot v2.0 兼容数据集结构与元数据 JSON',
-  },
-  {
-    id: 'ALG-1019',
-    batchId: 'B-1012-01',
-    time: '2026-10-13 14:10:00',
-    stage: '数据标准化校验',
-    node: 'node_data_validator',
-    level: 'INFO',
-    durationMs: 180,
-    message: '动作起止边界对齐校验通过：与标注字典子任务 [取件上台] [夹紧密封] 时间区间吻合',
-  },
-])
-
+const pipelineLogs = ref<PipelineLogItem[]>([])
 const algSearch = ref('')
 const algFilterLevel = ref<string>('all')
 const algFilterStage = ref<string>('all')
@@ -191,7 +194,6 @@ const algCols = [
   { title: '操作', key: 'act', width: 80, align: 'center' as const },
 ]
 
-watch([search, filterModule, filterStatus], () => { auditPage.value = 1 })
 watch([algSearch, algFilterLevel, algFilterStage], () => { algPage.value = 1 })
 
 const filteredAlgLogs = computed(() => {
@@ -225,6 +227,10 @@ function viewAlgDetail(log: PipelineLogItem) {
 }
 
 function exportAlgCsv() {
+  if (!filteredAlgLogs.value.length) {
+    toast('暂无可导出的算法数据处理日志', { type: 'warn' })
+    return
+  }
   const rows = [
     ['日志编号', '批次ID', '记录时间', '处理阶段', '算法节点', '日志级别', '耗时(ms)', '日志信息', '详细技术输出'],
     ...filteredAlgLogs.value.map((l) => [
@@ -252,7 +258,7 @@ function exportAlgCsv() {
 </script>
 
 <template>
-  <PageHead title="日志审计与算法日志中心" desc="用户操作安全审计流水与算法数据处理全链路实时日志追踪">
+  <PageHead title="操作审计日志" desc="用户操作安全审计流水与算法数据处理日志中心">
     <template #desc>
       <div style="margin-top:10px">
         <div class="cyber-tabs">
@@ -279,10 +285,10 @@ function exportAlgCsv() {
     </template>
 
     <div class="row" style="gap:8px">
-      <a-button v-if="activeMainTab === 'audit'" @click="exportCsv">
+      <a-button v-if="activeMainTab === 'audit'" :loading="exporting" @click="exportCsv">
         <AppIcon name="download" size="sm" />导出审计流水 (CSV)
       </a-button>
-      <a-button v-else @click="exportAlgCsv">
+      <a-button v-else :disabled="!filteredAlgLogs.length" @click="exportAlgCsv">
         <AppIcon name="download" size="sm" />导出算法日志 (CSV)
       </a-button>
     </div>
@@ -302,49 +308,44 @@ function exportAlgCsv() {
           <template #prefix><AppIcon name="search" /></template>
         </a-input>
 
-        <a-select v-model:value="filterModule" style="width:150px" aria-label="业务模块">
-          <a-select-option value="all">全部业务模块</a-select-option>
-          <a-select-option value="annotate">标注工作台</a-select-option>
-          <a-select-option value="review">审核工作台</a-select-option>
-          <a-select-option value="vocab">字典管理</a-select-option>
-          <a-select-option value="collect">采集任务</a-select-option>
-          <a-select-option value="pipeline">数据流水线</a-select-option>
-          <a-select-option value="system">系统管理</a-select-option>
-        </a-select>
+        <a-select v-model:value="filterModule" style="width:150px" aria-label="业务模块" :options="moduleOptions" />
 
         <a-select v-model:value="filterStatus" style="width:130px" aria-label="执行状态">
           <a-select-option value="all">全部状态</a-select-option>
           <a-select-option value="success">成功</a-select-option>
-          <a-select-option value="warn">质检告警</a-select-option>
-          <a-select-option value="failed">执行失败</a-select-option>
+          <a-select-option value="warn">警告</a-select-option>
+          <a-select-option value="failed">失败</a-select-option>
         </a-select>
       </div>
 
       <a-table
-        :data-source="filteredList"
+        :data-source="logsStore.list"
         :columns="auditCols"
+        :loading="logsStore.loading"
         row-key="id"
         size="middle"
         :pagination="{
           current: auditPage,
-          pageSize: 10,
+          pageSize: auditPageSize,
+          total: logsStore.total,
           showSizeChanger: false,
           hideOnSinglePage: false,
           showTotal: (total: number) => `共 ${total} 条记录`,
-          onChange: (p: number) => { auditPage = p },
+          onChange: (p: number) => { auditPage = p; loadAuditLogs() },
         }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'traceId'">
-            <span class="mono ell-code" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
-              {{ record.traceId.slice(0, 10) }}...
+            <span v-if="record.traceId" class="mono ell-code" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
+              {{ record.traceId.length > 12 ? record.traceId.slice(0, 10) + '...' : record.traceId }}
             </span>
+            <span v-else class="muted">—</span>
           </template>
           <template v-else-if="column.key === 'time'">
             <span class="num muted" style="font-size:12px">{{ record.time }}</span>
           </template>
           <template v-else-if="column.key === 'user'">
-            <b>{{ record.user }}</b> <small class="muted">({{ record.role }})</small>
+            <b>{{ record.user }}</b><small v-if="record.role" class="muted"> ({{ record.role }})</small>
           </template>
           <template v-else-if="column.key === 'moduleName'">
             <span class="tag info">{{ record.moduleName }}</span>
@@ -368,12 +369,17 @@ function exportAlgCsv() {
             <a-button size="small" type="link" @click="viewDetail(record)">详情</a-button>
           </template>
         </template>
+        <template #emptyText><EmptyState icon="file" title="暂无操作审计日志" desc="当前筛选条件下没有记录" /></template>
       </a-table>
     </div>
   </template>
 
   <!-- TAB 2: 算法数据处理日志 -->
   <template v-else-if="activeMainTab === 'pipeline'">
+    <div class="callout warn" style="margin-bottom:16px">
+      <AppIcon name="alert" />
+      <span>后端暂未提供「算法数据处理日志」查询接口，已移除静态演示数据，待接口上线后接入。</span>
+    </div>
     <div class="card">
       <div class="toolbar">
         <a-input
@@ -395,11 +401,6 @@ function exportAlgCsv() {
 
         <a-select v-model:value="algFilterStage" style="width:190px" aria-label="算法阶段">
           <a-select-option value="all">全部算法阶段</a-select-option>
-          <a-select-option value="时间戳对齐 (Sync)">时间戳对齐 (Sync)</a-select-option>
-          <a-select-option value="ROS2 Bag 解包">ROS2 Bag 解包</a-select-option>
-          <a-select-option value="深度点云生成">深度点云生成</a-select-option>
-          <a-select-option value="轨迹平滑与位姿滤波">轨迹平滑与位姿滤波</a-select-option>
-          <a-select-option value="LeRobot / OpenX 格式转换">格式转换与打包</a-select-option>
         </a-select>
       </div>
 
@@ -418,40 +419,20 @@ function exportAlgCsv() {
         }"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'id'">
-            <span class="mono font-bold">{{ record.id }}</span>
-          </template>
-          <template v-else-if="column.key === 'batchId'">
-            <span class="mono text-accent">{{ record.batchId }}</span>
-          </template>
-          <template v-else-if="column.key === 'time'">
-            <span class="num muted" style="font-size:12px">{{ record.time }}</span>
-          </template>
-          <template v-else-if="column.key === 'stage'">
-            <span class="tag info">{{ record.stage }}</span>
-          </template>
-          <template v-else-if="column.key === 'node'">
-            <span class="mono" style="font-size:12px">{{ record.node }}</span>
-          </template>
+          <template v-if="column.key === 'id'"><span class="mono">{{ record.id }}</span></template>
+          <template v-else-if="column.key === 'batchId'"><span class="mono text-accent">{{ record.batchId }}</span></template>
+          <template v-else-if="column.key === 'time'"><span class="num muted" style="font-size:12px">{{ record.time }}</span></template>
+          <template v-else-if="column.key === 'stage'"><span class="tag info">{{ record.stage }}</span></template>
+          <template v-else-if="column.key === 'node'"><span class="mono" style="font-size:12px">{{ record.node }}</span></template>
           <template v-else-if="column.key === 'level'">
-            <span
-              class="tag"
-              :class="record.level === 'INFO' ? 'good' : record.level === 'WARN' ? 'warn' : 'crit'"
-            >
-              {{ record.level }}
-            </span>
+            <span class="tag" :class="record.level === 'INFO' ? 'good' : record.level === 'WARN' ? 'warn' : 'crit'">{{ record.level }}</span>
           </template>
-          <template v-else-if="column.key === 'durationMs'">
-            <span class="num muted" style="font-size:12px">{{ record.durationMs }} ms</span>
-          </template>
-          <template v-else-if="column.key === 'message'">
-            <span style="font-size:12.5px" :class="{ 'text-crit': record.level === 'ERROR' }">
-              {{ record.message }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'act'">
-            <a-button size="small" type="link" @click="viewAlgDetail(record)">详情</a-button>
-          </template>
+          <template v-else-if="column.key === 'durationMs'"><span class="num muted">{{ record.durationMs }} ms</span></template>
+          <template v-else-if="column.key === 'message'"><span>{{ record.message }}</span></template>
+          <template v-else-if="column.key === 'act'"><a-button size="small" type="link" @click="viewAlgDetail(record)">详情</a-button></template>
+        </template>
+        <template #emptyText>
+          <EmptyState icon="activity" title="暂无算法数据处理日志" desc="该标签页尚待后端提供算法流水线日志 API" />
         </template>
       </a-table>
     </div>
@@ -470,8 +451,8 @@ function exportAlgCsv() {
       <div v-if="detailModal.entry" style="display:flex;flex-direction:column;gap:8px;width:100%">
         <div class="row between">
           <div class="row" style="gap:8px">
-            <span class="mono" style="font-weight:700">{{ detailModal.entry.traceId }}</span>
-            <a-button size="small" type="text" @click="copyText(detailModal.entry!.traceId)">复制</a-button>
+            <span class="mono" style="font-weight:700">{{ detailModal.entry.traceId || detailModal.entry.id }}</span>
+            <a-button v-if="detailModal.entry.traceId" size="small" type="text" @click="copyText(detailModal.entry!.traceId)">复制</a-button>
           </div>
           <button type="button" class="icon-btn" aria-label="关闭" @click="detailModal.open = false">
             <AppIcon name="x" />
@@ -480,23 +461,35 @@ function exportAlgCsv() {
         <div class="row" style="gap:8px">
           <StatusBadge
             :kind="(detailModal.entry.status === 'success' ? 'good' : detailModal.entry.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
-            :text="detailModal.entry.status === 'success' ? '执行成功' : detailModal.entry.status === 'warn' ? '审核预警/打回' : '执行失败'"
+            :text="detailModal.entry.status === 'success' ? '执行成功' : detailModal.entry.status === 'warn' ? '告警' : '执行失败'"
           />
           <span style="font-size:14px;font-weight:600">{{ detailModal.entry.action }} · {{ detailModal.entry.moduleName }}</span>
         </div>
       </div>
     </template>
     <div v-if="detailModal.entry" style="display:flex;flex-direction:column;gap:16px">
+      <div v-if="detailModal.loading" class="muted" style="font-size:12.5px">正在加载完整日志详情…</div>
       <div class="detail-grid">
         <div class="detail-row"><span class="k">日志主键</span><span class="v mono">{{ detailModal.entry.id }}</span></div>
         <div class="detail-row"><span class="k">记录时间</span><span class="v num">{{ detailModal.entry.time }}</span></div>
-        <div class="detail-row"><span class="k">操作人员</span><span class="v">{{ detailModal.entry.user }} ({{ detailModal.entry.role }})</span></div>
+        <div class="detail-row"><span class="k">操作人员</span><span class="v">{{ detailModal.entry.user }}<template v-if="detailModal.entry.role"> ({{ detailModal.entry.role }})</template></span></div>
         <div class="detail-row"><span class="k">所属模块</span><span class="v">{{ detailModal.entry.moduleName }} ({{ detailModal.entry.module }})</span></div>
         <div class="detail-row"><span class="k">操作动作</span><span class="v"><b>{{ detailModal.entry.action }}</b></span></div>
         <div class="detail-row"><span class="k">目标对象</span><span class="v mono">{{ detailModal.entry.target }}</span></div>
         <div class="detail-row"><span class="k">客户端 IP</span><span class="v mono">{{ detailModal.entry.ip }}</span></div>
-        <div class="detail-row"><span class="k">执行耗时</span><span class="v num">{{ detailModal.entry.duration }} 毫秒</span></div>
+        <div class="detail-row"><span class="k">执行耗时</span><span class="v num">{{ detailModal.entry.duration !== null ? `${detailModal.entry.duration} 毫秒` : '—' }}</span></div>
+        <div class="detail-row" style="grid-column: span 2"><span class="k">User-Agent</span><span class="v mono" style="word-break:break-all">{{ detailModal.entry.ua || '—' }}</span></div>
         <div class="detail-row" style="grid-column: span 2"><span class="k">业务说明</span><span class="v">{{ detailModal.entry.summary }}</span></div>
+      </div>
+
+      <div v-if="formatJson(detailModal.entry.before)" class="field">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">变更前快照 (Before Data)</div>
+        <pre class="diff-pre" style="padding:10px 12px;background:#090d16;color:#fca5a5;border-radius:6px;font-size:12px">{{ formatJson(detailModal.entry.before) }}</pre>
+      </div>
+
+      <div v-if="formatJson(detailModal.entry.after)" class="field">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">变更后快照 (After Data)</div>
+        <pre class="diff-pre" style="padding:10px 12px;background:#090d16;color:#a5f3fc;border-radius:6px;font-size:12px">{{ formatJson(detailModal.entry.after) }}</pre>
       </div>
     </div>
   </a-drawer>
@@ -521,54 +514,20 @@ function exportAlgCsv() {
             <AppIcon name="x" />
           </button>
         </div>
-        <div class="row" style="gap:8px">
-          <span
-            class="tag"
-            :class="algDetailModal.log.level === 'INFO' ? 'good' : algDetailModal.log.level === 'WARN' ? 'warn' : 'crit'"
-          >
-            {{ algDetailModal.log.level }}
-          </span>
-          <span style="font-size:14px;font-weight:600">{{ algDetailModal.log.stage }}</span>
-        </div>
       </div>
     </template>
     <div v-if="algDetailModal.log" style="display:flex;flex-direction:column;gap:16px">
-      <div class="detail-grid">
-        <div class="detail-row"><span class="k">记录时间</span><span class="v num">{{ algDetailModal.log.time }}</span></div>
-        <div class="detail-row"><span class="k">执行耗时</span><span class="v num">{{ algDetailModal.log.durationMs }} 毫秒</span></div>
-        <div class="detail-row"><span class="k">算法阶段</span><span class="v">{{ algDetailModal.log.stage }}</span></div>
-        <div class="detail-row"><span class="k">算法算子节点</span><span class="v mono">{{ algDetailModal.log.node }}</span></div>
-      </div>
-
-      <div class="field">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">执行消息 (Message)</div>
-        <div class="mono" style="padding:10px 12px;background:#090d16;color:#38bdf8;border-radius:6px;font-size:12px">
-          {{ algDetailModal.log.message }}
-        </div>
-      </div>
-
-      <div v-if="algDetailModal.log.details" class="field">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">算子详细追踪与技术参数 (Trace Details)</div>
-        <pre class="diff-pre" style="padding:10px 12px;background:#090d16;color:#a5f3fc;border-radius:6px;font-size:12px">{{ algDetailModal.log.details }}</pre>
-      </div>
+      <pre class="diff-pre" style="padding:10px 12px;background:#090d16;color:#a5f3fc;border-radius:6px;font-size:12px">{{ algDetailModal.log.details || algDetailModal.log.message }}</pre>
     </div>
   </a-drawer>
 </template>
 
 <style scoped>
-.stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
-.stbl td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.stbl tbody tr:last-child td { border-bottom: 0; }
-
 .ell-code { cursor: pointer; text-decoration: underline; color: var(--accent); }
 .text-accent { color: var(--accent); }
-.text-crit { color: var(--crit); }
-
 .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; background: var(--surface-2); padding: 12px; border-radius: 6px; font-size: 12.5px; }
 .detail-row { display: flex; flex-direction: column; gap: 2px; }
 .detail-row .k { color: var(--muted); font-size: 11.5px; }
 .detail-row .v { color: var(--text); }
-
-.diff-pre { font: 11.5px var(--font-mono); margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow-y: auto; }
+.diff-pre { font: 11.5px var(--mono, monospace); margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
 </style>

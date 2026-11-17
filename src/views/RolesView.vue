@@ -1,184 +1,445 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import SaveBar from '@/components/SaveBar.vue'
-import { ACTIONS, NAV_GROUPS, NO_PERM, PAGE_META, type PageKey } from '@/constants'
+import EmptyState from '@/components/EmptyState.vue'
+import { NAV_GROUPS, NO_PERM, PAGE_META, type PageKey } from '@/constants'
 import { useAccess } from '@/stores/access'
 import { useSession } from '@/stores/session'
-import { useLogs } from '@/stores/logs'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
 
 const access = useAccess()
 const session = useSession()
-const logs = useLogs()
-const router = useRouter()
 const mayEdit = computed(() => session.can('roles'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
-const audit = (action: string, target: string, summary: string, status?: 'warn') =>
-  logs.addLog({ user: session.info.user, role: session.info.name, module: 'system', moduleName: '角色权限', action, target, summary, status })
 
-const cur = ref(access.roles[0]?.key ?? 'admin')
+const cur = ref(access.roles[0]?.key ?? '')
+const rightTab = ref<'perms' | 'members'>('perms')
 const role = computed(() => access.roleMap[cur.value])
 const locked = computed(() => !mayEdit.value || !!role.value?.all)
-const members = computed(() => access.users.filter((u) => u.role === cur.value))
+const members = computed(() => role.value?.members || [])
+const savingPerms = ref(false)
 
-/* 编辑草稿 */
-const draft = reactive<{ name: string; desc: string; pages: PageKey[]; can: Record<string, 1> }>({ name: '', desc: '', pages: [], can: {} })
+/* 权限草稿（仅跟踪页面与操作勾选） */
+const draft = reactive<{ pages: PageKey[]; can: Record<string, 1> }>({ pages: [], can: {} })
+const baseSnap = ref('')
+const snap = (x: { pages: PageKey[]; can: Record<string, 1> }) =>
+  JSON.stringify([[...x.pages].sort(), Object.keys(x.can).filter((k) => x.can[k]).sort()])
+
 function load() {
   const r = role.value
-  if (!r) return
-  Object.assign(draft, { name: r.name, desc: r.desc, pages: [...r.pages], can: { ...r.can } })
+  if (!r) {
+    draft.pages = []
+    draft.can = {}
+    baseSnap.value = ''
+    return
+  }
+  draft.pages = [...r.pages]
+  draft.can = { ...r.can }
+  baseSnap.value = snap(r)
 }
-watch(cur, load, { immediate: true })
-const snap = (x: { name: string; desc: string; pages: PageKey[]; can: Record<string, 1> }) =>
-  JSON.stringify([x.name, x.desc, [...x.pages].sort(), Object.keys(x.can).filter((k) => x.can[k]).sort()])
-const dirty = computed(() => !!role.value && snap(draft) !== snap(role.value))
+watch(
+  () => access.roles,
+  (list) => {
+    if (list.length && !access.roleMap[cur.value]) {
+      cur.value = list[0].key
+    }
+  },
+  { immediate: true }
+)
+watch(
+  () => [cur.value, role.value ? snap(role.value) : ''] as const,
+  ([nextCur, nextBase], prev) => {
+    const prevCur = prev?.[0]
+    if (nextCur !== prevCur || snap(draft) === baseSnap.value) {
+      load()
+    }
+    baseSnap.value = nextBase
+    if (nextCur && nextCur !== prevCur && role.value?.id) {
+      access.fetchRoleDetail(role.value.id).catch(() => {})
+    }
+  },
+  { immediate: true }
+)
+
+const dirty = computed(() => !!role.value && !role.value.all && snap(draft) !== snap(role.value))
+
 async function pick(k: string) {
   if (k === cur.value) return
-  if (dirty.value && !(await confirmDlg({ title: '放弃未保存的修改？', msg: '「' + role.value.name + '」的权限修改尚未保存。', ok: '放弃修改', danger: true }))) return
+  if (dirty.value && role.value && !(await confirmDlg({ title: '放弃未保存的修改？', msg: '「' + role.value.name + '」的权限修改尚未保存。', ok: '放弃修改', danger: true }))) return
   cur.value = k
 }
 
 const hasPage = (p: PageKey) => !!role.value?.all || draft.pages.includes(p)
 const hasAct = (k: string) => !!role.value?.all || !!draft.can[k]
+function actsOf(p: PageKey) {
+  return access.actionCatalog.filter((a) => a.page === p)
+}
 function setPage(p: PageKey, on: boolean) {
-  if (on) { if (!draft.pages.includes(p)) draft.pages.push(p) }
-  else {
+  if (on) {
+    if (!draft.pages.includes(p)) draft.pages.push(p)
+  } else {
     draft.pages = draft.pages.filter((x) => x !== p)
-    ACTIONS.filter((a) => a.page === p).forEach((a) => { delete draft.can[a.key] })
+    actsOf(p).forEach((a) => { delete draft.can[a.key] })
   }
 }
-function setAct(k: string, on: boolean) { if (on) draft.can[k] = 1; else delete draft.can[k] }
-function setGroup(items: PageKey[], on: boolean) { items.forEach((p) => setPage(p, on)) }
-const groupState = (items: PageKey[]) => { const n = items.filter(hasPage).length; return { all: n === items.length, some: n > 0 && n < items.length } }
-const actsOf = (p: PageKey) => ACTIONS.filter((a) => a.page === p)
-const pageCount = (r: { all?: boolean; pages: PageKey[] }) => (r.all ? Object.keys(PAGE_META).length : r.pages.length)
-const actCount = (r: { all?: boolean; can: Record<string, 1> }) => (r.all ? ACTIONS.length : ACTIONS.filter((a) => r.can[a.key]).length)
+function setAct(k: string, on: boolean) {
+  if (on) draft.can[k] = 1
+  else delete draft.can[k]
+}
+function setGroup(items: PageKey[], on: boolean) {
+  items.forEach((p) => setPage(p, on))
+}
+const groupState = (items: PageKey[]) => {
+  const n = items.filter(hasPage).length
+  return { all: n === items.length, some: n > 0 && n < items.length }
+}
 
-async function save() {
+async function savePerms() {
+  const r = role.value
+  if (!r || r.all) return
+  if (!draft.pages.length) {
+    toast('至少需要勾选一个可访问页面', { type: 'warn' })
+    return
+  }
+  savingPerms.value = true
+  try {
+    await access.updateRole(r.key, { pages: [...draft.pages], can: { ...draft.can } })
+    load()
+    if (session.role === r.key) {
+      await session.fetchMe()
+    }
+    toast('「' + r.name + '」的权限已保存并立即生效')
+  } catch (err: any) {
+    toast('保存权限失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
+    savingPerms.value = false
+  }
+}
+
+/* 编辑角色名称与说明弹窗 */
+const infoMd = reactive({ open: false, name: '', desc: '', touched: false, busy: false })
+const infoNameErr = computed(() =>
+  !infoMd.name.trim()
+    ? '请输入角色名称'
+    : access.roles.some((x) => x.key !== cur.value && x.name === infoMd.name.trim())
+      ? '已存在同名角色'
+      : ''
+)
+function openEditInfo() {
   const r = role.value
   if (!r) return
-  if (!draft.name.trim()) { toast('请填写角色名称', { type: 'warn' }); return }
-  if (access.roles.some((x) => x.key !== r.key && x.name === draft.name.trim())) { toast('已存在同名角色', { type: 'warn' }); return }
-  if (!r.all && !draft.pages.length) { toast('至少需要勾选一个可访问页面', { type: 'warn' }); return }
-  const p0 = pageCount(r), a0 = actCount(r)
-  access.updateRole(r.key, { name: draft.name.trim(), desc: draft.desc.trim(), pages: [...draft.pages], can: { ...draft.can } })
-  audit('修改角色权限', r.name, `页面 ${p0} → ${pageCount(r)} 个，操作权限 ${a0} → ${actCount(r)} 项；影响 ${members.value.length} 个账号`)
-  toast('「' + r.name + '」的权限已保存，立即对 ' + members.value.length + ' 个账号生效')
+  Object.assign(infoMd, { open: true, name: r.name, desc: r.desc, touched: false, busy: false })
+}
+async function saveInfo() {
+  const r = role.value
+  if (!r) return
+  infoMd.touched = true
+  if (infoNameErr.value) return
+  infoMd.busy = true
+  try {
+    await access.updateRole(r.key, { name: infoMd.name.trim(), desc: infoMd.desc.trim() })
+    if (session.role === r.key) {
+      await session.fetchMe()
+    }
+    infoMd.open = false
+    toast('角色信息已更新')
+  } catch (err: any) {
+    toast('更新角色失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
+    infoMd.busy = false
+  }
 }
 
 /* 新增 / 删除角色 */
-const md = reactive({ open: false, name: '', desc: '', from: '', touched: false })
-const nameErr = computed(() => (!md.name.trim() ? '请输入角色名称' : access.roles.some((r) => r.name === md.name.trim()) ? '已存在同名角色' : ''))
-function openAdd() { Object.assign(md, { open: true, name: '', desc: '', from: '', touched: false }) }
+const md = reactive({ open: false, name: '', desc: '', from: '', touched: false, busy: false })
+const nameErr = computed(() =>
+  !md.name.trim()
+    ? '请输入角色名称'
+    : access.roles.some((r) => r.name === md.name.trim())
+      ? '已存在同名角色'
+      : ''
+)
+function openAdd() {
+  Object.assign(md, { open: true, name: '', desc: '', from: '', touched: false, busy: false })
+}
 async function addRole() {
   md.touched = true
   if (nameErr.value) return
-  if (dirty.value && !(await confirmDlg({ title: '放弃未保存的修改？', msg: '「' + role.value.name + '」的权限修改尚未保存。', ok: '放弃修改', danger: true }))) return
-  const k = access.addRole({ name: md.name.trim(), desc: md.desc.trim(), from: md.from || undefined })
-  audit('新增角色', md.name.trim(), md.from ? '复制自「' + access.roleMap[md.from].name + '」' : '空白角色')
-  md.open = false; cur.value = k
-  toast('已创建角色，请勾选它可以访问的页面和操作')
+  if (dirty.value && role.value && !(await confirmDlg({ title: '放弃未保存的修改？', msg: '「' + role.value.name + '」的权限修改尚未保存。', ok: '放弃修改', danger: true }))) return
+  md.busy = true
+  try {
+    const k = await access.addRole({ name: md.name.trim(), desc: md.desc.trim(), from: md.from || undefined })
+    md.open = false
+    cur.value = k
+    rightTab.value = 'perms'
+    toast('已创建角色，请勾选它可以访问的页面和操作')
+  } catch (err: any) {
+    toast('创建角色失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
+    md.busy = false
+  }
 }
 async function delRole() {
   const r = role.value
   if (!r || r.builtin) return
-  if (members.value.length) { toast('仍有 ' + members.value.length + ' 个账号属于该角色，请先在用户管理中调整', { type: 'warn' }); return }
+  if (members.value.length) {
+    toast('仍有 ' + members.value.length + ' 个账号属于该角色，请先在用户管理中调整', { type: 'warn' })
+    return
+  }
   if (!(await confirmDlg({ title: '删除角色「' + r.name + '」？', msg: '删除后不可恢复。', ok: '删除', danger: true }))) return
-  access.removeRole(r.key)
-  audit('删除角色', r.name, '角色已删除', 'warn')
-  cur.value = access.roles[0].key
-  toast('已删除角色')
+  try {
+    await access.removeRole(r.key)
+    cur.value = access.roles[0]?.key ?? ''
+    toast('已删除角色')
+  } catch (err: any) {
+    toast('删除角色失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
+
+onMounted(async () => {
+  try {
+    await access.fetchRoles()
+    if (!cur.value && access.roles.length) cur.value = access.roles[0].key
+  } catch (err: any) {
+    toast('加载角色列表失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
+})
 </script>
 
 <template>
   <PageHead title="角色权限" desc="为每个角色配置可访问的页面与可执行的操作，保存后对该角色下的所有账号立即生效">
-    <a-button :disabled="!session.allowed('users')" @click="router.push({ name: 'users' })"><AppIcon name="users" />用户管理</a-button>
     <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="openAdd"><AppIcon name="plus" />新增角色</a-button>
   </PageHead>
-  <div v-if="!mayEdit" class="callout info" style="margin-bottom:16px"><AppIcon name="lock" /><span>当前角色只有查看权限，如需调整请联系系统管理员。</span></div>
+  <div v-if="!mayEdit" class="callout info" style="flex:none"><AppIcon name="lock" /><span>当前角色只有查看权限，如需调整请联系系统管理员。</span></div>
 
-  <div class="r-wrap">
+  <div v-if="access.roles.length" class="r-wrap r-page-body">
     <div class="card r-list">
-      <div class="card-head"><div><h2>角色</h2><div class="sub">{{ access.roles.length }} 个角色</div></div></div>
-      <button v-for="r in access.roles" :key="r.key" type="button" class="r-item" :aria-current="r.key === cur ? 'true' : undefined" @click="pick(r.key)">
-        <span class="r-av" :class="{ adm: r.all }">{{ r.init || r.name.slice(0, 1) }}</span>
-        <span class="r-main"><b>{{ r.name }}<StatusBadge v-if="r.builtin" kind="" text="内置" plain /></b><small>{{ access.memberCount(r.key) }} 个账号 · {{ pageCount(r) }} 个页面 · {{ actCount(r) }} 项操作</small></span>
-      </button>
+      <div class="card-head r-list-head"><div><h2>角色列表</h2></div></div>
+      <div class="r-list-body">
+        <button
+          v-for="r in access.roles"
+          :key="r.key"
+          type="button"
+          class="r-item"
+          :aria-current="r.key === cur ? 'true' : undefined"
+          @click="pick(r.key)"
+        >
+          <div class="r-main">
+            <b>{{ r.name }}<StatusBadge v-if="r.builtin" kind="" text="内置" plain /></b>
+            <a-tooltip v-if="r.desc" :title="r.desc" placement="right">
+              <span class="r-desc">{{ r.desc }}</span>
+            </a-tooltip>
+            <span v-else class="r-desc empty">暂无角色说明</span>
+          </div>
+        </button>
+      </div>
     </div>
 
-    <div v-if="role" class="r-detail">
-      <div class="card">
-        <div class="card-head">
-          <div><h2>基本信息</h2><div class="sub">{{ role.all ? '系统管理员拥有全部权限，不可修改权限范围' : role.builtin ? '内置角色可调整权限，不可删除' : '自定义角色' }}</div></div>
-          <a-button v-if="!role.builtin" danger :disabled="!mayEdit" :title="dis" @click="delRole"><AppIcon name="trash" size="sm" />删除角色</a-button>
+    <div v-if="role" class="card r-perm-card">
+      <div class="card-head r-perm-head">
+        <div class="r-head-left">
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <h2>{{ role.name }}</h2>
+            <StatusBadge v-if="role.builtin" kind="" text="内置" plain />
+          </div>
+          <div class="sub">{{ role.all ? '系统管理员拥有全部权限，不可修改权限范围' : '未勾选页面时，该页面不会出现在菜单中；操作权限需先开放对应页面' }}</div>
         </div>
-        <div class="card-body r-basic">
-          <label>角色名称<a-input v-model:value="draft.name" :disabled="!mayEdit" :maxlength="20" /></label>
-          <label>角色说明<a-input v-model:value="draft.desc" :disabled="!mayEdit" :maxlength="60" placeholder="简要说明该角色的职责" /></label>
+        <div class="r-head-right">
+          <div class="cyber-tabs" role="tablist" aria-label="角色详情视图">
+            <button type="button" role="tab" class="cyber-tab-item" :class="{ active: rightTab === 'perms' }" :aria-selected="rightTab === 'perms'" @click="rightTab = 'perms'">
+              <span>页面与操作权限</span>
+            </button>
+            <button type="button" role="tab" class="cyber-tab-item" :class="{ active: rightTab === 'members' }" :aria-selected="rightTab === 'members'" @click="rightTab = 'members'">
+              <span>角色成员</span>
+            </button>
+          </div>
+          <a-button size="small" :disabled="!mayEdit" :title="dis" @click="openEditInfo"><AppIcon name="pencil" size="sm" />编辑信息</a-button>
+          <a-button v-if="!role.builtin" size="small" danger :disabled="!mayEdit" :title="dis" @click="delRole"><AppIcon name="trash" size="sm" />删除角色</a-button>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-head"><div><h2>页面与操作权限</h2><div class="sub">未勾选页面时，该页面不会出现在菜单中；操作权限需先开放对应页面</div></div></div>
-        <div class="r-matrix">
-          <div v-for="g in NAV_GROUPS" :key="g.g" class="r-group">
-            <div class="r-gh"><a-checkbox :checked="groupState(g.items).all" :indeterminate="groupState(g.items).some" :disabled="locked" @change="(e: any) => setGroup(g.items, e.target.checked)">{{ g.g }}</a-checkbox></div>
-            <div v-for="p in g.items" :key="p" class="r-row" :class="{ off: !hasPage(p) }">
-              <a-checkbox :checked="hasPage(p)" :disabled="locked" @change="(e: any) => setPage(p, e.target.checked)"><AppIcon :name="PAGE_META[p].icon" size="sm" />{{ PAGE_META[p].title }}</a-checkbox>
-              <div class="r-acts">
-                <template v-if="actsOf(p).length">
-                  <a-checkbox v-for="a in actsOf(p)" :key="a.key" :checked="hasAct(a.key)" :disabled="locked || !hasPage(p)" @change="(e: any) => setAct(a.key, e.target.checked)">{{ a.label }}</a-checkbox>
-                </template>
-                <span v-else class="faint">仅查看</span>
-              </div>
+      <div v-if="rightTab === 'perms'" class="r-matrix">
+        <div v-for="g in NAV_GROUPS" :key="g.g" class="r-group">
+          <div class="r-gh"><a-checkbox :checked="groupState(g.items).all" :indeterminate="groupState(g.items).some" :disabled="locked" @change="(e: any) => setGroup(g.items, e.target.checked)">{{ g.g }}</a-checkbox></div>
+          <div v-for="p in g.items" :key="p" class="r-row" :class="{ off: !hasPage(p) }">
+            <a-checkbox :checked="hasPage(p)" :disabled="locked" @change="(e: any) => setPage(p, e.target.checked)"><AppIcon :name="PAGE_META[p].icon" size="sm" />{{ PAGE_META[p].title }}</a-checkbox>
+            <div class="r-acts">
+              <template v-if="actsOf(p).length">
+                <a-checkbox v-for="a in actsOf(p)" :key="a.key" :checked="hasAct(a.key)" :disabled="locked || !hasPage(p)" @change="(e: any) => setAct(a.key, e.target.checked)">{{ a.label }}</a-checkbox>
+              </template>
+              <span v-else class="faint">仅查看</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-head"><div><h2>角色成员</h2><div class="sub">{{ members.length }} 个账号；调整成员请前往用户管理</div></div></div>
-        <div class="card-body">
-          <div v-if="members.length" class="r-mem"><span v-for="u in members" :key="u.id" class="r-chip" :class="{ off: !u.on }"><i>{{ u.name.slice(0, 1) }}</i>{{ u.name }}<small class="mono">{{ u.u }}</small><em v-if="!u.on">已停用</em></span></div>
-          <p v-else class="muted" style="margin:0">暂无账号属于该角色</p>
+      <div v-else class="r-members-panel">
+        <div v-if="members.length" class="r-mem">
+          <span v-for="u in members" :key="u.id" class="r-chip">
+            <i>{{ (u.full_name || u.username || '?').slice(0, 1) }}</i>
+            <span>{{ u.full_name }}</span>
+            <small class="mono">{{ u.username }}</small>
+            <small v-if="u.dept" class="muted">· {{ u.dept }}</small>
+          </span>
         </div>
+        <EmptyState v-else icon="users" title="暂无角色成员" desc="可在用户管理页面中为账号分配该角色" />
+      </div>
+
+      <div v-if="dirty && mayEdit" class="r-save-wrap">
+        <SaveBar :msg="'「' + role.name + '」有未保存的权限修改'" @save="savePerms" @reset="load" />
       </div>
     </div>
   </div>
-  <SaveBar v-if="dirty && mayEdit" :msg="'「' + role.name + '」有未保存的权限修改'" @save="save" @reset="load" />
+  <div v-else class="card">
+    <EmptyState icon="shield" :title="access.loadingRoles ? '正在加载角色权限…' : '暂无角色数据'" :desc="access.loadingRoles ? '正在从服务器获取角色与权限配置' : '请检查网络或新增角色'" />
+  </div>
 
-  <a-modal v-model:open="md.open" title="新增角色" ok-text="创建" cancel-text="取消" width="460px" @ok="addRole">
+  <!-- 编辑角色名称与说明 -->
+  <a-modal v-model:open="infoMd.open" title="编辑角色信息" ok-text="保存" cancel-text="取消" :confirm-loading="infoMd.busy" width="460px" centered @ok="saveInfo">
+    <a-form layout="vertical" style="margin-top:12px">
+      <a-form-item label="角色名称" required :validate-status="infoMd.touched && infoNameErr ? 'error' : ''" :help="infoMd.touched && infoNameErr ? infoNameErr : undefined">
+        <a-input v-model:value="infoMd.name" :maxlength="20" placeholder="请输入角色名称" />
+      </a-form-item>
+      <a-form-item label="角色说明" style="margin-bottom:0">
+        <a-textarea v-model:value="infoMd.desc" :rows="3" :maxlength="120" placeholder="简要说明该角色的职责与权限范围" />
+      </a-form-item>
+    </a-form>
+  </a-modal>
+
+  <!-- 新增角色 -->
+  <a-modal v-model:open="md.open" title="新增角色" ok-text="创建" cancel-text="取消" :confirm-loading="md.busy" width="460px" centered @ok="addRole">
     <a-form layout="vertical" style="margin-top:12px">
       <a-form-item label="角色名称" required :validate-status="md.touched && nameErr ? 'error' : ''" :help="md.touched && nameErr ? nameErr : undefined"><a-input v-model:value="md.name" :maxlength="20" placeholder="如 数据分析员" /></a-form-item>
-      <a-form-item label="角色说明"><a-input v-model:value="md.desc" :maxlength="60" /></a-form-item>
-      <a-form-item label="复制权限自" extra="可选；不复制则只开放数据看板，用户与权限相关权限不会被复制">
+      <a-form-item label="角色说明"><a-textarea v-model:value="md.desc" :rows="2" :maxlength="120" placeholder="简要说明该角色的职责" /></a-form-item>
+      <a-form-item label="复制权限自" extra="可选；不复制则只开放数据看板，用户与权限相关权限不会被复制" style="margin-bottom:0">
         <a-select v-model:value="md.from" :options="[{ value: '', label: '不复制（空白角色）' }, ...access.roles.filter((r) => !r.all).map((r) => ({ value: r.key, label: r.name }))]" />
       </a-form-item>
     </a-form>
   </a-modal>
 </template>
 
+<style>
+@media (min-width: 1101px) {
+  .cl-content > .page:has(.r-page-body) {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+</style>
+
 <style scoped>
-.r-wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
-.r-list { padding-bottom: 8px; position: sticky; top: 0; }
-.r-item { display: flex; align-items: center; gap: 12px; width: calc(100% - 16px); margin: 2px 8px; padding: 10px 12px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.r-wrap {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.r-list,
+.r-perm-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.r-list-head {
+  flex: none;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.r-list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.r-item {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 2px 8px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
 .r-item:hover { background: rgba(46,211,230,.06); }
 .r-item[aria-current] { background: rgba(38,198,218,.14); border-color: rgba(46,211,230,.45); }
-.r-av { flex: none; width: 34px; height: 34px; border-radius: 4px; display: grid; place-items: center; font-weight: 600; color: var(--accent-text); background: rgba(46,211,230,.12); border: 1px solid rgba(46,211,230,.3); }
-.r-av.adm { color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); border: 0; }
-.r-main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-.r-main b { font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.r-main small { color: var(--muted); font-size: 12px; }
-.r-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.r-basic { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
-.r-basic label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; }
-.r-matrix { padding: 0 20px 12px; }
+.r-main {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+.r-main b {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.r-desc {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.r-desc.empty {
+  color: var(--faint);
+}
+.r-perm-head {
+  flex: none;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.r-head-left {
+  min-width: 0;
+  flex: 1;
+}
+.r-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.r-matrix {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 16px;
+}
+.r-members-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+.r-save-wrap {
+  flex: none;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(16, 33, 55, 0.92);
+}
+.r-save-wrap :deep(.savebar) {
+  position: static;
+  box-shadow: none;
+  padding: 8px 14px;
+}
 .r-group + .r-group { margin-top: 6px; }
 .r-gh { padding: 10px 0 8px; border-bottom: 1px solid var(--line); font-weight: 600; }
 .r-gh :deep(.ant-checkbox-wrapper) { color: var(--accent-text); font-weight: 600; }
@@ -188,11 +449,13 @@ async function delRole() {
 .r-row.off > :deep(.ant-checkbox-wrapper) { color: var(--muted); }
 .r-acts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
 .faint { color: var(--faint); font-size: 12.5px; }
-.r-mem { display: flex; flex-wrap: wrap; gap: 8px; }
-.r-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 16px; border: 1px solid var(--line); background: rgba(13,28,49,.5); font-size: 13px; }
+.r-mem { display: flex; flex-wrap: wrap; gap: 10px; }
+.r-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(13,28,49,.5); font-size: 13px; }
 .r-chip i { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); }
 .r-chip small { color: var(--faint); }
-.r-chip em { font-style: normal; font-size: 11px; color: var(--faint); }
-.r-chip.off { opacity: .6; }
-@media (max-width: 1100px) { .r-wrap { grid-template-columns: 1fr; } .r-list { position: static; } }
+@media (max-width: 1100px) {
+  .r-wrap { grid-template-columns: 1fr; height: auto; }
+  .r-list, .r-perm-card { height: auto; max-height: none; }
+  .r-list-body, .r-matrix, .r-members-panel { max-height: 460px; }
+}
 </style>

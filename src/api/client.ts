@@ -79,11 +79,17 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
     headers,
   })
 
-  if (res.status === 401) {
+  if (res.status === 401 && !options.skipAuth) {
     removeToken()
-    // 避免循环跳转
-    if (window.location.pathname !== '/login') {
-      window.location.href = '/login'
+    try {
+      localStorage.removeItem('dms_user_profile')
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new CustomEvent('dms:unauthorized'))
+    // 路由采用 createWebHashHistory()，避免使用 history pathname 跳转导致 404
+    if (!window.location.hash.startsWith('#/login')) {
+      window.location.hash = '#/login'
     }
     throw new ApiError('登录已过期，请重新登录', 401)
   }

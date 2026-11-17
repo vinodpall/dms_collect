@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -7,39 +7,67 @@ import EmptyState from '@/components/EmptyState.vue'
 import { NO_PERM } from '@/constants'
 import { useAccess, tempPwd, type UserRow } from '@/stores/access'
 import { useSession } from '@/stores/session'
-import { useLogs } from '@/stores/logs'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
 
 const access = useAccess()
 const session = useSession()
-const logs = useLogs()
 const mayEdit = computed(() => session.can('users'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
-const audit = (action: string, target: string, summary: string, status?: 'warn') =>
-  logs.addLog({ user: session.info.user, role: session.info.name, module: 'system', moduleName: '用户管理', action, target, summary, status })
 
-/* 筛选 */
-const st = reactive({ q: '', role: 'all', s: 'all' })
-const rows = computed(() => access.users.filter((u) => {
-  const q = st.q.trim().toLowerCase()
-  if (q && ![u.name, u.u, u.dept, u.email, u.phone].some((x) => x.toLowerCase().includes(q))) return false
-  if (st.role !== 'all' && u.role !== st.role) return false
-  return st.s === 'all' || (st.s === 'on' ? u.on : !u.on)
-}))
+/* 筛选与服务端分页 */
+const st = reactive({ q: '', role: 'all', s: 'all', page: 1 })
 const roleOpts = computed(() => access.roles.map((r) => ({ value: r.key, label: r.name })))
 const roleName = (k: string) => access.roleMap[k]?.name ?? '未分配'
 
+async function loadUsers() {
+  const roleObj = st.role !== 'all' ? access.roleMap[st.role] : undefined
+  try {
+    await access.fetchUsers({
+      page: st.page,
+      size: 10,
+      keyword: st.q.trim() || undefined,
+      role_id: roleObj?.id,
+      is_active: st.s === 'all' ? undefined : st.s === 'on',
+    })
+  } catch (err: any) {
+    toast('加载用户列表失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
+}
+
+let searchTimer: number | undefined
+watch(
+  () => st.q,
+  () => {
+    st.page = 1
+    clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => loadUsers(), 250)
+  }
+)
+watch(
+  () => [st.role, st.s],
+  () => {
+    st.page = 1
+    loadUsers()
+  }
+)
+onBeforeUnmount(() => clearTimeout(searchTimer))
+
+onMounted(async () => {
+  await Promise.allSettled([access.fetchRoles(), loadUsers()])
+})
+
 /* 新增 / 编辑 */
 const ACC_RE = /^[a-z][a-z0-9_.-]{2,23}$/
-const blank = () => ({ id: '', u: '', name: '', role: 'op', dept: '', phone: '', email: '', pwd: tempPwd() })
+const defaultRoleKey = () => access.roles.find((r) => !r.all)?.key ?? access.roles[0]?.key ?? ''
+const blank = () => ({ id: '', u: '', name: '', role: defaultRoleKey(), dept: '', phone: '', email: '', pwd: tempPwd() })
 const md = reactive({ open: false, busy: false, f: blank(), touched: false })
 const errs = computed(() => {
   const f = md.f, e: Record<string, string> = {}
   if (!md.f.id) {
     if (!ACC_RE.test(f.u)) e.u = '3–24 位，小写字母开头，可含数字、下划线、点、横线'
     else if (access.byAccount(f.u)) e.u = '该账号已存在'
-    if (f.pwd.length < 8) e.pwd = '初始密码至少 8 位'
+    if (f.pwd && f.pwd.length < 8) e.pwd = '初始密码至少 8 位'
   }
   if (!f.name.trim()) e.name = '请输入姓名'
   if (!access.roleMap[f.role]) e.role = '请选择角色'
@@ -47,66 +75,137 @@ const errs = computed(() => {
   if (f.phone && !/^[\d\s+-]{6,20}$/.test(f.phone)) e.phone = '电话格式不正确'
   return e
 })
-function openAdd() { Object.assign(md, { open: true, busy: false, touched: false, f: blank() }) }
-function openEdit(u: UserRow) { Object.assign(md, { open: true, busy: false, touched: false, f: { id: u.id, u: u.u, name: u.name, role: u.role, dept: u.dept, phone: u.phone, email: u.email, pwd: '' } }) }
+function openAdd() {
+  Object.assign(md, { open: true, busy: false, touched: false, f: blank() })
+}
+async function openEdit(u: UserRow) {
+  Object.assign(md, {
+    open: true,
+    busy: true,
+    touched: false,
+    f: { id: u.id, u: u.u, name: u.name, role: u.role, dept: u.dept, phone: u.phone, email: u.email, pwd: '' },
+  })
+  try {
+    const fresh = await access.fetchUserDetail(u.numericId)
+    Object.assign(md.f, {
+      name: fresh.name,
+      role: fresh.role,
+      dept: fresh.dept,
+      phone: fresh.phone,
+      email: fresh.email,
+    })
+  } catch {
+    /* 使用列表当前记录展示 */
+  } finally {
+    md.busy = false
+  }
+}
 const selfDemote = computed(() => md.f.id === session.uid && !access.roleMap[md.f.role]?.all && session.isAdmin)
+
+const rp = reactive({ open: false, name: '', u: '', pwd: '', hours: 0, title: '临时密码已生成' })
+
 async function save() {
   md.touched = true
   if (Object.keys(errs.value).length) return
   const f = md.f
   const d = { name: f.name.trim(), role: f.role, dept: f.dept.trim(), phone: f.phone.trim(), email: f.email.trim() }
-  if (f.id) {
-    const old = access.byId(f.id)!
-    if (access.roleMap[old.role]?.all && !access.roleMap[f.role]?.all && old.on && access.activeAdmins <= 1) { toast('至少需要保留一名启用中的系统管理员', { type: 'warn' }); return }
-    if (selfDemote.value && !(await confirmDlg({ title: '调整自己的角色？', msg: '保存后你将失去系统管理员权限，可能无法再进入本页面。', ok: '仍要保存', danger: true }))) return
-    const before = roleName(old.role)
-    access.updateUser(f.id, d)
-    audit('编辑用户', `${d.name}（${old.u}）`, before !== roleName(d.role) ? `角色：${before} → ${roleName(d.role)}` : '更新用户资料')
-    toast('已保存 ' + d.name)
-  } else {
-    md.busy = true
-    await access.addUser({ ...d, u: f.u.trim() }, f.pwd)
+  md.busy = true
+  try {
+    if (f.id) {
+      const old = access.byId(f.id)!
+      if (access.roleMap[old.role]?.all && !access.roleMap[f.role]?.all && old.on && access.activeAdmins <= 1) {
+        toast('至少需要保留一名启用中的系统管理员', { type: 'warn' })
+        return
+      }
+      if (selfDemote.value && !(await confirmDlg({ title: '调整自己的角色？', msg: '保存后你将失去系统管理员权限，可能无法再进入本页面。', ok: '仍要保存', danger: true }))) return
+      await access.updateUser(f.id, d)
+      if (f.id === session.uid) {
+        await session.fetchMe()
+      }
+      toast('已保存 ' + d.name)
+      md.open = false
+      await loadUsers()
+    } else {
+      const { user, initialPassword } = await access.addUser({ ...d, u: f.u.trim() }, f.pwd)
+      toast('已创建账号 ' + user.u + '，首次登录后请提醒其修改密码')
+      md.open = false
+      if (initialPassword) {
+        Object.assign(rp, {
+          open: true,
+          title: '账号已创建，请记下初始密码',
+          name: user.name,
+          u: user.u,
+          pwd: initialPassword,
+          hours: 0,
+        })
+      }
+      st.page = 1
+      await loadUsers()
+    }
+  } catch (err: any) {
+    toast('保存失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  } finally {
     md.busy = false
-    audit('新增用户', `${d.name}（${f.u}）`, '角色：' + roleName(d.role))
-    toast('已创建账号 ' + f.u + '，首次登录后请提醒其修改密码')
   }
-  md.open = false
 }
-function copy(t: string) { navigator.clipboard?.writeText(t).then(() => toast('已复制'), () => toast('复制失败，请手动选择复制', { type: 'warn' })) }
+function copy(t: string) {
+  navigator.clipboard?.writeText(t).then(
+    () => toast('已复制'),
+    () => toast('复制失败，请手动选择复制', { type: 'warn' })
+  )
+}
 
 /* 启停 / 重置密码 / 删除 */
 async function toggle(u: UserRow, on: boolean) {
   if (u.id === session.uid) { toast('不能停用当前登录的账号', { type: 'warn' }); return }
   if (!on && access.roleMap[u.role]?.all && access.activeAdmins <= 1) { toast('至少需要保留一名启用中的系统管理员', { type: 'warn' }); return }
   if (!on && !(await confirmDlg({ title: '停用 ' + u.name + '？', msg: '停用后该账号将无法登录，已登录的会话会立即失效。', ok: '停用', danger: true }))) return
-  access.setOn(u.id, on)
-  audit(on ? '启用用户' : '停用用户', `${u.name}（${u.u}）`, on ? '账号已启用' : '账号已停用', on ? undefined : 'warn')
-  toast(on ? '已启用 ' + u.name : '已停用 ' + u.name, on ? {} : { type: 'warn' })
+  try {
+    await access.setOn(u.id, on)
+    toast(on ? '已启用 ' + u.name : '已停用 ' + u.name, on ? {} : { type: 'warn' })
+  } catch (err: any) {
+    toast('状态调整失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
-const rp = reactive({ open: false, name: '', u: '', pwd: '' })
+
 async function resetPwd(u: UserRow) {
   if (!(await confirmDlg({ title: '重置 ' + u.name + ' 的密码？', msg: '将生成一个临时密码，原密码立即失效；对方登录后会被提醒修改密码。', ok: '重置' }))) return
-  const p = tempPwd()
-  await access.setPwd(u.id, p, true)
-  audit('重置密码', `${u.name}（${u.u}）`, '已生成临时密码', 'warn')
-  Object.assign(rp, { open: true, name: u.name, u: u.u, pwd: p })
+  try {
+    const res = await access.resetUserPassword(u.id)
+    Object.assign(rp, {
+      open: true,
+      title: '临时密码已生成',
+      name: u.name,
+      u: u.u,
+      pwd: res.temp_password,
+      hours: res.expires_in_hours || 0,
+    })
+  } catch (err: any) {
+    toast('重置密码失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
+
 async function remove(u: UserRow) {
   if (u.id === session.uid) { toast('不能删除当前登录的账号', { type: 'warn' }); return }
   if (access.roleMap[u.role]?.all && u.on && access.activeAdmins <= 1) { toast('至少需要保留一名启用中的系统管理员', { type: 'warn' }); return }
   if (!(await confirmDlg({ title: '删除用户 ' + u.name + '？', msg: '删除后不可恢复，历史操作日志仍会保留。若只是暂时不用，建议改为停用。', ok: '删除', danger: true }))) return
-  access.removeUser(u.id)
-  audit('删除用户', `${u.name}（${u.u}）`, '账号已删除', 'warn')
-  toast('已删除 ' + u.name)
+  try {
+    await access.removeUser(u.id)
+    toast('已删除 ' + u.name)
+    if (access.users.length === 0 && st.page > 1) st.page -= 1
+    await loadUsers()
+  } catch (err: any) {
+    toast('删除失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
+  }
 }
 
 const columns = [
   { title: '用户', key: 'user', width: 220, align: 'center' as const },
   { title: '角色', key: 'role', width: 130, align: 'center' as const },
-  { title: '部门', dataIndex: 'dept', key: 'dept', width: 130, align: 'center' as const },
+  { title: '部门', key: 'dept', width: 130, align: 'center' as const },
   { title: '联系电话', key: 'phone', width: 150, align: 'center' as const },
-  { title: '最近登录', key: 'last', width: 120, align: 'center' as const },
-  { title: '状态', key: 'on', width: 110, align: 'center' as const },
+  { title: '最近登录', key: 'last', width: 150, align: 'center' as const },
+  { title: '状态', key: 'on', width: 132, align: 'center' as const },
   { title: '操作', key: 'act', width: 230, fixed: 'right' as const, align: 'center' as const },
 ]
 </script>
@@ -132,16 +231,32 @@ const columns = [
         ]"
       />
     </div>
-    <a-table row-key="id" :columns="columns" :data-source="rows" :scroll="{ x: 1100 }" :pagination="{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个账号` }">
+    <a-table
+      row-key="id"
+      :columns="columns"
+      :data-source="access.users"
+      :loading="access.loadingUsers"
+      :scroll="{ x: 1120 }"
+      :pagination="{
+        current: st.page,
+        pageSize: 10,
+        total: access.userTotal,
+        showSizeChanger: false,
+        hideOnSinglePage: false,
+        showTotal: (n: number) => `共 ${n} 个账号`,
+        onChange: (p: number) => { st.page = p; loadUsers() },
+      }"
+    >
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'user'" class="u-cell" style="justify-content:center">
           <span class="u-av" :class="{ off: !record.on }">{{ record.name.slice(0, 1) }}</span>
           <div class="cell-main" style="align-items:center;text-align:center"><span>{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span><small class="mono">{{ record.u }} · {{ record.email || '—' }}</small></div>
         </div>
         <StatusBadge v-else-if="column.key === 'role'" :kind="access.roleMap[record.role]?.all ? 'info' : ''" :text="roleName(record.role)" />
+        <span v-else-if="column.key === 'dept'" class="muted">{{ record.dept || '—' }}</span>
         <span v-else-if="column.key === 'phone'" class="mono muted">{{ record.phone || '—' }}</span>
-        <span v-else-if="column.key === 'last'" class="muted">{{ record.last }}</span>
-        <div v-else-if="column.key === 'on'" class="row" style="gap:8px;justify-content:center">
+        <span v-else-if="column.key === 'last'" class="muted">{{ record.last || '—' }}</span>
+        <div v-else-if="column.key === 'on'" class="row" style="gap:8px;justify-content:center;white-space:nowrap">
           <a-switch size="small" :checked="record.on" :disabled="!mayEdit || record.id === session.uid" :aria-label="'启用 ' + record.name" @change="(v: boolean) => toggle(record as UserRow, v)" />
           <span :class="record.on ? '' : 'muted'">{{ record.on ? '启用' : '停用' }}</span>
           <a-tooltip v-if="record.mustReset" title="使用临时密码，尚未修改"><AppIcon name="clock" size="sm" style="color:var(--warn)" /></a-tooltip>
@@ -170,15 +285,17 @@ const columns = [
         <a-form-item label="联系电话" :validate-status="md.touched && errs.phone ? 'error' : ''" :help="md.touched && errs.phone ? errs.phone : undefined"><a-input v-model:value="md.f.phone" class="mono" /></a-form-item>
         <a-form-item label="邮箱" :validate-status="md.touched && errs.email ? 'error' : ''" :help="md.touched && errs.email ? errs.email : undefined"><a-input v-model:value="md.f.email" class="mono" /></a-form-item>
       </div>
-      <a-form-item v-if="!md.f.id" label="初始密码" required :validate-status="md.touched && errs.pwd ? 'error' : ''" :help="md.touched && errs.pwd ? errs.pwd : '已随机生成，可修改；请通过安全渠道告知对方，首次登录后会提示修改'">
+      <a-form-item v-if="!md.f.id" label="初始密码" :validate-status="md.touched && errs.pwd ? 'error' : ''" :help="md.touched && errs.pwd ? errs.pwd : '留空将由后端生成初始密码；请通过安全渠道告知对方'">
         <div class="row"><a-input v-model:value="md.f.pwd" class="mono grow" autocomplete="new-password" /><a-button @click="md.f.pwd = tempPwd()"><AppIcon name="refresh" size="sm" />重新生成</a-button><a-button @click="copy(md.f.pwd)"><AppIcon name="copy" size="sm" /></a-button></div>
       </a-form-item>
-      <p v-if="md.f.role && access.roleMap[md.f.role]" class="u-hint"><AppIcon name="shield" size="sm" />{{ access.roleMap[md.f.role].name }}：{{ access.roleMap[md.f.role].desc || '自定义角色' }}</p>
+      <p v-if="md.f.role && access.roleMap[md.f.role]" class="u-hint"><AppIcon name="shield" size="sm" />{{ access.roleMap[md.f.role].name }}：{{ access.roleMap[md.f.role].desc || '未设置角色说明' }}</p>
     </a-form>
   </a-modal>
 
-  <a-modal v-model:open="rp.open" title="临时密码已生成" ok-text="我已记下" :cancel-button-props="{ style: { display: 'none' } }" width="440px" @ok="rp.open = false">
-    <p class="muted" style="margin:8px 0 14px">{{ rp.name }}（<span class="mono">{{ rp.u }}</span>）的临时密码如下，关闭后将不再显示：</p>
+  <a-modal v-model:open="rp.open" :title="rp.title" ok-text="我已记下" :cancel-button-props="{ style: { display: 'none' } }" width="440px" @ok="rp.open = false">
+    <p class="muted" style="margin:8px 0 14px">
+      {{ rp.name }}（<span class="mono">{{ rp.u }}</span>）的临时密码如下<template v-if="rp.hours">（{{ rp.hours }} 小时内有效）</template>，关闭后将不再显示：
+    </p>
     <div class="row"><code class="u-pwd grow">{{ rp.pwd }}</code><a-button @click="copy(rp.pwd)"><AppIcon name="copy" size="sm" />复制</a-button></div>
   </a-modal>
 </template>

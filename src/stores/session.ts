@@ -11,10 +11,15 @@ export interface UserSessionProfile {
   u: string
   name: string
   role: RoleKey
+  roleName?: string
   dept: string
+  phone?: string
+  email?: string
+  lastLoginAt?: string
   avatarUrl?: string | null
   pages: string[]
   actions: string[]
+  isAll?: boolean
   mustReset?: boolean
 }
 
@@ -33,7 +38,7 @@ export const useSession = defineStore('session', () => {
   const profile = ref<UserSessionProfile | null>(cachedProfile)
   const authed = computed(() => !!token.value && !!profile.value)
   const role = computed<RoleKey>(() => profile.value?.role ?? '')
-  const isAdmin = computed(() => role.value === 'admin' || (profile.value?.pages?.length ?? 0) >= 14)
+  const isAdmin = computed(() => role.value === 'admin' || !!profile.value?.isAll)
 
   const user = computed(() => {
     if (!profile.value) return null
@@ -44,17 +49,17 @@ export const useSession = defineStore('session', () => {
       role: profile.value.role,
       dept: profile.value.dept,
       on: true,
-      last: '在线',
+      last: profile.value.lastLoginAt || '',
       created: '',
-      phone: '',
-      email: profile.value.u + '@dms.local',
+      phone: profile.value.phone || '',
+      email: profile.value.email || '',
       pwd: null,
       mustReset: !!profile.value.mustReset,
     }
   })
 
   const info = computed(() => ({
-    name: profile.value?.role === 'admin' ? '系统管理员' : (profile.value?.name ?? '未分配角色'),
+    name: profile.value?.roleName || (profile.value?.role === 'admin' ? '系统管理员' : '未分配角色'),
     user: profile.value?.name ?? '',
     init: (profile.value?.name ?? '?').slice(0, 1),
     account: profile.value?.u ?? '',
@@ -73,6 +78,20 @@ export const useSession = defineStore('session', () => {
     }
   }
 
+  function clearSessionLocal() {
+    token.value = null
+    removeToken()
+    saveProfile(null)
+    lsSet('dms-user', '')
+    window.dispatchEvent(new CustomEvent('dms:logout'))
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dms:unauthorized', () => {
+      clearSessionLocal()
+    })
+  }
+
   /**
    * 登录：调用后端真实接口
    */
@@ -80,22 +99,30 @@ export const useSession = defineStore('session', () => {
     try {
       const res: LoginResult = await authApi.login({ username: u.trim(), password: pwd })
       if (!res.access_token) return '登录失败：未收到令牌'
-      
+
       setToken(res.access_token)
       token.value = res.access_token
 
+      const roleCode = res.role?.code || ''
       const userProfile: UserSessionProfile = {
         id: String(res.user.id),
         u: res.user.username,
         name: res.user.full_name,
-        role: res.role?.code || 'admin',
-        dept: res.user.dept || '平台',
+        role: roleCode,
+        roleName: res.role?.name || '',
+        dept: res.user.dept || '',
         avatarUrl: res.user.avatar_url,
         pages: res.pages || [],
         actions: res.actions || [],
+        isAll: roleCode === 'admin',
+        mustReset: !!res.must_reset_pwd,
       }
       saveProfile(userProfile)
       lsSet('dms-user', remember ? userProfile.id : '')
+
+      // 同步完整用户信息（包含 is_all、phone、email 等）并通知已对接 store 刷新
+      await fetchMe()
+      window.dispatchEvent(new CustomEvent('dms:login'))
       return null
     } catch (err: any) {
       return err.message || '登录失败，请检查账号密码'
@@ -109,15 +136,22 @@ export const useSession = defineStore('session', () => {
     if (!getToken()) return
     try {
       const me: CurrentUserDetail = await authApi.getMe()
+      const roleCode = me.role?.code || ''
       const userProfile: UserSessionProfile = {
         id: String(me.user.id),
         u: me.user.username,
         name: me.user.full_name,
-        role: me.role?.code || 'admin',
-        dept: me.user.dept || '平台',
+        role: roleCode,
+        roleName: me.role?.name || '',
+        dept: me.user.dept || '',
+        phone: me.user.phone || '',
+        email: me.user.email || '',
+        lastLoginAt: me.user.last_login_at ? me.user.last_login_at.replace('T', ' ').slice(0, 16) : '',
         avatarUrl: me.user.avatar_url,
         pages: me.pages || [],
         actions: me.actions || [],
+        isAll: !!me.is_all || roleCode === 'admin',
+        mustReset: !!me.user.must_reset_pwd,
       }
       saveProfile(userProfile)
     } catch (err) {
@@ -125,16 +159,19 @@ export const useSession = defineStore('session', () => {
     }
   }
 
+  function clearMustReset() {
+    if (profile.value) {
+      saveProfile({ ...profile.value, mustReset: false })
+    }
+  }
+
   async function logout() {
     try {
-      await authApi.logout()
+      if (getToken()) await authApi.logout()
     } catch {
       /* ignore */
     } finally {
-      token.value = null
-      removeToken()
-      saveProfile(null)
-      lsSet('dms-user', '')
+      clearSessionLocal()
     }
   }
 
@@ -147,14 +184,20 @@ export const useSession = defineStore('session', () => {
   function can(actionKey: string): boolean {
     if (isAdmin.value) return true
     if (!profile.value) return false
-    // 兼容后端 actions 格式 (例如 "tasks:operate" 或 "tasks")
-    return profile.value.actions.some((a) => a === actionKey || a.startsWith(actionKey + ':') || a === actionKey + ':operate')
+    return profile.value.actions.some(
+      (a) =>
+        a === actionKey ||
+        a === actionKey + ':operate' ||
+        a === 'action:' + actionKey ||
+        a.startsWith(actionKey + ':')
+    )
   }
 
   function allowed(pageKey: PageKey): boolean {
     if (isAdmin.value) return true
-    if (!profile.value?.pages?.length) return true
-    return profile.value.pages.includes(pageKey)
+    if (!profile.value) return false
+    const pages = profile.value.pages || []
+    return pages.includes(pageKey) || pages.includes('page:' + pageKey)
   }
 
   function toggleTheme() {
@@ -174,6 +217,7 @@ export const useSession = defineStore('session', () => {
     login,
     logout,
     fetchMe,
+    clearMustReset,
     theme,
     dark,
     collapsed,

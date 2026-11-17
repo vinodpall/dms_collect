@@ -18,26 +18,60 @@ export interface Cfg {
   whitelistOn: boolean
 }
 
-export const useSettings = defineStore('settings', () => {
-  const cfg = reactive<Cfg>({
-    integrity: 99,
-    sync: 10,
-    drop: 2,
-    naming: '{任务}_{日期}_{序号}_{操作员}',
-    coldDays: 30,
-    backup: true,
-    encrypt: true,
-    watermark: true,
-    alertOffline: true,
-    alertStorage: true,
-    alertSync: true,
-    alertDrop: true,
-    whitelistOn: true,
-  })
+const DEFAULT_CFG: Cfg = {
+  integrity: 99,
+  sync: 10,
+  drop: 2,
+  naming: '{任务}_{日期}_{序号}_{操作员}',
+  coldDays: 30,
+  backup: true,
+  encrypt: true,
+  watermark: true,
+  alertOffline: true,
+  alertStorage: true,
+  alertSync: true,
+  alertDrop: true,
+  whitelistOn: true,
+}
 
+export const useSettings = defineStore('settings', () => {
+  const cfg = reactive<Cfg>({ ...DEFAULT_CFG })
   const rawSettings = ref<SettingItem[]>([])
   const versions = reactive<Record<string, number>>({})
   const loading = ref(false)
+  const loaded = ref(false)
+
+  function applyItems(items: SettingItem[]) {
+    rawSettings.value = items
+    const map: Record<string, any> = {}
+    for (const it of items) {
+      map[it.key] = it.value
+      versions[it.key] = it.version
+    }
+
+    if (map['quality.integrity'] !== undefined) cfg.integrity = Number(map['quality.integrity'])
+    if (map['quality.sync_ms'] !== undefined) cfg.sync = Number(map['quality.sync_ms'])
+    if (map['quality.drop_rate'] !== undefined) cfg.drop = Number(map['quality.drop_rate'])
+    if (map['naming.template'] !== undefined) cfg.naming = String(map['naming.template'])
+    if (map['storage.cold_days'] !== undefined) cfg.coldDays = Number(map['storage.cold_days'])
+    if (map['storage.encrypt'] !== undefined) cfg.encrypt = Boolean(map['storage.encrypt'])
+    if (map['storage.watermark'] !== undefined) cfg.watermark = Boolean(map['storage.watermark'])
+    if (map['security.whitelist_on'] !== undefined) cfg.whitelistOn = Boolean(map['security.whitelist_on'])
+
+    if (typeof map['storage.backup'] === 'object' && map['storage.backup']) {
+      cfg.backup = !!map['storage.backup'].enabled
+    } else if (map['storage.backup'] !== undefined) {
+      cfg.backup = Boolean(map['storage.backup'])
+    }
+
+    if (typeof map['alert.switch'] === 'object' && map['alert.switch']) {
+      cfg.alertDrop = !!map['alert.switch'].drop
+      cfg.alertSync = !!map['alert.switch'].sync
+      cfg.alertOffline = !!map['alert.switch'].offline
+      cfg.alertStorage = !!map['alert.switch'].storage
+    }
+    loaded.value = true
+  }
 
   async function fetchSettings() {
     if (!getToken()) return
@@ -45,66 +79,53 @@ export const useSettings = defineStore('settings', () => {
     try {
       const res = await systemApi.getSettings()
       const items = res?.items || []
-      rawSettings.value = items
-
-      const map: Record<string, any> = {}
-      for (const it of items) {
-        map[it.key] = it.value
-        versions[it.key] = it.version
-      }
-
-      if (map['quality.integrity'] !== undefined) cfg.integrity = Number(map['quality.integrity'])
-      if (map['quality.sync_ms'] !== undefined) cfg.sync = Number(map['quality.sync_ms'])
-      if (map['quality.drop_rate'] !== undefined) cfg.drop = Number(map['quality.drop_rate'])
-      if (map['naming.template'] !== undefined) cfg.naming = String(map['naming.template'])
-      if (map['storage.cold_days'] !== undefined) cfg.coldDays = Number(map['storage.cold_days'])
-      if (map['storage.encrypt'] !== undefined) cfg.encrypt = Boolean(map['storage.encrypt'])
-      if (map['storage.watermark'] !== undefined) cfg.watermark = Boolean(map['storage.watermark'])
-      if (map['security.whitelist_on'] !== undefined) cfg.whitelistOn = Boolean(map['security.whitelist_on'])
-
-      if (typeof map['storage.backup'] === 'object' && map['storage.backup']) {
-        cfg.backup = !!map['storage.backup'].enabled
-      }
-      if (typeof map['alert.switch'] === 'object' && map['alert.switch']) {
-        cfg.alertDrop = !!map['alert.switch'].drop
-        cfg.alertSync = !!map['alert.switch'].sync
-        cfg.alertOffline = !!map['alert.switch'].offline
-        cfg.alertStorage = !!map['alert.switch'].storage
-      }
-    } catch (e) {
-      console.warn('[settings] 从后端加载设置失败', e)
+      applyItems(items)
     } finally {
       loading.value = false
     }
   }
 
   async function saveSettings(newCfg?: Partial<Cfg>) {
-    if (newCfg) Object.assign(cfg, newCfg)
     if (!getToken()) return
+    const next: Cfg = { ...cfg, ...(newCfg || {}) }
 
-    const payload: Record<string, any> = {
-      'quality.integrity': cfg.integrity,
-      'quality.sync_ms': cfg.sync,
-      'quality.drop_rate': cfg.drop,
-      'naming.template': cfg.naming,
-      'storage.cold_days': cfg.coldDays,
-      'storage.encrypt': cfg.encrypt,
-      'storage.watermark': cfg.watermark,
-      'security.whitelist_on': cfg.whitelistOn,
-      'alert.switch': {
-        drop: cfg.alertDrop,
-        sync: cfg.alertSync,
-        offline: cfg.alertOffline,
-        storage: cfg.alertStorage,
-      },
+    const payload: Record<string, any> = {}
+    if (newCfg === undefined || 'integrity' in newCfg) payload['quality.integrity'] = next.integrity
+    if (newCfg === undefined || 'sync' in newCfg) payload['quality.sync_ms'] = next.sync
+    if (newCfg === undefined || 'drop' in newCfg) payload['quality.drop_rate'] = next.drop
+    if (newCfg === undefined || 'naming' in newCfg) payload['naming.template'] = next.naming
+    if (newCfg === undefined || 'coldDays' in newCfg) payload['storage.cold_days'] = next.coldDays
+    if (newCfg === undefined || 'encrypt' in newCfg) payload['storage.encrypt'] = next.encrypt
+    if (newCfg === undefined || 'watermark' in newCfg) payload['storage.watermark'] = next.watermark
+    if (newCfg === undefined || 'whitelistOn' in newCfg) payload['security.whitelist_on'] = next.whitelistOn
+    if (
+      newCfg === undefined ||
+      'alertDrop' in newCfg ||
+      'alertSync' in newCfg ||
+      'alertOffline' in newCfg ||
+      'alertStorage' in newCfg
+    ) {
+      payload['alert.switch'] = {
+        drop: next.alertDrop,
+        sync: next.alertSync,
+        offline: next.alertOffline,
+        storage: next.alertStorage,
+      }
     }
 
-    try {
-      await systemApi.updateSettings(payload)
-      // 更新成功后刷新版本
+    const versionPayload: Record<string, number> = {}
+    for (const k of Object.keys(payload)) {
+      if (versions[k] !== undefined) versionPayload[k] = versions[k]
+    }
+
+    const res = await systemApi.updateSettings(
+      payload,
+      Object.keys(versionPayload).length ? versionPayload : undefined
+    )
+    if (res?.items?.length) {
+      applyItems(res.items)
+    } else {
       await fetchSettings()
-    } catch (e) {
-      console.warn('[settings] 保存设置至后端失败', e)
     }
   }
 
@@ -118,9 +139,23 @@ export const useSettings = defineStore('settings', () => {
     )
   }
 
-  if (getToken()) {
-    fetchSettings()
+  function reset() {
+    Object.assign(cfg, DEFAULT_CFG)
+    rawSettings.value = []
+    Object.keys(versions).forEach((k) => delete versions[k])
+    loaded.value = false
   }
 
-  return { cfg, rawSettings, loading, nameFile, fetchSettings, saveSettings }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dms:login', () => {
+      fetchSettings().catch(() => {})
+    })
+    window.addEventListener('dms:logout', reset)
+  }
+
+  if (getToken()) {
+    fetchSettings().catch((e) => console.warn('[settings] 加载系统设置失败', e))
+  }
+
+  return { cfg, rawSettings, versions, loading, loaded, nameFile, fetchSettings, saveSettings, reset }
 })

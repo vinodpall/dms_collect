@@ -3,14 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import BrandMark from '@/components/BrandMark.vue'
-import { DEMO_PASSWORD } from '@/constants'
+import { NAV_GROUPS } from '@/constants'
 import { useSession } from '@/stores/session'
 import '@/styles/login.css'
 
 const session = useSession()
 const router = useRouter()
 const route = useRoute()
-const f = reactive({ u: 'admin', p: DEMO_PASSWORD, remember: true }) // 演示环境默认填充管理员账号
+const f = reactive({ u: '', p: '', remember: true })
 const touched = reactive({ u: false, p: false })
 const err = ref('')
 const shake = ref(false)
@@ -28,7 +28,14 @@ async function submit() {
   loading.value = false
   if (e) { err.value = e; shake.value = false; requestAnimationFrame(() => { shake.value = true }); return }
   const r = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-  router.replace(r && r.startsWith('/') ? r : { name: 'dashboard' })
+  if (r && r.startsWith('/')) {
+    router.replace(r)
+  } else {
+    const first = session.allowed('dashboard')
+      ? 'dashboard'
+      : (NAV_GROUPS.flatMap((g) => g.items).find((k) => session.allowed(k)) ?? 'dashboard')
+    router.replace({ name: first })
+  }
 }
 document.title = '登录 · 数采管理平台'
 

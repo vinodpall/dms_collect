@@ -115,5 +115,3 @@ export const ACTIONS: { key: string; label: string; page: PageKey }[] = [
   { key: 'users', label: '管理用户（新增 / 停用 / 重置密码）', page: 'users' },
   { key: 'roles', label: '管理角色与权限', page: 'roles' },
 ]
-
-export const DEMO_PASSWORD = 'admin123'

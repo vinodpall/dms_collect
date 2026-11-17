@@ -8,18 +8,15 @@ import DeviceDrawer from '@/components/devices/DeviceDrawer.vue'
 import AddDeviceDialog from '@/components/devices/AddDeviceDialog.vue'
 import FaultDialog from '@/components/devices/FaultDialog.vue'
 import { NO_PERM } from '@/constants'
-import { DEV_TYPES, DV_ST, STATIONS, useDevices, type DevStatus, type Device } from '@/stores/devices'
-import { useTasks } from '@/stores/tasks'
+import { DEV_TYPES, DV_ST, TYPE_LABEL_TO_CODE, useDevices, type DevStatus, type Device } from '@/stores/devices'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
-import { stationsApi, type StationItem } from '@/api'
+import type { StationCredentials, StationItem } from '@/api'
 
 const store = useDevices()
 const session = useSession()
-const tasks = useTasks()
 const mayEdit = computed(() => session.can('devices'))
 
-// 视图切换：'devices' | 'stations'
 const activeTab = ref<'devices' | 'stations'>('devices')
 
 /* ================= 设备台账相关 ================= */
@@ -35,15 +32,30 @@ const drawerId = ref<string | null>(null)
 const faultOpen = ref(false)
 const addOpen = ref(false)
 
+const stationFilterOpts = computed(() => [
+  { value: 'all', label: '全部工位' },
+  ...store.stations.map((s) => ({ value: String(s.id), label: s.name })),
+])
+
+const typeFilterOpts = computed(() => {
+  if (store.types.length) {
+    return [{ value: 'all', label: '全部类型' }, ...store.types.map((t) => ({ value: t.type, label: t.label }))]
+  }
+  return [
+    { value: 'all', label: '全部类型' },
+    ...DEV_TYPES.map((label) => ({ value: TYPE_LABEL_TO_CODE[label] || 'other', label })),
+  ]
+})
+
 const rows = computed(() => {
-  const q = st.q.toLowerCase()
+  const q = st.q.trim().toLowerCase()
   const out = store.list.filter(
     (d) =>
       (st.s === 'all' || d.st === st.s) &&
-      (st.station === 'all' || d.station === st.station) &&
-      (st.type === 'all' || d.type === st.type) &&
+      (st.station === 'all' || String(d.stationId) === st.station) &&
+      (st.type === 'all' || d.typeCode === st.type || d.type === st.type) &&
       (st.cal === 'all' || (st.cal === 'yes') === !!d.calib) &&
-      (!q || (d.id + d.name + d.loc + d.type).toLowerCase().includes(q))
+      (!q || [d.id, d.name, d.loc, d.type, d.station, d.model, d.serialNo].some((x) => (x || '').toLowerCase().includes(q)))
   )
   return out.slice().sort((a, b) => a.id.localeCompare(b.id, 'zh'))
 })
@@ -59,11 +71,11 @@ const columns = computed(() => [
   { title: '设备', key: 'name', align: 'center' as const },
   { title: '类型', dataIndex: 'type', key: 'type', align: 'center' as const },
   { title: '所属工位', dataIndex: 'station', key: 'station', align: 'center' as const },
-  { title: '位置', dataIndex: 'loc', key: 'loc', align: 'center' as const },
+  { title: '位置', key: 'loc', align: 'center' as const },
   { title: '状态', key: 'st', align: 'center' as const },
   { title: '标定', key: 'calib', align: 'center' as const },
   { title: '当前占用', key: 'occ', align: 'center' as const },
-  { title: '固件', dataIndex: 'fw', key: 'fw', align: 'center' as const },
+  { title: '固件', key: 'fw', align: 'center' as const },
 ])
 
 function onTableChange(p: { current?: number }) {
@@ -71,42 +83,7 @@ function onTableChange(p: { current?: number }) {
 }
 const customRow = (r: Device) => ({ class: 'row-click', onClick: () => (drawerId.value = r.id) })
 
-/* ================= 需求 3：工位配置管理 ================= */
-const stations = ref<StationItem[]>([
-  {
-    id: 1,
-    code: 'WS-01',
-    name: '工位 1（气密性检测工位）',
-    mqtt_username: 'station_ws01',
-    api_base_url: 'http://192.168.10.101:9000',
-    has_api_token: true,
-    client_ver: 'v2.4.1',
-    ip: '192.168.10.101',
-    is_online: true,
-    last_seen_at: '刚刚',
-    disk_free_gb: 840,
-    remark: '配备 Franka 机械臂、RealSense 多目与气密工装',
-    device_count: 6,
-    created_at: '2026-10-01',
-  },
-  {
-    id: 2,
-    code: 'WS-02',
-    name: '工位 2（防护堵安装工位）',
-    mqtt_username: 'station_ws02',
-    api_base_url: 'http://192.168.10.102:9000',
-    has_api_token: true,
-    client_ver: 'v2.4.0',
-    ip: '192.168.10.102',
-    is_online: true,
-    last_seen_at: '2分钟前',
-    disk_free_gb: 620,
-    remark: '配备 UMI 便携双目夹爪与顶置全景相机',
-    device_count: 4,
-    created_at: '2026-10-03',
-  },
-])
-
+/* ================= 工位配置管理 ================= */
 const stationSearch = ref('')
 const stationStatus = ref<'all' | 'online' | 'offline'>('all')
 const stationPage = ref(1)
@@ -121,27 +98,32 @@ const stationModal = reactive({
   api_base_url: '',
   api_token: '',
   remark: '',
+  reset_mqtt_password: false,
   saving: false,
 })
 
-async function fetchStations() {
-  try {
-    const res = await stationsApi.list()
-    if (Array.isArray(res) && res.length > 0) {
-      stations.value = res
-    }
-  } catch (e) {
-    console.warn('获取工位失败，使用内置数据:', e)
-  }
+const credModal = reactive<{ open: boolean; stationName: string; creds: StationCredentials | null }>({
+  open: false,
+  stationName: '',
+  creds: null,
+})
+
+function formatTime(raw: string | null) {
+  if (!raw) return '—'
+  return raw.includes('T') ? raw.replace('T', ' ').slice(0, 16) : raw
 }
 
-onMounted(() => {
-  fetchStations()
+onMounted(async () => {
+  try {
+    await store.fetchAll()
+  } catch (err: any) {
+    toast('加载设备与工位数据失败：' + (err?.message || '网络异常'), { type: 'crit' })
+  }
 })
 
 const filteredStations = computed(() => {
   const q = stationSearch.value.trim().toLowerCase()
-  return stations.value.filter((s) => {
+  return store.stations.filter((s) => {
     if (stationStatus.value === 'online' && !s.is_online) return false
     if (stationStatus.value === 'offline' && s.is_online) return false
     if (!q) return true
@@ -171,11 +153,12 @@ function openAddStation() {
     open: true,
     isEdit: false,
     id: 0,
-    code: 'WS-0' + (stations.value.length + 1),
+    code: '',
     name: '',
-    api_base_url: 'http://192.168.10.10' + (stations.value.length + 1) + ':9000',
+    api_base_url: '',
     api_token: '',
     remark: '',
+    reset_mqtt_password: false,
     saving: false,
   })
 }
@@ -190,8 +173,16 @@ function openEditStation(s: StationItem) {
     api_base_url: s.api_base_url || '',
     api_token: '',
     remark: s.remark || '',
+    reset_mqtt_password: false,
     saving: false,
   })
+}
+
+function copyText(txt: string) {
+  navigator.clipboard?.writeText(txt).then(
+    () => toast('已复制'),
+    () => toast('复制失败，请手动复制', { type: 'warn' })
+  )
 }
 
 async function saveStation() {
@@ -201,50 +192,32 @@ async function saveStation() {
   stationModal.saving = true
   try {
     if (stationModal.isEdit) {
-      await stationsApi.update(stationModal.id, {
+      const res = await store.updateStation(stationModal.id, {
         name: stationModal.name.trim(),
         api_base_url: stationModal.api_base_url.trim() || null,
         api_token: stationModal.api_token ? stationModal.api_token.trim() : null,
         remark: stationModal.remark.trim() || null,
+        reset_mqtt_password: stationModal.reset_mqtt_password || undefined,
       })
-      const found = stations.value.find((s) => s.id === stationModal.id)
-      if (found) {
-        found.name = stationModal.name.trim()
-        found.api_base_url = stationModal.api_base_url.trim() || null
-        found.remark = stationModal.remark.trim() || null
+      toast('工位「' + stationModal.name.trim() + '」已更新')
+      stationModal.open = false
+      if (res?.credentials && (res.credentials.mqtt_password || res.credentials.api_token)) {
+        Object.assign(credModal, { open: true, stationName: stationModal.name.trim(), creds: res.credentials })
       }
-      toast('工位「' + stationModal.name + '」已更新')
     } else {
-      const res = await stationsApi.create({
+      const res = await store.createStation({
         code: stationModal.code.trim().toUpperCase(),
         name: stationModal.name.trim(),
         api_base_url: stationModal.api_base_url.trim() || null,
         api_token: stationModal.api_token ? stationModal.api_token.trim() : null,
         remark: stationModal.remark.trim() || null,
       })
-      if (res && res.station) {
-        stations.value.push(res.station)
-      } else {
-        stations.value.push({
-          id: Date.now(),
-          code: stationModal.code.trim().toUpperCase(),
-          name: stationModal.name.trim(),
-          mqtt_username: 'station_' + stationModal.code.trim().toLowerCase(),
-          api_base_url: stationModal.api_base_url.trim() || null,
-          has_api_token: !!stationModal.api_token,
-          client_ver: 'v2.4.1',
-          ip: '192.168.10.' + (100 + stations.value.length),
-          is_online: true,
-          last_seen_at: '刚刚',
-          disk_free_gb: 500,
-          remark: stationModal.remark.trim() || null,
-          device_count: 0,
-          created_at: new Date().toISOString().slice(0, 10),
-        })
+      toast('工位「' + stationModal.name.trim() + '」已创建')
+      stationModal.open = false
+      if (res?.credentials) {
+        Object.assign(credModal, { open: true, stationName: res.station?.name || stationModal.name.trim(), creds: res.credentials })
       }
-      toast('工位「' + stationModal.name + '」已创建')
     }
-    stationModal.open = false
   } catch (err: any) {
     toast('保存失败: ' + (err?.message || '网络异常'), { type: 'crit' })
   } finally {
@@ -286,8 +259,8 @@ async function saveStation() {
     <template v-if="activeTab === 'devices'">
       <a-button
         type="primary"
-        :disabled="!session.isAdmin"
-        :title="session.isAdmin ? undefined : '仅系统管理员可新增设备'"
+        :disabled="!mayEdit"
+        :title="mayEdit ? undefined : NO_PERM"
         @click="addOpen = true"
       >
         <AppIcon name="plus" />新增设备
@@ -299,8 +272,8 @@ async function saveStation() {
     <template v-else>
       <a-button
         type="primary"
-        :disabled="!session.isAdmin"
-        :title="session.isAdmin ? undefined : '仅系统管理员可配置工位'"
+        :disabled="!mayEdit"
+        :title="mayEdit ? undefined : NO_PERM"
         @click="openAddStation"
       >
         <AppIcon name="plus" />新增采集工位
@@ -316,22 +289,22 @@ async function saveStation() {
           v-model:value="st.q"
           class="grow"
           allow-clear
-          placeholder="搜索设备名称、编号、位置"
+          placeholder="搜索设备名称、编号、位置、序列号"
           aria-label="搜索设备"
         >
           <template #prefix><AppIcon name="search" /></template>
         </a-input>
         <a-select
           v-model:value="st.station"
-          style="width:140px"
+          style="width:150px"
           aria-label="按工位筛选"
-          :options="[{ value: 'all', label: '全部工位' }, ...STATIONS.map((x) => ({ value: x }))]"
+          :options="stationFilterOpts"
         />
         <a-select
           v-model:value="st.type"
           style="width:130px"
           aria-label="按类型筛选"
-          :options="[{ value: 'all', label: '全部类型' }, ...DEV_TYPES.map((x) => ({ value: x }))]"
+          :options="typeFilterOpts"
         />
         <a-select
           v-model:value="st.cal"
@@ -360,6 +333,7 @@ async function saveStation() {
         row-key="id"
         :columns="columns"
         :data-source="rows"
+        :loading="store.loading"
         :custom-row="customRow"
         :scroll="{ x: 820 }"
         :pagination="{ current: st.page, pageSize: 20, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
@@ -369,30 +343,31 @@ async function saveStation() {
           <div v-if="column.key === 'name'" class="cell-main">
             <span>{{ record.name }}</span><small class="mono">{{ record.id }}</small>
           </div>
-          <span v-else-if="column.key === 'station'">{{ record.station }}</span>
+          <span v-else-if="column.key === 'station'">{{ record.station || '—' }}</span>
+          <span v-else-if="column.key === 'loc'" class="muted">{{ record.loc || '—' }}</span>
           <StatusBadge
             v-else-if="column.key === 'calib'"
             :kind="record.calib ? 'good' : 'warn'"
-            :text="record.calib ? (record.calib.at && record.calib.at !== '已标定' ? '已标定 · ' + record.calib.at : '已标定') : '未标定'"
+            :text="record.calib ? (record.calib.at ? '已标定 · ' + record.calib.at.slice(5, 10) : '已标定') : '未标定'"
           />
-          <span v-else-if="column.key === 'occ'" :class="tasks.occupant(record.id) ? 'mono' : 'muted'">
-            {{ tasks.occupant(record.id) ?? '空闲' }}
+          <span v-else-if="column.key === 'occ'" :class="record.occupiedTaskCode ? 'mono' : 'muted'">
+            {{ record.occupiedTaskCode || '空闲' }}
           </span>
           <StatusBadge
             v-else-if="column.key === 'st'"
             :kind="DV_ST[record.st as DevStatus][0]"
             :text="DV_ST[record.st as DevStatus][1]"
           />
-          <span v-else-if="column.key === 'fw'" class="mono muted">{{ record.fw }}</span>
+          <span v-else-if="column.key === 'fw'" class="mono muted">{{ record.fw || '—' }}</span>
         </template>
         <template #emptyText>
-          <EmptyState icon="search" title="没有符合条件的设备" desc="换个关键词或状态试试" />
+          <EmptyState icon="cpu" title="没有符合条件的设备" desc="请检查后端设备台账或调整筛选条件" />
         </template>
       </a-table>
     </div>
   </template>
 
-  <!-- TAB 2: 采集工位配置（需求 3） -->
+  <!-- TAB 2: 采集工位配置 -->
   <template v-else-if="activeTab === 'stations'">
     <div class="card">
       <div class="toolbar">
@@ -416,7 +391,7 @@ async function saveStation() {
         />
       </div>
 
-      <div class="stations-grid">
+      <div v-if="paginatedStations.length" class="stations-grid">
         <div v-for="stn in paginatedStations" :key="stn.id" class="station-card">
           <div class="stn-header">
             <div>
@@ -434,7 +409,8 @@ async function saveStation() {
               <a-button
                 size="small"
                 type="link"
-                :disabled="!session.isAdmin"
+                :disabled="!mayEdit"
+                :title="mayEdit ? undefined : NO_PERM"
                 @click="openEditStation(stn)"
               >
                 配置
@@ -450,15 +426,15 @@ async function saveStation() {
               </div>
               <div class="stn-stat">
                 <span class="muted">客户端版本</span>
-                <span class="mono">{{ stn.client_ver || 'v2.4.1' }}</span>
+                <span class="mono">{{ stn.client_ver || '—' }}</span>
               </div>
               <div class="stn-stat">
                 <span class="muted">本地存储</span>
-                <b>{{ stn.disk_free_gb || 0 }} GB 剩余</b>
+                <b>{{ stn.disk_free_gb !== null && stn.disk_free_gb !== undefined ? stn.disk_free_gb + ' GB 剩余' : '—' }}</b>
               </div>
               <div class="stn-stat">
                 <span class="muted">最近心跳</span>
-                <span>{{ stn.last_seen_at || '刚刚' }}</span>
+                <span>{{ formatTime(stn.last_seen_at) }}</span>
               </div>
             </div>
 
@@ -474,6 +450,7 @@ async function saveStation() {
           </div>
         </div>
       </div>
+      <EmptyState v-else icon="layers" :title="store.loadingStations ? '正在加载工位…' : '暂无采集工位'" desc="点击右上角「新增采集工位」或调整筛选条件" style="padding:32px 16px" />
 
       <div class="grid-pager">
         <a-pagination
@@ -493,7 +470,7 @@ async function saveStation() {
   <DeviceDrawer :id="drawerId" @close="drawerId = null" />
   <FaultDialog :open="faultOpen" :dev-id="null" @close="faultOpen = false" @done="() => {}" />
 
-  <!-- 工位配置弹窗（规范化宽度与网格对齐） -->
+  <!-- 工位配置弹窗 -->
   <a-modal
     v-model:open="stationModal.open"
     :title="stationModal.isEdit ? '编辑工位配置' : '新增采集工位'"
@@ -522,12 +499,16 @@ async function saveStation() {
         </a-form-item>
       </div>
 
-      <a-form-item label="边缘端 API Base URL" extra="边缘采集站的 HTTP 服务地址，用于下发 YAML 配置与下发自检">
-        <a-input v-model:value="stationModal.api_base_url" placeholder="如 http://192.168.10.103:9000" />
+      <a-form-item label="边缘端 API Base URL" extra="边缘采集站的 HTTP 服务地址，用于下发配置与自检">
+        <a-input v-model:value="stationModal.api_base_url" placeholder="如 http://192.168.10.101:9000" />
       </a-form-item>
 
       <a-form-item label="API 访问令牌 (Token)" extra="留空则保持原密钥不变">
         <a-input-password v-model:value="stationModal.api_token" placeholder="输入工位边缘端通信鉴权 Token" />
+      </a-form-item>
+
+      <a-form-item v-if="stationModal.isEdit">
+        <a-checkbox v-model:checked="stationModal.reset_mqtt_password">同时重置该工位的 MQTT 连接密码</a-checkbox>
       </a-form-item>
 
       <a-form-item label="工位说明与配置备注" style="margin-bottom:0">
@@ -539,12 +520,33 @@ async function saveStation() {
       </a-form-item>
     </a-form>
   </a-modal>
+
+  <!-- 工位认证凭据提示弹窗 -->
+  <a-modal
+    v-model:open="credModal.open"
+    :title="`工位「${credModal.stationName}」连接凭据`"
+    ok-text="我已保存"
+    :cancel-button-props="{ style: { display: 'none' } }"
+    width="480px"
+    centered
+    @ok="credModal.open = false"
+  >
+    <p class="muted" style="margin:6px 0 12px">请记录以下凭据并配置到工位边缘客户端，关闭后密钥将不再明文显示：</p>
+    <div v-if="credModal.creds" style="display:flex;flex-direction:column;gap:10px">
+      <div class="row between"><span class="muted">MQTT 用户名</span><span class="mono">{{ credModal.creds.mqtt_username }}</span></div>
+      <div v-if="credModal.creds.mqtt_password" class="row between">
+        <span class="muted">MQTT 密码</span>
+        <div class="row" style="gap:6px"><code class="mono">{{ credModal.creds.mqtt_password }}</code><a-button size="small" @click="copyText(credModal.creds!.mqtt_password!)">复制</a-button></div>
+      </div>
+      <div v-if="credModal.creds.api_token" class="row between">
+        <span class="muted">API Token</span>
+        <div class="row" style="gap:6px"><code class="mono">{{ credModal.creds.api_token }}</code><a-button size="small" @click="copyText(credModal.creds!.api_token!)">复制</a-button></div>
+      </div>
+    </div>
+  </a-modal>
 </template>
 
 <style scoped>
-.main-tabs-bar {
-  margin-bottom: 16px;
-}
 .stations-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
@@ -614,6 +616,12 @@ async function saveStation() {
   font-size: 12.5px;
   color: var(--muted);
   line-height: 1.4;
+}
+.hint-text {
+  font-size: 11.5px;
+  color: var(--muted, #B6CADC);
+  margin-left: 6px;
+  font-weight: 400;
 }
 @media (max-width: 640px) {
   .stations-grid {

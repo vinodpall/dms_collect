@@ -1,31 +1,64 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { ROLES, type PageKey, type RoleDef, type RoleKey } from '@/constants'
-import { lsGet, lsSet } from '@/utils'
-import { usersApi, rolesApi, getToken, type UserItem } from '@/api'
+import { ACTIONS, PAGE_META, ROLES, type PageKey, type RoleKey } from '@/constants'
+import {
+  usersApi,
+  rolesApi,
+  getToken,
+  type PermissionNode,
+  type RoleDetail,
+  type RoleListItem,
+  type UserItem,
+} from '@/api'
 
-export interface RoleRow extends RoleDef {
+export interface RoleMember {
+  id: number
+  username: string
+  full_name: string
+  dept: string | null
+  avatar_url: string | null
+}
+
+export interface RoleRow {
+  id: number
   key: RoleKey
+  name: string
+  user: string
+  init: string
+  all?: boolean
+  pages: PageKey[]
+  can: Record<string, 1>
   desc: string
   builtin: boolean
-  id?: number
-  version?: number
+  members: RoleMember[]
+  memberCount: number
+  version: number
+}
+
+export interface ActionDef {
+  key: string
+  permCode: string
+  label: string
+  page: PageKey
 }
 
 export interface UserRow {
   id: string
-  numericId?: number
+  numericId: number
   u: string
   name: string
   role: RoleKey
+  roleIds: number[]
+  primaryRoleId: number | null
   dept: string
   phone: string
   email: string
   on: boolean
   last: string
+  lastIp: string
   created: string
   pwd: string | null
-  mustReset?: boolean
+  mustReset: boolean
 }
 
 export function tempPwd(n = 10): string {
@@ -33,375 +66,454 @@ export function tempPwd(n = 10): string {
   return Array.from(crypto.getRandomValues(new Uint32Array(n)), (x) => cs[x % cs.length]).join('')
 }
 
-const seedRoles = (): RoleRow[] =>
-  Object.entries(ROLES).map(([key, r]) => ({
-    ...r,
-    init: r.name.slice(0, 1),
-    pages: [...r.pages],
-    can: { ...r.can },
-    key,
-    desc: '',
-    builtin: true,
-  }))
+function flattenPermNodes(nodes: PermissionNode[]): PermissionNode[] {
+  const out: PermissionNode[] = []
+  const walk = (arr: PermissionNode[]) => {
+    for (const n of arr) {
+      out.push(n)
+      if (Array.isArray(n.children) && n.children.length) walk(n.children)
+    }
+  }
+  walk(nodes)
+  return out
+}
+
+function mapApiUser(u: UserItem): UserRow {
+  const primaryRole =
+    (u.primary_role_id ? u.roles?.find((r) => r.id === u.primary_role_id) : undefined) ?? u.roles?.[0]
+  const roleKey = primaryRole?.code || ''
+  return {
+    id: String(u.id),
+    numericId: u.id,
+    u: u.username,
+    name: u.full_name,
+    role: roleKey,
+    roleIds: (u.roles || []).map((r) => r.id),
+    primaryRoleId: u.primary_role_id ?? primaryRole?.id ?? null,
+    dept: u.dept || '',
+    phone: u.phone || '',
+    email: u.email || '',
+    on: !!u.is_active,
+    last: u.last_login_at ? u.last_login_at.replace('T', ' ').slice(0, 16) : '',
+    lastIp: u.last_login_ip || '',
+    created: u.created_at ? u.created_at.replace('T', ' ').slice(0, 16) : '',
+    pwd: null,
+    mustReset: !!u.must_reset_pwd,
+  }
+}
 
 export const useAccess = defineStore('access', () => {
-  let saved: { roles?: RoleRow[]; users?: UserRow[] } = {}
+  // 清理历史版本遗留的本地缓存
   try {
-    saved = JSON.parse(lsGet('dms-access') || '{}')
+    localStorage.removeItem('dms-access')
   } catch {
-    saved = {}
+    /* ignore */
   }
 
-  const roles = ref<RoleRow[]>(saved.roles?.length ? saved.roles : seedRoles())
-  const users = ref<UserRow[]>(saved.users?.length ? saved.users : [])
-  const loading = ref(false)
+  const roles = ref<RoleRow[]>([])
+  const users = ref<UserRow[]>([])
+  const userTotal = ref(0)
+  const permNodes = ref<PermissionNode[]>([])
+  const loadingRoles = ref(false)
+  const loadingUsers = ref(false)
+  const loading = computed(() => loadingRoles.value || loadingUsers.value)
 
   const roleMap = computed(
     () => Object.fromEntries(roles.value.map((r) => [r.key, r])) as Record<RoleKey, RoleRow>
   )
   const byId = (id: string) => users.value.find((u) => u.id === id || String(u.numericId) === id)
   const byAccount = (u: string) => users.value.find((x) => x.u.toLowerCase() === u.trim().toLowerCase())
-  const memberCount = (k: RoleKey) => users.value.filter((u) => u.role === k).length
+  const memberCount = (k: RoleKey) => {
+    const r = roleMap.value[k]
+    if (r) return r.members?.length || r.memberCount || 0
+    return users.value.filter((u) => u.role === k).length
+  }
   const activeAdmins = computed(() => users.value.filter((u) => u.on && roleMap.value[u.role]?.all).length)
 
-  function saveCache() {
-    lsSet('dms-access', JSON.stringify({ roles: roles.value, users: users.value }))
-  }
+  /** 结合 constants 与 /roles/permissions 生成完整权限编码映射 */
+  const flatPerms = computed(() => flattenPermNodes(permNodes.value))
 
-  /**
-   * 从后端拉取角色列表与权限详情
-   */
-  async function fetchRoles() {
-    if (!getToken()) return
-    try {
-      const list = await rolesApi.list()
-      const roleRows: RoleRow[] = []
-
-      for (const item of (list as any[])) {
-        const code = item.role_code || item.code
-        let pages: PageKey[] = []
-        let can: Record<string, 1> = {}
-
-        // 拉取具体权限
-        try {
-          const detail = await rolesApi.get(item.id)
-          const perms: string[] = (detail as any).permission_codes || []
-          pages = perms
-            .filter((p) => p.startsWith('page:'))
-            .map((p) => p.replace('page:', '') as PageKey)
-          perms
-            .filter((p) => p.includes(':operate'))
-            .forEach((p) => {
-              const actKey = p.split(':')[0]
-              can[actKey] = 1
-            })
-        } catch {
-          // 若拉取失败，内置管理员拥有全部页面
-          if (item.is_all || code === 'admin') {
-            pages = [...ROLES.admin.pages]
-          }
-        }
-
-        const isAdm = !!item.is_all || code === 'admin'
-        if (isAdm) pages = [...ROLES.admin.pages]
-
-        roleRows.push({
-          id: item.id,
-          key: code,
-          name: item.role_name || item.name,
-          desc: item.description || '',
-          builtin: !!item.is_builtin,
-          all: isAdm,
-          init: (item.role_name || item.name || '').slice(0, 1),
-          user: '',
-          pages,
-          can,
-          version: item.version,
-        })
-      }
-
-      if (roleRows.length > 0) {
-        roles.value = roleRows
-        saveCache()
-      }
-    } catch (e) {
-      console.warn('[access] 获取角色失败', e)
+  const pageCodeMap = computed(() => {
+    const map: Record<string, string> = {}
+    for (const p of Object.keys(PAGE_META) as PageKey[]) {
+      const node = flatPerms.value.find(
+        (n) => n.type === 'page' && (n.code === 'page:' + p || n.code === p)
+      )
+      map[p] = node ? node.code : 'page:' + p
     }
-  }
+    return map
+  })
 
-  /**
-   * 从后端拉取用户列表
-   */
-  async function fetchUsers() {
-    if (!getToken()) return
-    try {
-      const res = await usersApi.list({ size: 100 })
-      const items: UserItem[] = (res as any).items || []
-
-      users.value = items.map((u: any) => {
-        const primaryRole = u.roles?.[0]
-        const roleKey = primaryRole?.role_code || primaryRole?.code || 'op'
-        return {
-          id: String(u.id),
-          numericId: u.id,
-          u: u.username,
-          name: u.full_name,
-          role: roleKey,
-          dept: u.dept || '平台',
-          phone: u.phone || '—',
-          email: u.email || `${u.username}@dms.local`,
-          on: u.is_active,
-          last: u.last_login_at ? u.last_login_at.replace('T', ' ').slice(0, 16) : '—',
-          created: u.created_at ? u.created_at.replace('T', ' ').slice(5, 16) : '—',
-          pwd: null,
-          mustReset: u.must_reset_pwd,
-        }
+  const actionCatalog = computed<ActionDef[]>(() => {
+    const list: ActionDef[] = ACTIONS.map((a) => {
+      const node = flatPerms.value.find(
+        (n) =>
+          n.type === 'action' &&
+          (n.code === a.key + ':operate' ||
+            n.code === a.key + ':edit' ||
+            n.code === 'action:' + a.key ||
+            n.code === a.key)
+      )
+      return {
+        key: a.key,
+        permCode: node ? node.code : a.key + ':operate',
+        label: node?.name || a.label,
+        page: a.page,
+      }
+    })
+    // 补充后端额外下发但前端常量未收录的 action 节点
+    for (const n of flatPerms.value) {
+      if (n.type !== 'action') continue
+      if (list.some((x) => x.permCode === n.code || x.key === n.code)) continue
+      const parentRaw = (n.parent_code || '').replace(/^page:/, '')
+      const prefix = n.code.includes(':') ? n.code.split(':')[0] : n.code
+      const pageGuess = (parentRaw in PAGE_META ? parentRaw : prefix in PAGE_META ? prefix : null) as PageKey | null
+      if (!pageGuess) continue
+      list.push({
+        key: n.code,
+        permCode: n.code,
+        label: n.name || n.code,
+        page: pageGuess,
       })
-      saveCache()
-    } catch (e) {
-      console.warn('[access] 获取用户失败', e)
     }
-  }
+    return list
+  })
 
-  async function checkPwd(x: UserRow, p: string) {
-    return p === 'admin123'
-  }
-
-  async function setPwd(id: string, p: string, _mustReset = true) {
-    const x = byId(id)
-    if (!x) return
-    if (x.numericId) {
-      try {
-        await usersApi.resetPassword(x.numericId)
-      } catch (e) {
-        console.warn('[access] 后端重置密码失败', e)
+  function parsePermissions(perms: string[]) {
+    const set = new Set(perms)
+    const pages = (Object.keys(PAGE_META) as PageKey[]).filter(
+      (p) => set.has('page:' + p) || set.has(p) || (pageCodeMap.value[p] && set.has(pageCodeMap.value[p]))
+    )
+    const can: Record<string, 1> = {}
+    for (const act of actionCatalog.value) {
+      if (
+        set.has(act.permCode) ||
+        set.has(act.key + ':operate') ||
+        set.has(act.key + ':edit') ||
+        set.has('action:' + act.key) ||
+        (act.key.includes(':') && set.has(act.key))
+      ) {
+        can[act.key] = 1
       }
     }
-    x.mustReset = true
-    saveCache()
+    return { pages, can }
   }
 
-  function touch(id: string) {
-    const x = byId(id)
-    if (x) x.last = '刚刚'
+  function encodePermissions(pages: PageKey[], can: Record<string, 1>): string[] {
+    const pageCodes = pages.map((p) => pageCodeMap.value[p] || 'page:' + p)
+    const actMap = Object.fromEntries(actionCatalog.value.map((a) => [a.key, a.permCode]))
+    const actCodes = Object.keys(can)
+      .filter((k) => can[k])
+      .map((k) => actMap[k] || (k.includes(':') ? k : k + ':operate'))
+    return Array.from(new Set([...pageCodes, ...actCodes]))
+  }
+
+  function mapRoleToRow(item: RoleListItem | RoleDetail, detail?: RoleDetail | null): RoleRow {
+    const anyItem = item as any
+    const code = anyItem.code || anyItem.role_code || ''
+    const name = anyItem.name || anyItem.role_name || code
+    const isAdm = !!anyItem.is_all || code === 'admin'
+    const perms: string[] = detail?.permissions ?? (detail as any)?.permission_codes ?? []
+    const parsed = parsePermissions(perms)
+    const pages = isAdm ? [...ROLES.admin.pages] : parsed.pages
+    const can = isAdm ? {} : parsed.can
+    const members: RoleMember[] = Array.isArray(detail?.members) ? detail!.members : []
+    const version = detail?.version ?? item.version ?? 0
+    return {
+      id: item.id,
+      key: code,
+      name,
+      user: members[0]?.full_name || '',
+      init: (name || '?').slice(0, 1),
+      all: isAdm,
+      desc: (detail?.description ?? item.description) || '',
+      builtin: !!(detail?.is_builtin ?? item.is_builtin),
+      pages,
+      can,
+      members,
+      memberCount: (item as RoleListItem).member_count ?? members.length,
+      version,
+    }
+  }
+
+  /** 从后端拉取角色列表、权限树与角色详情 */
+  async function fetchRoles(): Promise<RoleRow[]> {
+    if (!getToken()) return []
+    loadingRoles.value = true
+    try {
+      const [listRes, permsRes] = await Promise.allSettled([rolesApi.list(), rolesApi.getPermissions()])
+      if (permsRes.status === 'fulfilled' && Array.isArray(permsRes.value)) {
+        permNodes.value = permsRes.value
+      }
+      if (listRes.status === 'rejected') {
+        throw listRes.reason
+      }
+      const list = Array.isArray(listRes.value) ? listRes.value : []
+      const details = await Promise.allSettled(list.map((item) => rolesApi.get(item.id)))
+      const roleRows = list.map((item, idx) => {
+        const dRes = details[idx]
+        const detail = dRes && dRes.status === 'fulfilled' ? dRes.value : null
+        return mapRoleToRow(item, detail)
+      })
+      roles.value = roleRows
+      return roleRows
+    } finally {
+      loadingRoles.value = false
+    }
+  }
+
+  /** 拉取单个角色详情（用于查看成员、刷新版本） */
+  async function fetchRoleDetail(id: number): Promise<RoleRow | null> {
+    if (!getToken()) return null
+    const detail = await rolesApi.get(id)
+    const existing = roles.value.find((r) => r.id === id)
+    const mapped = mapRoleToRow(
+      {
+        id: detail.id,
+        code: detail.code,
+        name: detail.name,
+        description: detail.description,
+        is_builtin: detail.is_builtin,
+        sort_order: detail.sort_order,
+        member_count: existing?.memberCount ?? detail.members?.length ?? 0,
+        page_count: 0,
+        action_count: 0,
+        version: detail.version,
+      },
+      detail
+    )
+    const idx = roles.value.findIndex((r) => r.id === id)
+    if (idx >= 0) roles.value[idx] = mapped
+    else roles.value.push(mapped)
+    return mapped
+  }
+
+  /** 从后端拉取用户列表（支持服务端分页与筛选） */
+  async function fetchUsers(params?: {
+    page?: number
+    size?: number
+    keyword?: string
+    dept?: string
+    role_id?: number
+    is_active?: boolean
+  }) {
+    if (!getToken()) return { items: [], total: 0, page: 1, size: 10, pages: 0 }
+    loadingUsers.value = true
+    try {
+      const res = await usersApi.list({ page: 1, size: 100, ...params })
+      const items: UserItem[] = res?.items || []
+      users.value = items.map(mapApiUser)
+      userTotal.value = res?.total ?? items.length
+      return res
+    } finally {
+      loadingUsers.value = false
+    }
+  }
+
+  async function fetchUserDetail(numericId: number): Promise<UserRow> {
+    const u = await usersApi.get(numericId)
+    const row = mapApiUser(u)
+    const idx = users.value.findIndex((x) => x.numericId === numericId)
+    if (idx >= 0) users.value[idx] = row
+    return row
   }
 
   async function addUser(
     d: Pick<UserRow, 'u' | 'name' | 'role' | 'dept' | 'phone' | 'email'>,
     pwd: string
-  ) {
-    let numericId: number | undefined
-    try {
-      const targetRole = roles.value.find((r) => r.key === d.role)
-      const roleIds = targetRole?.id ? [targetRole.id] : [2]
-      const res = await usersApi.create({
-        username: d.u.trim(),
-        full_name: d.name.trim(),
-        dept: d.dept || null,
-        phone: d.phone || null,
-        email: d.email || null,
-        role_ids: roleIds,
-        primary_role_id: roleIds[0],
-        password: pwd,
-      })
-      if (res && res.user) numericId = res.user.id
-    } catch (e: any) {
-      console.warn('[access] 后端创建用户失败，降级本地记录', e)
+  ): Promise<{ user: UserRow; initialPassword: string }> {
+    const targetRole = roles.value.find((r) => r.key === d.role)
+    if (!targetRole?.id) {
+      throw new Error('未找到所选角色对应的后端 ID，请刷新后重试')
     }
-
-    const id = numericId ? String(numericId) : 'u' + Date.now().toString(36)
-    users.value.unshift({
-      ...d,
-      id,
-      numericId,
-      on: true,
-      last: '—',
-      created: '刚刚',
-      pwd: null,
-      mustReset: true,
+    const res = await usersApi.create({
+      username: d.u.trim(),
+      full_name: d.name.trim(),
+      dept: d.dept ? d.dept.trim() : null,
+      phone: d.phone ? d.phone.trim() : null,
+      email: d.email ? d.email.trim() : null,
+      role_ids: [targetRole.id],
+      primary_role_id: targetRole.id,
+      password: pwd || null,
     })
-    saveCache()
-    return id
+    const createdRow = mapApiUser(res.user)
+    users.value.unshift(createdRow)
+    userTotal.value += 1
+    return {
+      user: createdRow,
+      initialPassword: res.initial_password || pwd,
+    }
   }
 
   async function updateUser(
     id: string,
     d: Partial<Pick<UserRow, 'name' | 'role' | 'dept' | 'phone' | 'email'>>
-  ) {
+  ): Promise<UserRow> {
     const x = byId(id)
-    if (!x) return
-    Object.assign(x, d)
-
-    if (x.numericId) {
-      try {
-        const targetRole = d.role ? roles.value.find((r) => r.key === d.role) : undefined
-        const roleIds = targetRole?.id ? [targetRole.id] : undefined
-        await usersApi.update(x.numericId, {
-          full_name: d.name,
-          dept: d.dept,
-          phone: d.phone,
-          email: d.email,
-          role_ids: roleIds,
-          primary_role_id: roleIds ? roleIds[0] : undefined,
-        })
-      } catch (e) {
-        console.warn('[access] 后端更新用户失败', e)
-      }
+    if (!x) throw new Error('用户不存在')
+    const targetRole = d.role ? roles.value.find((r) => r.key === d.role) : undefined
+    if (d.role && !targetRole?.id) {
+      throw new Error('未找到所选角色对应的后端 ID')
     }
-    saveCache()
+    const updated = await usersApi.update(x.numericId, {
+      full_name: d.name !== undefined ? d.name : undefined,
+      dept: d.dept !== undefined ? (d.dept || null) : undefined,
+      phone: d.phone !== undefined ? (d.phone || null) : undefined,
+      email: d.email !== undefined ? (d.email || null) : undefined,
+      role_ids: targetRole ? [targetRole.id] : undefined,
+      primary_role_id: targetRole ? targetRole.id : undefined,
+    })
+    const row = mapApiUser(updated)
+    const idx = users.value.findIndex((u) => u.numericId === x.numericId)
+    if (idx >= 0) users.value[idx] = row
+    return row
   }
 
-  async function setOn(id: string, on: boolean) {
+  async function setOn(id: string, on: boolean): Promise<void> {
     const x = byId(id)
-    if (!x) return
+    if (!x) throw new Error('用户不存在')
+    if (on) await usersApi.enable(x.numericId)
+    else await usersApi.disable(x.numericId)
     x.on = on
-
-    if (x.numericId) {
-      try {
-        if (on) await usersApi.enable(x.numericId)
-        else await usersApi.disable(x.numericId)
-      } catch (e) {
-        console.warn('[access] 后端启停用户失败', e)
-      }
-    }
-    saveCache()
   }
 
-  async function removeUser(id: string) {
+  async function resetUserPassword(id: string): Promise<{ temp_password: string; expires_in_hours: number }> {
     const x = byId(id)
-    if (x?.numericId) {
-      try {
-        await usersApi.delete(x.numericId)
-      } catch (e) {
-        console.warn('[access] 后端删除用户失败', e)
-      }
-    }
-    users.value = users.value.filter((u) => u.id !== id && u.numericId !== x?.numericId)
-    saveCache()
+    if (!x) throw new Error('用户不存在')
+    const res = await usersApi.resetPassword(x.numericId)
+    x.mustReset = true
+    return res
   }
 
-  function addRole(d: { name: string; desc: string; from?: RoleKey }) {
+  async function removeUser(id: string): Promise<void> {
+    const x = byId(id)
+    if (!x) throw new Error('用户不存在')
+    await usersApi.delete(x.numericId)
+    users.value = users.value.filter((u) => u.numericId !== x.numericId)
+    userTotal.value = Math.max(0, userTotal.value - 1)
+  }
+
+  async function addRole(d: { name: string; desc: string; from?: RoleKey }): Promise<RoleKey> {
     const src = d.from ? roleMap.value[d.from] : undefined
-    const key = 'r_' + Date.now().toString(36)
-    const pages: PageKey[] = src
+    const filteredPages: PageKey[] = src
       ? src.pages.filter((p) => p !== 'users' && p !== 'roles')
       : ['dashboard']
-    const can = src && !src.all ? { ...src.can } : {}
-
-    const rRow: RoleRow = {
-      key,
-      name: d.name,
-      desc: d.desc,
-      user: '',
-      init: d.name.slice(0, 1),
-      builtin: false,
-      pages,
-      can,
+    const pages: PageKey[] = filteredPages.length ? filteredPages : ['dashboard']
+    const can: Record<string, 1> = {}
+    if (src && !src.all) {
+      const restricted = new Set(
+        actionCatalog.value.filter((a) => a.page === 'users' || a.page === 'roles').map((a) => a.key)
+      )
+      for (const [k, v] of Object.entries(src.can)) {
+        if (v && !restricted.has(k)) can[k] = 1
+      }
     }
-    roles.value.push(rRow)
-    saveCache()
+    const roleCode = 'role_' + Date.now().toString(36)
+    const permCodes = encodePermissions(pages, can)
 
-    // 异步同步至后端
-    if (getToken()) {
-      const permCodes = [
-        ...pages.map((p) => 'page:' + p),
-        ...Object.keys(can).map((k) => k + ':operate'),
-      ]
-      const srcId = src?.id
-      rolesApi
-        .create({
-          role_code: key,
-          role_name: d.name,
-          description: d.desc,
-          permission_codes: permCodes,
-          copy_from_role_id: srcId,
-        })
-        .then((res) => {
-          if (res && res.id) rRow.id = res.id
-        })
-        .catch((e) => {
-          console.warn('[access] 后端创建角色失败', e)
-        })
-    }
-
-    return key
+    const res = await rolesApi.create({
+      role_code: roleCode,
+      role_name: d.name.trim(),
+      description: d.desc.trim() || null,
+      permission_codes: permCodes,
+      copy_from_role_id: src?.id ?? null,
+    })
+    await fetchRoles()
+    return (res as any)?.code || (res as any)?.role_code || roleCode
   }
 
   async function updateRole(
     key: RoleKey,
     d: { name?: string; desc?: string; pages?: PageKey[]; can?: Record<string, 1> }
-  ) {
+  ): Promise<RoleRow> {
     const r = roleMap.value[key]
-    if (!r) return
-    if (d.name !== undefined) {
-      r.name = d.name
-      r.init = d.name.slice(0, 1)
-    }
-    if (d.desc !== undefined) r.desc = d.desc
-    if (!r.all) {
-      if (d.pages) r.pages = d.pages
-      if (d.can) r.can = d.can
-    }
+    if (!r) throw new Error('角色不存在')
 
-    if (r.id) {
-      try {
-        const permCodes = [
-          ...r.pages.map((p) => 'page:' + p),
-          ...Object.keys(r.can).map((k) => k + ':operate'),
-        ]
-        await rolesApi.update(r.id, {
-          role_name: r.name,
-          description: r.desc,
-          permission_codes: permCodes,
-          version: r.version ?? 0,
-        })
-      } catch (e) {
-        console.warn('[access] 后端更新角色失败', e)
-      }
-    }
-    saveCache()
+    const nextName = d.name !== undefined ? d.name.trim() : r.name
+    const nextDesc = d.desc !== undefined ? d.desc.trim() : r.desc
+    const nextPages = !r.all && d.pages ? d.pages : r.pages
+    const nextCan = !r.all && d.can ? d.can : r.can
+    const permCodes = r.all ? undefined : encodePermissions(nextPages, nextCan)
+
+    const updated = await rolesApi.update(r.id, {
+      role_name: nextName,
+      description: nextDesc || null,
+      permission_codes: permCodes,
+      version: r.version,
+    })
+
+    const mapped = mapRoleToRow(
+      {
+        id: updated.id,
+        code: updated.code || r.key,
+        name: updated.name || nextName,
+        description: updated.description ?? nextDesc,
+        is_builtin: updated.is_builtin ?? r.builtin,
+        sort_order: updated.sort_order ?? 0,
+        member_count: r.memberCount,
+        page_count: 0,
+        action_count: 0,
+        version: updated.version,
+      },
+      updated
+    )
+    const idx = roles.value.findIndex((item) => item.key === key || item.id === r.id)
+    if (idx >= 0) roles.value[idx] = mapped
+    return mapped
   }
 
-  async function removeRole(key: RoleKey) {
+  async function removeRole(key: RoleKey): Promise<void> {
     const r = roleMap.value[key]
-    if (!r || r.builtin) return
-    if (r.id) {
-      try {
-        await rolesApi.delete(r.id)
-      } catch (e) {
-        console.warn('[access] 后端删除角色失败', e)
-      }
-    }
-    roles.value = roles.value.filter((item) => item.key !== key)
-    saveCache()
+    if (!r) throw new Error('角色不存在')
+    if (r.builtin) throw new Error('内置角色不可删除')
+    await rolesApi.delete(r.id)
+    roles.value = roles.value.filter((item) => item.id !== r.id)
   }
 
-  // 初始自动从后端同步一次
+  function reset() {
+    roles.value = []
+    users.value = []
+    userTotal.value = 0
+    permNodes.value = []
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dms:login', () => {
+      fetchRoles().catch(() => {})
+    })
+    window.addEventListener('dms:logout', reset)
+  }
+
   if (getToken()) {
-    fetchRoles()
-    fetchUsers()
+    fetchRoles().catch((e) => console.warn('[access] 初始化角色失败', e))
   }
 
   return {
     roles,
     users,
+    userTotal,
+    permNodes,
+    actionCatalog,
     roleMap,
     loading,
+    loadingRoles,
+    loadingUsers,
     byId,
     byAccount,
     memberCount,
     activeAdmins,
-    checkPwd,
-    setPwd,
-    touch,
     fetchRoles,
+    fetchRoleDetail,
     fetchUsers,
+    fetchUserDetail,
     addUser,
     updateUser,
     setOn,
+    resetUserPassword,
     removeUser,
     addRole,
     updateRole,
     removeRole,
+    reset,
   }
 })
