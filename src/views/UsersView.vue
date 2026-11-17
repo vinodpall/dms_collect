@@ -200,13 +200,13 @@ async function remove(u: UserRow) {
 }
 
 const columns = [
-  { title: '用户', key: 'user', width: 220, align: 'center' as const },
-  { title: '角色', key: 'role', width: 130, align: 'center' as const },
-  { title: '部门', key: 'dept', width: 130, align: 'center' as const },
-  { title: '联系电话', key: 'phone', width: 150, align: 'center' as const },
-  { title: '最近登录', key: 'last', width: 150, align: 'center' as const },
-  { title: '状态', key: 'on', width: 132, align: 'center' as const },
-  { title: '操作', key: 'act', width: 230, fixed: 'right' as const, align: 'center' as const },
+  { title: '用户', key: 'user', width: 220, ellipsis: true, align: 'center' as const },
+  { title: '角色', key: 'role', width: 130, ellipsis: true, align: 'center' as const },
+  { title: '部门', key: 'dept', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '联系电话', key: 'phone', width: 140, ellipsis: true, align: 'center' as const },
+  { title: '最近登录', key: 'last', width: 150, ellipsis: true, align: 'center' as const },
+  { title: '状态', key: 'on', width: 120, align: 'center' as const },
+  { title: '操作', key: 'act', width: 175, align: 'center' as const },
 ]
 </script>
 
@@ -233,10 +233,10 @@ const columns = [
     </div>
     <a-table
       row-key="id"
+      size="middle"
       :columns="columns"
       :data-source="access.users"
       :loading="access.loadingUsers"
-      :scroll="{ x: 1120 }"
       :pagination="{
         current: st.page,
         pageSize: 10,
@@ -248,23 +248,26 @@ const columns = [
       }"
     >
       <template #bodyCell="{ column, record }">
-        <div v-if="column.key === 'user'" class="u-cell" style="justify-content:center">
+        <div v-if="column.key === 'user'" class="u-cell">
           <span class="u-av" :class="{ off: !record.on }">{{ record.name.slice(0, 1) }}</span>
-          <div class="cell-main" style="align-items:center;text-align:center"><span>{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span><small class="mono">{{ record.u }} · {{ record.email || '—' }}</small></div>
+          <div class="cell-main" style="align-items:flex-start;text-align:left;flex:1">
+            <span :title="record.name">{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span>
+            <small class="mono" :title="`${record.u} · ${record.email || '—'}`">{{ record.u }} · {{ record.email || '—' }}</small>
+          </div>
         </div>
         <StatusBadge v-else-if="column.key === 'role'" :kind="access.roleMap[record.role]?.all ? 'info' : ''" :text="roleName(record.role)" />
-        <span v-else-if="column.key === 'dept'" class="muted">{{ record.dept || '—' }}</span>
-        <span v-else-if="column.key === 'phone'" class="mono muted">{{ record.phone || '—' }}</span>
-        <span v-else-if="column.key === 'last'" class="muted">{{ record.last || '—' }}</span>
+        <span v-else-if="column.key === 'dept'" class="muted cell-ellipsis" :title="record.dept || ''">{{ record.dept || '—' }}</span>
+        <span v-else-if="column.key === 'phone'" class="mono muted cell-ellipsis" :title="record.phone || ''">{{ record.phone || '—' }}</span>
+        <span v-else-if="column.key === 'last'" class="muted cell-ellipsis" :title="record.last || ''">{{ record.last || '—' }}</span>
         <div v-else-if="column.key === 'on'" class="row" style="gap:8px;justify-content:center;white-space:nowrap">
           <a-switch size="small" :checked="record.on" :disabled="!mayEdit || record.id === session.uid" :aria-label="'启用 ' + record.name" @change="(v: boolean) => toggle(record as UserRow, v)" />
           <span :class="record.on ? '' : 'muted'">{{ record.on ? '启用' : '停用' }}</span>
           <a-tooltip v-if="record.mustReset" title="使用临时密码，尚未修改"><AppIcon name="clock" size="sm" style="color:var(--warn)" /></a-tooltip>
         </div>
-        <div v-else-if="column.key === 'act'" class="row" style="gap:2px;justify-content:center">
-          <a-button size="small" type="text" :disabled="!mayEdit" :title="dis" @click="openEdit(record as UserRow)"><AppIcon name="pencil" size="sm" />编辑</a-button>
-          <a-button size="small" type="text" :disabled="!mayEdit" :title="dis" @click="resetPwd(record as UserRow)"><AppIcon name="lock" size="sm" />重置密码</a-button>
-          <a-button size="small" type="text" danger :disabled="!mayEdit || record.id === session.uid" :title="dis" @click="remove(record as UserRow)"><AppIcon name="trash" size="sm" />删除</a-button>
+        <div v-else-if="column.key === 'act'" class="act-links">
+          <a-button size="small" type="link" :disabled="!mayEdit" :title="dis" @click="openEdit(record as UserRow)">编辑</a-button>
+          <a-button size="small" type="link" :disabled="!mayEdit" :title="dis" @click="resetPwd(record as UserRow)">重置密码</a-button>
+          <a-button size="small" type="link" danger :disabled="!mayEdit || record.id === session.uid" :title="dis" @click="remove(record as UserRow)">删除</a-button>
         </div>
       </template>
       <template #emptyText><EmptyState icon="users" title="没有匹配的用户" desc="调整搜索词或筛选条件后再试" /></template>
@@ -301,7 +304,7 @@ const columns = [
 </template>
 
 <style scoped>
-.u-cell { display: flex; align-items: center; gap: 10px; }
+.u-cell { display: inline-flex; align-items: center; gap: 10px; width: 190px; max-width: 100%; margin: 0 auto; text-align: left; }
 .u-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); }
 .u-av.off { background: var(--surface-3); color: var(--faint); }
 .u-me { font-style: normal; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 11px; background: var(--accent-soft); color: var(--accent-text); }

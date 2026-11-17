@@ -45,12 +45,12 @@ const rows = computed(() => {
 watch(() => [st.status, st.scen, st.q], () => { st.page = 1; selected.value = [] })
 
 const columns = computed(() => [
-  { title: '任务', key: 'id', align: 'center' as const },
-  { title: '场景 / 方式', key: 'scen', align: 'center' as const },
-  { title: '操作员', key: 'op', width: 120, align: 'center' as const },
-  { title: '已采集', key: 'progress', width: 130, align: 'center' as const },
-  { title: '状态', key: 'status', width: 120, align: 'center' as const },
-  { title: '最近更新', key: 'ts', align: 'center' as const, width: 140 },
+  { title: '任务', key: 'id', width: 210, ellipsis: true, align: 'center' as const },
+  { title: '场景 / 方式', key: 'scen', width: 190, ellipsis: true, align: 'center' as const },
+  { title: '操作员', key: 'op', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '已采集', key: 'progress', width: 110, align: 'center' as const },
+  { title: '状态', key: 'status', width: 110, align: 'center' as const },
+  { title: '最近更新', key: 'ts', align: 'center' as const, width: 135, ellipsis: true },
 ])
 function onTableChange(p: { current?: number }) {
   st.page = p.current ?? 1
@@ -88,14 +88,14 @@ const histRows = computed(() => {
 const SRC_OPTS = [{ value: 'all', label: '全部来源' }, ...(Object.keys(HIST_SRC) as HistSource[]).map((k) => ({ value: k, label: HIST_SRC[k] }))]
 const HIST_ST_OPTS = [{ value: 'all', label: '全部状态' }, ...(Object.keys(HIST_ST) as HistState[]).map((k) => ({ value: k, label: HIST_ST[k][1] }))]
 const histCols = [
-  { title: '文件', key: 'file', align: 'center' as const },
-  { title: '来源', key: 'source', width: 120, align: 'center' as const },
-  { title: '任务', key: 'task', width: 100, align: 'center' as const },
-  { title: '数据集', key: 'dataset', width: 110, align: 'center' as const },
-  { title: '时长', key: 'dur', width: 90, align: 'center' as const },
-  { title: '体量', key: 'size', width: 100, align: 'center' as const },
-  { title: '状态', key: 'state', width: 120, align: 'center' as const },
-  { title: '时间', key: 'at', width: 120, align: 'center' as const },
+  { title: '文件', key: 'file', width: 220, ellipsis: true, align: 'center' as const },
+  { title: '来源', key: 'source', width: 115, ellipsis: true, align: 'center' as const },
+  { title: '任务', key: 'task', width: 100, ellipsis: true, align: 'center' as const },
+  { title: '数据集', key: 'dataset', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '时长', key: 'dur', width: 85, align: 'center' as const },
+  { title: '体量', key: 'size', width: 95, align: 'center' as const },
+  { title: '状态', key: 'state', width: 115, align: 'center' as const },
+  { title: '时间', key: 'at', width: 120, ellipsis: true, align: 'center' as const },
 ]
 function openTask(id: string) { if (tasks.byId(id)) ui.taskDrawerId = id }
 function retryAll() {
@@ -153,16 +153,16 @@ function created(id: string) {
       <a-select v-model:value="hs.state" style="width:140px" aria-label="状态" :options="HIST_ST_OPTS" />
       <a-button :disabled="!retryCount" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
     </div>
-    <a-table :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :scroll="{ x: 900 }" :pagination="{ pageSize: 12, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 条` }">
+    <a-table size="middle" :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :pagination="{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 条` }">
       <template #bodyCell="{ column, record }">
-        <span v-if="column.key === 'file'" class="mono" style="font-size:12.5px">{{ record.file }}</span>
-        <span v-else-if="column.key === 'source'">{{ HIST_SRC[record.source as HistSource] || record.source }}</span>
+        <span v-if="column.key === 'file'" class="mono cell-ellipsis" style="font-size:12.5px" :title="record.file">{{ record.file }}</span>
+        <span v-else-if="column.key === 'source'" class="cell-ellipsis" :title="HIST_SRC[record.source as HistSource] || record.source">{{ HIST_SRC[record.source as HistSource] || record.source }}</span>
         <a v-else-if="column.key === 'task' && record.task !== '—'" class="mono" @click="openTask(record.task)">{{ record.task }}</a>
-        <span v-else-if="column.key === 'dataset'" class="mono muted">{{ record.dataset }}</span>
+        <span v-else-if="column.key === 'dataset'" class="mono muted cell-ellipsis" :title="record.dataset">{{ record.dataset }}</span>
         <span v-else-if="column.key === 'dur'" class="num">{{ record.dur }} s</span>
         <span v-else-if="column.key === 'size'" class="num muted">{{ record.size }} GB</span>
         <StatusBadge v-else-if="column.key === 'state'" :kind="HIST_ST[record.state as HistState][0]" :text="HIST_ST[record.state as HistState][1]" />
-        <span v-else-if="column.key === 'at'" class="muted num">{{ record.at }}</span>
+        <span v-else-if="column.key === 'at'" class="muted num cell-ellipsis">{{ record.at }}</span>
       </template>
       <template #emptyText><EmptyState icon="inbox" title="没有符合条件的记录" desc="换个筛选条件试试" /></template>
     </a-table>
@@ -180,15 +180,15 @@ function created(id: string) {
       <a-button size="small" danger :disabled="!mayEdit" :title="dis" @click="bulkCancel">批量取消</a-button>
       <a-button size="small" type="text" style="margin-left:auto" @click="selected = []">清除选择</a-button>
     </div>
-    <a-table row-key="id" :columns="columns" :data-source="rows" :row-selection="rowSelection" :custom-row="customRow" :scroll="{ x: 860 }"
+    <a-table row-key="id" size="middle" :columns="columns" :data-source="rows" :row-selection="rowSelection" :custom-row="customRow"
       :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个任务` }" @change="onTableChange as never">
       <template #bodyCell="{ column, record }">
-        <div v-if="column.key === 'id'" class="cell-main"><span class="mono">{{ record.id }}</span><span>{{ record.name }}</span></div>
-        <div v-else-if="column.key === 'scen'" class="cell-main"><span>{{ scenShort(record.scen) }}</span><small class="muted">{{ MODES[record.mode as ModeKey]?.name || record.mode }} · {{ record.devices.length }} 台设备</small></div>
-        <span v-else-if="column.key === 'op'">{{ OPS[record.op].n }}</span>
+        <div v-if="column.key === 'id'" class="cell-main"><span class="mono" :title="record.id">{{ record.id }}</span><span :title="record.name">{{ record.name }}</span></div>
+        <div v-else-if="column.key === 'scen'" class="cell-main"><span :title="scenShort(record.scen)">{{ scenShort(record.scen) }}</span><small class="muted" :title="`${MODES[record.mode as ModeKey]?.name || record.mode} · ${record.devices.length} 台设备`">{{ MODES[record.mode as ModeKey]?.name || record.mode }} · {{ record.devices.length }} 台设备</small></div>
+        <span v-else-if="column.key === 'op'" class="cell-ellipsis" :title="OPS[record.op].n">{{ OPS[record.op].n }}</span>
         <span v-else-if="column.key === 'progress'" class="num"><b>{{ record.done }}</b> <span class="muted">条</span></span>
         <StatusBadge v-else-if="column.key === 'status'" :kind="TASK_ST[record.status as TaskStatus][0]" :text="TASK_ST[record.status as TaskStatus][1]" />
-        <span v-else-if="column.key === 'ts'" class="muted num">{{ record.updated }}</span>
+        <span v-else-if="column.key === 'ts'" class="muted num cell-ellipsis">{{ record.updated }}</span>
       </template>
       <template #emptyText>
         <EmptyState icon="inbox" title="没有符合条件的任务" :desc="st.q || st.status !== 'all' || st.scen !== 'all' ? '换个关键词，或清除筛选条件试试' : '点击右上角“新建任务”开始第一次采集'"><a-button size="small" style="margin-top:6px" @click="clearFilters">清除筛选</a-button></EmptyState>

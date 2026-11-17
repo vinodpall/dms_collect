@@ -49,24 +49,24 @@ const rows = computed(() =>
 )
 
 const itemCols = [
-  { title: '编码', key: 'code', width: 120, align: 'center' as const },
-  { title: '名称', key: 'name', width: 130, align: 'center' as const },
+  { title: '编码', key: 'code', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '名称', key: 'name', width: 140, ellipsis: true, align: 'center' as const },
   { title: '分级', key: 'level', width: 110, align: 'center' as const },
-  { title: '场景', key: 'scen', width: 110, align: 'center' as const },
-  { title: '定义与边界说明', key: 'desc', align: 'center' as const },
-  { title: '别名', key: 'aliases', width: 150, align: 'center' as const },
+  { title: '场景', key: 'scen', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '定义与边界说明', key: 'desc', ellipsis: true, align: 'center' as const },
+  { title: '别名', key: 'aliases', width: 150, ellipsis: true, align: 'center' as const },
   { title: '引用', key: 'usage', width: 80, align: 'center' as const },
   { title: '启用', key: 'status', width: 80, align: 'center' as const },
-  { title: '操作', key: 'act', width: 120, align: 'center' as const },
+  { title: '操作', key: 'act', width: 115, align: 'center' as const },
 ]
 
 const logCols = [
-  { title: '时间', key: 't', width: 150, align: 'center' as const },
+  { title: '时间', key: 't', width: 155, ellipsis: true, align: 'center' as const },
   { title: '版本', key: 'ver', width: 90, align: 'center' as const },
-  { title: '操作人', key: 'by', width: 100, align: 'center' as const },
+  { title: '操作人', key: 'by', width: 100, ellipsis: true, align: 'center' as const },
   { title: '操作', key: 'op', width: 80, align: 'center' as const },
-  { title: '词条', key: 'target', width: 140, align: 'center' as const },
-  { title: '内容', key: 'summary', align: 'center' as const },
+  { title: '词条', key: 'target', width: 140, ellipsis: true, align: 'center' as const },
+  { title: '内容', key: 'summary', ellipsis: true, align: 'center' as const },
 ]
 
 const scenOpts = computed(() =>
@@ -463,22 +463,22 @@ function wordCountOfScene(sceneKey: string) {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 't'">
-              <span class="num muted">{{ record.t }}</span>
+              <span class="num muted cell-ellipsis" :title="record.t">{{ record.t }}</span>
             </template>
             <template v-else-if="column.key === 'ver'">
               <span class="mono ver">{{ record.ver }}</span>
             </template>
             <template v-else-if="column.key === 'by'">
-              <span>{{ record.by }}</span>
+              <span class="cell-ellipsis" :title="record.by">{{ record.by }}</span>
             </template>
             <template v-else-if="column.key === 'op'">
               <span class="tag" :class="OP_CLS[record.op as DictOp] || 'info'">{{ record.op }}</span>
             </template>
             <template v-else-if="column.key === 'target'">
-              <b>{{ record.target }}</b>
+              <b class="cell-ellipsis" :title="record.target">{{ record.target }}</b>
             </template>
             <template v-else-if="column.key === 'summary'">
-              <span class="muted">{{ record.summary }}</span>
+              <span class="muted cell-ellipsis" :title="record.summary">{{ record.summary }}</span>
             </template>
           </template>
           <template #emptyText><EmptyState icon="clock" title="暂无操作记录" desc="当前筛选条件下没有字典变更历史" /></template>
@@ -527,11 +527,13 @@ function wordCountOfScene(sceneKey: string) {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'code'">
-              <span class="mono"><b>{{ record.code }}</b></span>
+              <span class="mono cell-ellipsis" :title="record.code"><b>{{ record.code }}</b></span>
             </template>
             <template v-else-if="column.key === 'name'">
-              <b>{{ record.name }}</b>
-              <span v-if="record.required" class="tag crit" style="font-size:11px;margin-left:4px">必选</span>
+              <span class="cell-ellipsis" :title="record.name">
+                <b>{{ record.name }}</b>
+                <span v-if="record.required" class="tag crit" style="font-size:11px;margin-left:4px">必选</span>
+              </span>
             </template>
             <template v-else-if="column.key === 'level'">
               <span class="tag" :class="record.category === 'object' ? 'good' : record.level === 'abnormal' ? 'warn' : 'info'">
@@ -539,13 +541,13 @@ function wordCountOfScene(sceneKey: string) {
               </span>
             </template>
             <template v-else-if="column.key === 'scen'">
-              <span class="muted" style="white-space:nowrap">{{ scenLabel(record.scen) }}</span>
+              <span class="muted cell-ellipsis" :title="scenLabel(record.scen)">{{ scenLabel(record.scen) }}</span>
             </template>
             <template v-else-if="column.key === 'desc'">
-              <span class="muted" style="font-size:12.5px">{{ record.desc || '—' }}</span>
+              <span class="muted cell-ellipsis" style="font-size:12.5px" :title="record.desc || ''">{{ record.desc || '—' }}</span>
             </template>
             <template v-else-if="column.key === 'aliases'">
-              <div v-if="record.aliases.length" class="row" style="gap:4px;flex-wrap:wrap;justify-content:center">
+              <div v-if="record.aliases.length" class="cell-inline-tags" :title="record.aliases.join('、')">
                 <span v-for="a in record.aliases" :key="a" class="alias">{{ a }}</span>
               </div>
               <span v-else class="muted">—</span>
@@ -557,7 +559,7 @@ function wordCountOfScene(sceneKey: string) {
               <a-switch size="small" :checked="record.status === 'active'" :aria-label="'启用 ' + record.name" @change="toggle(record)" />
             </template>
             <template v-else-if="column.key === 'act'">
-              <div class="row" style="gap:8px;justify-content:center">
+              <div class="act-links">
                 <a-button size="small" type="link" @click="openEdit(record)">编辑</a-button>
                 <a-button size="small" type="link" danger @click="del(record)">删除</a-button>
               </div>

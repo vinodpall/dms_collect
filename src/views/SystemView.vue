@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import SaveBar from '@/components/SaveBar.vue'
-import { NO_PERM, type BadgeKind } from '@/constants'
+import { NO_PERM } from '@/constants'
 import { useSystem } from '@/stores/system'
 import { useSession } from '@/stores/session'
 import { useSettings, type Cfg } from '@/stores/settings'
-import { useLogs } from '@/stores/logs'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
 import type { WhitelistItem } from '@/api'
@@ -17,7 +15,6 @@ import type { WhitelistItem } from '@/api'
 const sys = useSystem()
 const session = useSession()
 const settings = useSettings()
-const logsStore = useLogs()
 const isAdmin = computed(() => session.can('system'))
 const dis = computed(() => (isAdmin.value ? undefined : NO_PERM))
 const tab = ref('ip')
@@ -27,11 +24,11 @@ const wl = reactive({ v: '', remark: '', err: '', busy: false })
 const wlPage = ref(1)
 const wlCols = [
   { title: '序号', key: 'idx', width: 70, align: 'center' as const },
-  { title: 'IP 地址 / CIDR 网段', dataIndex: 'cidr', key: 'cidr', align: 'center' as const },
-  { title: '备注', key: 'remark', align: 'center' as const },
-  { title: '添加时间', key: 'created', width: 160, align: 'center' as const },
+  { title: 'IP 地址 / CIDR 网段', dataIndex: 'cidr', key: 'cidr', width: 190, ellipsis: true, align: 'center' as const },
+  { title: '备注', key: 'remark', ellipsis: true, align: 'center' as const },
+  { title: '添加时间', key: 'created', width: 165, ellipsis: true, align: 'center' as const },
   { title: '访问策略', key: 'st', width: 110, align: 'center' as const },
-  { title: '操作', key: 'act', width: 110, align: 'center' as const },
+  { title: '操作', key: 'act', width: 100, align: 'center' as const },
 ]
 const wlData = computed(() => sys.whitelist.map((item, i) => ({ ...item, idx: i + 1 })))
 const IP_RE = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)(\/(3[0-2]|[12]?\d))?$/
@@ -73,51 +70,6 @@ async function toggleWl(v: boolean) {
     toast('切换白名单开关失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
   }
 }
-
-/* 审计日志（对接真实 GET /audit-logs 接口） */
-const au = reactive({ q: '', module: 'all', page: 1 })
-const moduleOpts = [
-  { value: 'all', label: '全部模块' },
-  { value: 'auth', label: '认证中心' },
-  { value: 'users', label: '用户管理' },
-  { value: 'roles', label: '角色权限' },
-  { value: 'devices', label: '设备管理' },
-  { value: 'stations', label: '工位配置' },
-  { value: 'dict', label: '标注字典' },
-  { value: 'scenes', label: '采集场景' },
-  { value: 'system', label: '系统管理' },
-]
-
-async function loadSysAudit() {
-  try {
-    await logsStore.fetchLogs({
-      page: au.page,
-      size: 10,
-      module: au.module === 'all' ? undefined : au.module,
-      keyword: au.q.trim() || undefined,
-    })
-  } catch (err: any) {
-    toast('加载审计日志失败：' + (err?.message || '网络异常'), { type: 'crit' })
-  }
-}
-
-let auTimer: number | undefined
-watch(
-  () => au.q,
-  () => {
-    au.page = 1
-    clearTimeout(auTimer)
-    auTimer = window.setTimeout(() => loadSysAudit(), 250)
-  }
-)
-watch(
-  () => au.module,
-  () => {
-    au.page = 1
-    loadSysAudit()
-  }
-)
-onBeforeUnmount(() => clearTimeout(auTimer))
 
 /* 系统设置（同步真实 fetchSettings 并防止未保存状态假阳性） */
 const draft = reactive<Cfg>({ ...settings.cfg })
@@ -168,23 +120,14 @@ function resetCfg() {
 }
 
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
-const auditCols = [
-  { title: '时间', key: 'time', width: 165, align: 'center' as const },
-  { title: '操作人', dataIndex: 'user', key: 'user', width: 110, align: 'center' as const },
-  { title: '所属模块', key: 'moduleName', width: 110, align: 'center' as const },
-  { title: '动作', dataIndex: 'action', key: 'action', width: 120, align: 'center' as const },
-  { title: '操作详情', key: 'summary', align: 'center' as const },
-  { title: '状态', key: 'status', width: 90, align: 'center' as const },
-  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 140, align: 'center' as const },
-]
 
 onMounted(async () => {
-  await Promise.allSettled([sys.fetchWhitelist(), settings.fetchSettings(), loadSysAudit()])
+  await Promise.allSettled([sys.fetchWhitelist(), settings.fetchSettings()])
 })
 </script>
 
 <template>
-  <PageHead title="系统管理" desc="IP 白名单、审计日志与系统参数">
+  <PageHead title="系统管理" desc="IP 白名单与系统参数配置">
     <template #desc>
       <div style="margin-top:10px">
         <div class="cyber-tabs" role="tablist" aria-label="系统管理视图切换">
@@ -198,17 +141,6 @@ onMounted(async () => {
           >
             <AppIcon name="shield" size="sm" />
             <span>IP 白名单</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="cyber-tab-item"
-            :class="{ active: tab === 'audit' }"
-            :aria-selected="tab === 'audit'"
-            @click="tab = 'audit'"
-          >
-            <AppIcon name="file" size="sm" />
-            <span>审计日志</span>
           </button>
           <button
             type="button"
@@ -260,70 +192,27 @@ onMounted(async () => {
               <span class="num muted">{{ record.idx }}</span>
             </template>
             <template v-else-if="column.key === 'cidr'">
-              <span class="mono font-bold">{{ record.cidr }}</span>
+              <span class="mono font-bold cell-ellipsis" :title="record.cidr">{{ record.cidr }}</span>
             </template>
             <template v-else-if="column.key === 'remark'">
-              <span class="muted">{{ record.remark || '—' }}</span>
+              <span class="muted cell-ellipsis" :title="record.remark || ''">{{ record.remark || '—' }}</span>
             </template>
             <template v-else-if="column.key === 'created'">
-              <span class="num muted">{{ record.created_at ? record.created_at.replace('T', ' ').slice(0, 16) : '—' }}</span>
+              <span class="num muted cell-ellipsis">{{ record.created_at ? record.created_at.replace('T', ' ').slice(0, 16) : '—' }}</span>
             </template>
             <template v-else-if="column.key === 'st'">
               <span class="tag good">允许访问</span>
             </template>
             <template v-else-if="column.key === 'act'">
-              <a-button size="small" type="link" danger :disabled="!isAdmin" :title="dis" @click="delIp(record as WhitelistItem)">
-                <AppIcon name="trash" size="sm" />移除
-              </a-button>
+              <div class="act-links">
+                <a-button size="small" type="link" danger :disabled="!isAdmin" :title="dis" @click="delIp(record as WhitelistItem)">移除</a-button>
+              </div>
             </template>
           </template>
         </a-table>
       </div>
       <EmptyState v-else icon="shield" :title="sys.loading ? '正在加载白名单…' : '白名单为空'" desc="启用状态下将按白名单策略校验访问来源" />
     </div>
-  </div>
-
-  <div v-else-if="tab === 'audit'" class="card">
-    <div class="toolbar">
-      <a-input v-model:value="au.q" class="grow" allow-clear placeholder="搜索用户、操作详情、目标或来源 IP" aria-label="搜索审计日志">
-        <template #prefix><AppIcon name="search" /></template>
-      </a-input>
-      <a-select
-        v-model:value="au.module"
-        style="width:150px"
-        aria-label="按模块筛选"
-        :options="moduleOpts"
-      />
-    </div>
-    <a-table
-      row-key="id"
-      :columns="auditCols"
-      :data-source="logsStore.list"
-      :loading="logsStore.loading"
-      :scroll="{ x: 760 }"
-      :pagination="{
-        current: au.page,
-        pageSize: 10,
-        total: logsStore.total,
-        showSizeChanger: false,
-        hideOnSinglePage: false,
-        showTotal: (n: number) => `共 ${n} 条记录`,
-        onChange: (p: number) => { au.page = p; loadSysAudit() },
-      }"
-    >
-      <template #bodyCell="{ column, record }">
-        <span v-if="column.key === 'time'" class="num muted">{{ record.time }}</span>
-        <span v-else-if="column.key === 'moduleName'" class="tag info">{{ record.moduleName }}</span>
-        <span v-else-if="column.key === 'summary'">{{ record.summary }}</span>
-        <StatusBadge
-          v-else-if="column.key === 'status'"
-          :kind="(record.status === 'success' ? 'good' : record.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
-          :text="record.status === 'success' ? '成功' : record.status === 'warn' ? '告警' : '失败'"
-        />
-        <span v-else-if="column.key === 'ip'" class="mono muted">{{ record.ip }}</span>
-      </template>
-      <template #emptyText><EmptyState icon="file" title="暂无审计日志" desc="当前筛选条件下没有操作记录" /></template>
-    </a-table>
   </div>
 
   <template v-else>

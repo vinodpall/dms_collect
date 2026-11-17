@@ -34,14 +34,14 @@ const moduleOptions = [
 ]
 
 const auditCols = [
-  { title: 'TraceID', key: 'traceId', width: 130, align: 'center' as const },
-  { title: '操作时间', key: 'time', width: 165, align: 'center' as const },
-  { title: '操作人', key: 'user', width: 140, align: 'center' as const },
-  { title: '业务模块', key: 'moduleName', width: 110, align: 'center' as const },
-  { title: '操作动作', key: 'action', width: 120, align: 'center' as const },
-  { title: '目标对象', key: 'target', width: 130, align: 'center' as const },
+  { title: 'TraceID', key: 'traceId', width: 130, ellipsis: true, align: 'center' as const },
+  { title: '操作时间', key: 'time', width: 165, ellipsis: true, align: 'center' as const },
+  { title: '操作人', key: 'user', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '业务模块', key: 'moduleName', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '操作动作', key: 'action', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '目标对象', key: 'target', width: 140, ellipsis: true, align: 'center' as const },
   { title: '状态', key: 'status', width: 90, align: 'center' as const },
-  { title: '业务说明', key: 'summary', align: 'center' as const },
+  { title: '业务说明', key: 'summary', ellipsis: true, align: 'center' as const },
   { title: '操作', key: 'act', width: 80, align: 'center' as const },
 ]
 
@@ -183,14 +183,14 @@ const algFilterStage = ref<string>('all')
 const algPage = ref(1)
 
 const algCols = [
-  { title: '日志编号', key: 'id', width: 110, align: 'center' as const },
-  { title: '关联批次', key: 'batchId', width: 110, align: 'center' as const },
-  { title: '记录时间', key: 'time', width: 160, align: 'center' as const },
-  { title: '处理阶段', key: 'stage', width: 160, align: 'center' as const },
-  { title: '算法算子节点', key: 'node', width: 160, align: 'center' as const },
+  { title: '日志编号', key: 'id', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '关联批次', key: 'batchId', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '记录时间', key: 'time', width: 160, ellipsis: true, align: 'center' as const },
+  { title: '处理阶段', key: 'stage', width: 160, ellipsis: true, align: 'center' as const },
+  { title: '算法算子节点', key: 'node', width: 160, ellipsis: true, align: 'center' as const },
   { title: '级别', key: 'level', width: 90, align: 'center' as const },
   { title: '耗时', key: 'durationMs', width: 90, align: 'center' as const },
-  { title: '算法执行输出', key: 'message', align: 'center' as const },
+  { title: '算法执行输出', key: 'message', ellipsis: true, align: 'center' as const },
   { title: '操作', key: 'act', width: 80, align: 'center' as const },
 ]
 
@@ -336,25 +336,25 @@ function exportAlgCsv() {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'traceId'">
-            <span v-if="record.traceId" class="mono ell-code" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
-              {{ record.traceId.length > 12 ? record.traceId.slice(0, 10) + '...' : record.traceId }}
+            <span v-if="record.traceId" class="mono ell-code cell-ellipsis" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
+              {{ record.traceId }}
             </span>
             <span v-else class="muted">—</span>
           </template>
           <template v-else-if="column.key === 'time'">
-            <span class="num muted" style="font-size:12px">{{ record.time }}</span>
+            <span class="num muted cell-ellipsis" style="font-size:12px" :title="record.time">{{ record.time }}</span>
           </template>
           <template v-else-if="column.key === 'user'">
-            <b>{{ record.user }}</b><small v-if="record.role" class="muted"> ({{ record.role }})</small>
+            <b class="cell-ellipsis" :title="record.user || ''">{{ record.user || '—' }}</b>
           </template>
           <template v-else-if="column.key === 'moduleName'">
             <span class="tag info">{{ record.moduleName }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <b>{{ record.action }}</b>
+            <b class="cell-ellipsis" :title="record.action || ''">{{ record.action }}</b>
           </template>
           <template v-else-if="column.key === 'target'">
-            <span class="mono muted" style="font-size:12px">{{ record.target }}</span>
+            <span class="mono muted cell-ellipsis" style="font-size:12px" :title="record.target || ''">{{ record.target || '—' }}</span>
           </template>
           <template v-else-if="column.key === 'status'">
             <StatusBadge
@@ -363,10 +363,10 @@ function exportAlgCsv() {
             />
           </template>
           <template v-else-if="column.key === 'summary'">
-            <span style="font-size:12.5px">{{ record.summary }}</span>
+            <span class="cell-ellipsis" style="font-size:12.5px" :title="record.summary || ''">{{ record.summary || '—' }}</span>
           </template>
           <template v-else-if="column.key === 'act'">
-            <a-button size="small" type="link" @click="viewDetail(record)">详情</a-button>
+            <div class="act-links"><a-button size="small" type="link" @click="viewDetail(record)">详情</a-button></div>
           </template>
         </template>
         <template #emptyText><EmptyState icon="file" title="暂无操作审计日志" desc="当前筛选条件下没有记录" /></template>
@@ -419,17 +419,17 @@ function exportAlgCsv() {
         }"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'id'"><span class="mono">{{ record.id }}</span></template>
-          <template v-else-if="column.key === 'batchId'"><span class="mono text-accent">{{ record.batchId }}</span></template>
-          <template v-else-if="column.key === 'time'"><span class="num muted" style="font-size:12px">{{ record.time }}</span></template>
+          <template v-if="column.key === 'id'"><span class="mono cell-ellipsis" :title="record.id">{{ record.id }}</span></template>
+          <template v-else-if="column.key === 'batchId'"><span class="mono text-accent cell-ellipsis" :title="record.batchId">{{ record.batchId }}</span></template>
+          <template v-else-if="column.key === 'time'"><span class="num muted cell-ellipsis" style="font-size:12px" :title="record.time">{{ record.time }}</span></template>
           <template v-else-if="column.key === 'stage'"><span class="tag info">{{ record.stage }}</span></template>
-          <template v-else-if="column.key === 'node'"><span class="mono" style="font-size:12px">{{ record.node }}</span></template>
+          <template v-else-if="column.key === 'node'"><span class="mono cell-ellipsis" style="font-size:12px" :title="record.node">{{ record.node }}</span></template>
           <template v-else-if="column.key === 'level'">
             <span class="tag" :class="record.level === 'INFO' ? 'good' : record.level === 'WARN' ? 'warn' : 'crit'">{{ record.level }}</span>
           </template>
           <template v-else-if="column.key === 'durationMs'"><span class="num muted">{{ record.durationMs }} ms</span></template>
-          <template v-else-if="column.key === 'message'"><span>{{ record.message }}</span></template>
-          <template v-else-if="column.key === 'act'"><a-button size="small" type="link" @click="viewAlgDetail(record)">详情</a-button></template>
+          <template v-else-if="column.key === 'message'"><span class="cell-ellipsis" :title="record.message">{{ record.message }}</span></template>
+          <template v-else-if="column.key === 'act'"><div class="act-links"><a-button size="small" type="link" @click="viewAlgDetail(record)">详情</a-button></div></template>
         </template>
         <template #emptyText>
           <EmptyState icon="activity" title="暂无算法数据处理日志" desc="该标签页尚待后端提供算法流水线日志 API" />

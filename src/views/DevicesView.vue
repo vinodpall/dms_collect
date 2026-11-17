@@ -68,14 +68,14 @@ watch(
 )
 
 const columns = computed(() => [
-  { title: '设备', key: 'name', align: 'center' as const },
-  { title: '类型', dataIndex: 'type', key: 'type', align: 'center' as const },
-  { title: '所属工位', dataIndex: 'station', key: 'station', align: 'center' as const },
-  { title: '位置', key: 'loc', align: 'center' as const },
-  { title: '状态', key: 'st', align: 'center' as const },
-  { title: '标定', key: 'calib', align: 'center' as const },
-  { title: '当前占用', key: 'occ', align: 'center' as const },
-  { title: '固件', key: 'fw', align: 'center' as const },
+  { title: '设备', key: 'name', width: 185, ellipsis: true, align: 'center' as const },
+  { title: '类型', dataIndex: 'type', key: 'type', width: 95, ellipsis: true, align: 'center' as const },
+  { title: '所属工位', dataIndex: 'station', key: 'station', width: 135, ellipsis: true, align: 'center' as const },
+  { title: '位置', key: 'loc', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '状态', key: 'st', width: 90, align: 'center' as const },
+  { title: '标定', key: 'calib', width: 135, align: 'center' as const },
+  { title: '当前占用', key: 'occ', width: 125, ellipsis: true, align: 'center' as const },
+  { title: '固件', key: 'fw', width: 95, ellipsis: true, align: 'center' as const },
 ])
 
 function onTableChange(p: { current?: number }) {
@@ -331,26 +331,26 @@ async function saveStation() {
       </div>
       <a-table
         row-key="id"
+        size="middle"
         :columns="columns"
         :data-source="rows"
         :loading="store.loading"
         :custom-row="customRow"
-        :scroll="{ x: 820 }"
-        :pagination="{ current: st.page, pageSize: 20, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
+        :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
         @change="onTableChange as never"
       >
         <template #bodyCell="{ column, record }">
           <div v-if="column.key === 'name'" class="cell-main">
-            <span>{{ record.name }}</span><small class="mono">{{ record.id }}</small>
+            <span :title="record.name">{{ record.name }}</span><small class="mono" :title="record.id">{{ record.id }}</small>
           </div>
-          <span v-else-if="column.key === 'station'">{{ record.station || '—' }}</span>
-          <span v-else-if="column.key === 'loc'" class="muted">{{ record.loc || '—' }}</span>
+          <span v-else-if="column.key === 'station'" class="cell-ellipsis" :title="record.station || ''">{{ record.station || '—' }}</span>
+          <span v-else-if="column.key === 'loc'" class="muted cell-ellipsis" :title="record.loc || ''">{{ record.loc || '—' }}</span>
           <StatusBadge
             v-else-if="column.key === 'calib'"
             :kind="record.calib ? 'good' : 'warn'"
             :text="record.calib ? (record.calib.at ? '已标定 · ' + record.calib.at.slice(5, 10) : '已标定') : '未标定'"
           />
-          <span v-else-if="column.key === 'occ'" :class="record.occupiedTaskCode ? 'mono' : 'muted'">
+          <span v-else-if="column.key === 'occ'" class="cell-ellipsis" :class="record.occupiedTaskCode ? 'mono' : 'muted'" :title="record.occupiedTaskCode || '空闲'">
             {{ record.occupiedTaskCode || '空闲' }}
           </span>
           <StatusBadge
@@ -358,7 +358,7 @@ async function saveStation() {
             :kind="DV_ST[record.st as DevStatus][0]"
             :text="DV_ST[record.st as DevStatus][1]"
           />
-          <span v-else-if="column.key === 'fw'" class="mono muted">{{ record.fw || '—' }}</span>
+          <span v-else-if="column.key === 'fw'" class="mono muted cell-ellipsis" :title="record.fw || ''">{{ record.fw || '—' }}</span>
         </template>
         <template #emptyText>
           <EmptyState icon="cpu" title="没有符合条件的设备" desc="请检查后端设备台账或调整筛选条件" />

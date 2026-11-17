@@ -76,14 +76,14 @@ watch(
 )
 
 const columns = computed(() => [
-  { title: '数据集', key: 'name', width: 240, align: 'center' as const },
-  { title: '标签', key: 'tags', width: 175, align: 'center' as const },
-  { title: '条数 / 片段', key: 'count', width: 120, align: 'center' as const },
-  { title: '体量大小', key: 'size', width: 110, align: 'center' as const },
-  { title: '完整率 / 质检状态', key: 'quality', width: 152, align: 'center' as const },
-  { title: '状态', key: 'status', width: 132, align: 'center' as const },
-  { title: '更新时间', key: 'updated', width: 130, align: 'center' as const },
-  { title: '操作', key: 'action', align: 'center' as const, width: 146, fixed: 'right' as const },
+  { title: '数据集', key: 'name', width: 230, ellipsis: true, align: 'center' as const },
+  { title: '标签', key: 'tags', width: 175, ellipsis: true, align: 'center' as const },
+  { title: '条数 / 片段', key: 'count', width: 115, align: 'center' as const },
+  { title: '体量大小', key: 'size', width: 105, align: 'center' as const },
+  { title: '完整率 / 质检状态', key: 'quality', width: 145, align: 'center' as const },
+  { title: '状态', key: 'status', width: 130, align: 'center' as const },
+  { title: '更新时间', key: 'updated', width: 125, ellipsis: true, align: 'center' as const },
+  { title: '操作', key: 'action', width: 115, align: 'center' as const },
 ])
 
 function onChange(p: { current?: number }) {
@@ -142,10 +142,10 @@ function handleDownloadRaw(d: Dataset) {
     </div>
     <a-table
       row-key="id"
+      size="middle"
       :columns="columns"
       :data-source="rows"
       :custom-row="customRow"
-      :scroll="{ x: 980 }"
       :pagination="{
         current: st.page,
         pageSize: 8,
@@ -157,13 +157,13 @@ function handleDownloadRaw(d: Dataset) {
     >
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'name'" class="cell-main">
-          <span>
+          <span :title="`${record.name} ${record.ver}`">
             {{ record.name }}
             <span class="fmt">{{ record.ver }}</span>
           </span>
-          <small>{{ record.id }} · {{ SCEN[record.scen]?.mode || '多模态采集' }}</small>
+          <small :title="`${record.id} · ${SCEN[record.scen]?.mode || '多模态采集'}`">{{ record.id }} · {{ SCEN[record.scen]?.mode || '多模态采集' }}</small>
         </div>
-        <div v-else-if="column.key === 'tags'" class="row wrap" style="gap:4px;justify-content:center">
+        <div v-else-if="column.key === 'tags'" class="cell-inline-tags" :title="record.tags.join('、')">
           <span v-for="t in record.tags.slice(0, 3)" :key="t" class="tag" :class="{ info: t.includes('原始') }">
             {{ t }}
           </span>
@@ -190,23 +190,11 @@ function handleDownloadRaw(d: Dataset) {
           :kind="DS_ST[record.status as keyof typeof DS_ST]?.[0] || ''"
           :text="DS_ST[record.status as keyof typeof DS_ST]?.[1] || record.status"
         />
-        <span v-else-if="column.key === 'updated'" class="muted num">{{ record.updated }}</span>
-        <div v-else-if="column.key === 'action'" class="row center" style="gap:6px" @click.stop>
-          <a-button
-            v-if="record.status === 'raw'"
-            size="small"
-            type="primary"
-            ghost
-            @click="handleDownloadRaw(record)"
-          >
-            <template #icon><AppIcon name="download" size="sm" /></template>
-            下载
-          </a-button>
-          <a-button v-else size="small" type="primary" ghost @click="openViewer(record)">
-            <template #icon><AppIcon name="eye" size="sm" /></template>
-            查看
-          </a-button>
-          <a-button size="small" type="text" @click="ui.datasetDrawerId = record.id">详情</a-button>
+        <span v-else-if="column.key === 'updated'" class="muted num cell-ellipsis" :title="record.updated">{{ record.updated }}</span>
+        <div v-else-if="column.key === 'action'" class="act-links" @click.stop>
+          <a-button v-if="record.status === 'raw'" size="small" type="link" @click="handleDownloadRaw(record)">下载</a-button>
+          <a-button v-else size="small" type="link" @click="openViewer(record)">查看</a-button>
+          <a-button size="small" type="link" @click="ui.datasetDrawerId = record.id">详情</a-button>
         </div>
       </template>
       <template #emptyText>
