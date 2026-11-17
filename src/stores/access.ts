@@ -33,6 +33,7 @@ export interface RoleRow {
   members: RoleMember[]
   memberCount: number
   version: number
+  detailLoaded: boolean
 }
 
 export interface ActionDef {
@@ -81,7 +82,7 @@ function flattenPermNodes(nodes: PermissionNode[]): PermissionNode[] {
 function mapApiUser(u: UserItem): UserRow {
   const primaryRole =
     (u.primary_role_id ? u.roles?.find((r) => r.id === u.primary_role_id) : undefined) ?? u.roles?.[0]
-  const roleKey = primaryRole?.code || ''
+  const roleKey = primaryRole?.code || (primaryRole as any)?.role_code || ''
   return {
     id: String(u.id),
     numericId: u.id,
@@ -208,17 +209,18 @@ export const useAccess = defineStore('access', () => {
     return Array.from(new Set([...pageCodes, ...actCodes]))
   }
 
-  function mapRoleToRow(item: RoleListItem | RoleDetail, detail?: RoleDetail | null): RoleRow {
+  function mapRoleToRow(item: RoleListItem | RoleDetail, detail?: RoleDetail | null, fallback?: RoleRow): RoleRow {
     const anyItem = item as any
-    const code = anyItem.code || anyItem.role_code || ''
-    const name = anyItem.name || anyItem.role_name || code
-    const isAdm = !!anyItem.is_all || code === 'admin'
-    const perms: string[] = detail?.permissions ?? (detail as any)?.permission_codes ?? []
+    const anyDetail = detail as any
+    const code = anyDetail?.code || anyDetail?.role_code || anyItem.code || anyItem.role_code || fallback?.key || ''
+    const name = anyDetail?.name || anyDetail?.role_name || anyItem.name || anyItem.role_name || fallback?.name || code
+    const isAdm = !!(anyDetail?.is_all ?? anyItem.is_all ?? fallback?.all) || code === 'admin'
+    const perms: string[] = anyDetail?.permissions ?? anyDetail?.permission_codes ?? anyItem.permissions ?? anyItem.permission_codes ?? []
     const parsed = parsePermissions(perms)
     const pages = isAdm ? [...ROLES.admin.pages] : parsed.pages
     const can = isAdm ? {} : parsed.can
-    const members: RoleMember[] = Array.isArray(detail?.members) ? detail!.members : []
-    const version = detail?.version ?? item.version ?? 0
+    const members: RoleMember[] = Array.isArray(anyDetail?.members) ? anyDetail.members : []
+    const version = detail?.version ?? item.version ?? fallback?.version ?? 0
     return {
       id: item.id,
       key: code,
@@ -226,62 +228,56 @@ export const useAccess = defineStore('access', () => {
       user: members[0]?.full_name || '',
       init: (name || '?').slice(0, 1),
       all: isAdm,
-      desc: (detail?.description ?? item.description) || '',
-      builtin: !!(detail?.is_builtin ?? item.is_builtin),
+      desc: (detail?.description ?? item.description ?? fallback?.desc) || '',
+      builtin: !!(detail?.is_builtin ?? item.is_builtin ?? fallback?.builtin),
       pages,
       can,
       members,
-      memberCount: (item as RoleListItem).member_count ?? members.length,
+      memberCount: (anyDetail?.member_count ?? anyItem.member_count ?? fallback?.memberCount ?? members.length) as number,
       version,
+      detailLoaded: !!detail,
     }
   }
 
-  /** 从后端拉取角色列表、权限树与角色详情 */
+  let rolesPromise: Promise<RoleRow[]> | null = null
+
+  /** 从后端拉取角色列表、权限树与角色详情（并发调用复用同一次请求） */
   async function fetchRoles(): Promise<RoleRow[]> {
     if (!getToken()) return []
-    loadingRoles.value = true
-    try {
-      const [listRes, permsRes] = await Promise.allSettled([rolesApi.list(), rolesApi.getPermissions()])
-      if (permsRes.status === 'fulfilled' && Array.isArray(permsRes.value)) {
-        permNodes.value = permsRes.value
+    if (rolesPromise) return rolesPromise
+    rolesPromise = (async () => {
+      loadingRoles.value = true
+      try {
+        const [listRes, permsRes] = await Promise.allSettled([rolesApi.list(), rolesApi.getPermissions()])
+        if (permsRes.status === 'fulfilled' && Array.isArray(permsRes.value)) {
+          permNodes.value = permsRes.value
+        }
+        if (listRes.status === 'rejected') {
+          throw listRes.reason
+        }
+        const list = Array.isArray(listRes.value) ? listRes.value : []
+        const details = await Promise.allSettled(list.map((item) => rolesApi.get(item.id)))
+        const roleRows = list.map((item, idx) => {
+          const dRes = details[idx]
+          const detail = dRes && dRes.status === 'fulfilled' ? dRes.value : null
+          return mapRoleToRow(item, detail)
+        })
+        roles.value = roleRows
+        return roleRows
+      } finally {
+        loadingRoles.value = false
+        rolesPromise = null
       }
-      if (listRes.status === 'rejected') {
-        throw listRes.reason
-      }
-      const list = Array.isArray(listRes.value) ? listRes.value : []
-      const details = await Promise.allSettled(list.map((item) => rolesApi.get(item.id)))
-      const roleRows = list.map((item, idx) => {
-        const dRes = details[idx]
-        const detail = dRes && dRes.status === 'fulfilled' ? dRes.value : null
-        return mapRoleToRow(item, detail)
-      })
-      roles.value = roleRows
-      return roleRows
-    } finally {
-      loadingRoles.value = false
-    }
+    })()
+    return rolesPromise
   }
 
-  /** 拉取单个角色详情（用于查看成员、刷新版本） */
+  /** 按需拉取单个角色详情（仅在未加载详情或显式刷新时调用） */
   async function fetchRoleDetail(id: number): Promise<RoleRow | null> {
     if (!getToken()) return null
     const detail = await rolesApi.get(id)
     const existing = roles.value.find((r) => r.id === id)
-    const mapped = mapRoleToRow(
-      {
-        id: detail.id,
-        code: detail.code,
-        name: detail.name,
-        description: detail.description,
-        is_builtin: detail.is_builtin,
-        sort_order: detail.sort_order,
-        member_count: existing?.memberCount ?? detail.members?.length ?? 0,
-        page_count: 0,
-        action_count: 0,
-        version: detail.version,
-      },
-      detail
-    )
+    const mapped = mapRoleToRow(detail, detail, existing)
     const idx = roles.value.findIndex((r) => r.id === id)
     if (idx >= 0) roles.value[idx] = mapped
     else roles.value.push(mapped)
@@ -443,19 +439,9 @@ export const useAccess = defineStore('access', () => {
     })
 
     const mapped = mapRoleToRow(
-      {
-        id: updated.id,
-        code: updated.code || r.key,
-        name: updated.name || nextName,
-        description: updated.description ?? nextDesc,
-        is_builtin: updated.is_builtin ?? r.builtin,
-        sort_order: updated.sort_order ?? 0,
-        member_count: r.memberCount,
-        page_count: 0,
-        action_count: 0,
-        version: updated.version,
-      },
-      updated
+      updated,
+      updated,
+      { ...r, name: nextName, desc: nextDesc }
     )
     const idx = roles.value.findIndex((item) => item.key === key || item.id === r.id)
     if (idx >= 0) roles.value[idx] = mapped

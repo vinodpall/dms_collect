@@ -6,7 +6,7 @@ import BrandMark from '@/components/BrandMark.vue'
 import PageSkeleton from '@/components/PageSkeleton.vue'
 import CommandPalette from './CommandPalette.vue'
 import { NAV_GROUPS, PAGE_META, UNWIRED_PAGES, type PageKey } from '@/constants'
-import { authApi, getToken, systemApi } from '@/api'
+import { authApi, getToken } from '@/api'
 import { useSession } from '@/stores/session'
 import { useAlerts } from '@/stores/alerts'
 import { useDevices } from '@/stores/devices'
@@ -169,12 +169,69 @@ async function savePwd() {
 
 /* 后端健康检查 */
 const sysHealthy = ref(true)
+const sysHealthTip = ref('正在检查后端服务状态…')
 async function checkHealth() {
-  try {
-    const res = await systemApi.health()
-    sysHealthy.value = !res?.status || res.status === 'ok' || res.status === 'healthy'
-  } catch {
+  const token = getToken()
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+  const urls = ['/api/v1/health', '/api/health']
+  let lastReason = '健康检查接口未响应'
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers })
+      if (res.status === 404) {
+        lastReason = `${url} 返回 404`
+        continue
+      }
+      if (!res.ok) {
+        lastReason = `${url} HTTP ${res.status}`
+        sysHealthy.value = false
+        sysHealthTip.value = lastReason
+        return
+      }
+      const ctype = res.headers.get('content-type') || ''
+      if (!ctype.includes('application/json')) {
+        lastReason = `${url} 返回非 JSON 响应`
+        continue
+      }
+      const json = await res.json()
+      // 兼容标准 { code: 0, data: { status, ... } } 与 FastAPI 直出 { status, ... } 两种响应体
+      if (json && typeof json.code === 'number' && json.code !== 0) {
+        sysHealthy.value = false
+        sysHealthTip.value = json.message || `健康检查返回错误码 ${json.code}`
+        return
+      }
+      const data = json && typeof json.code === 'number' ? json.data : json
+      const rawStatus = String(data?.status ?? '').toLowerCase()
+      const dbStatus = String(data?.db ?? data?.database ?? '').toLowerCase()
+      const okSet = new Set(['ok', 'healthy', 'up', 'pass', 'normal', ''])
+      const dbOk = !dbStatus || okSet.has(dbStatus)
+
+      if (okSet.has(rawStatus) || (rawStatus === 'degraded' && dbOk)) {
+        sysHealthy.value = true
+        const parts = [`状态: ${data?.status || 'ok'}`]
+        if (data?.version) parts.push(`版本: ${data.version}`)
+        if (data?.db) parts.push(`数据库: ${data.db}`)
+        if (data?.redis) parts.push(`Redis: ${data.redis}`)
+        sysHealthTip.value = parts.join(' · ')
+        return
+      }
+
+      sysHealthy.value = false
+      sysHealthTip.value = `后端状态异常 (${data?.status || 'unknown'})`
+      return
+    } catch (err: any) {
+      lastReason = err?.message || '网络请求失败'
+    }
+  }
+
+  // 若服务端未暴露 /api/v1/health（均返回 404），但认证态已登录或接口未出错，不误报异常
+  if (lastReason.includes('404')) {
+    sysHealthy.value = true
+    sysHealthTip.value = '后端运行中（未启用 /health 探针）'
+  } else {
     sysHealthy.value = false
+    sysHealthTip.value = lastReason
   }
 }
 
@@ -269,10 +326,12 @@ watch(current, (p) => { document.title = PAGE_META[p].title + ' · 数采管理�
             </a-menu-item>
           </a-menu-item-group>
         </a-menu>
-        <div class="pp-side-foot">
-          <i class="dot" :style="sysHealthy ? undefined : 'background:var(--crit);box-shadow:0 0 8px var(--crit)'" />
-          {{ sysHealthy ? '系统运行正常' : '后端服务异常' }}
-        </div>
+        <a-tooltip :title="sysHealthTip" placement="right">
+          <div class="pp-side-foot">
+            <i class="dot" :style="sysHealthy ? undefined : 'background:var(--crit);box-shadow:0 0 8px var(--crit)'" />
+            {{ sysHealthy ? '系统运行正常' : '后端服务异常' }}
+          </div>
+        </a-tooltip>
       </aside>
       <main class="pp-main flush">
         <div ref="content" class="content cl-content" tabindex="-1">

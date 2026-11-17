@@ -17,10 +17,8 @@ const mayEdit = computed(() => session.can('roles'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
 
 const cur = ref(access.roles[0]?.key ?? '')
-const rightTab = ref<'perms' | 'members'>('perms')
 const role = computed(() => access.roleMap[cur.value])
 const locked = computed(() => !mayEdit.value || !!role.value?.all)
-const members = computed(() => role.value?.members || [])
 const savingPerms = ref(false)
 
 /* 权限草稿（仅跟踪页面与操作勾选） */
@@ -58,7 +56,8 @@ watch(
       load()
     }
     baseSnap.value = nextBase
-    if (nextCur && nextCur !== prevCur && role.value?.id) {
+    // 列表加载时已通过并发拉取获取权限详情；仅在该角色详情缺失时补拉，避免点击切换重复请求
+    if (nextCur && nextCur !== prevCur && role.value?.id && !role.value.detailLoaded) {
       access.fetchRoleDetail(role.value.id).catch(() => {})
     }
   },
@@ -175,7 +174,6 @@ async function addRole() {
     const k = await access.addRole({ name: md.name.trim(), desc: md.desc.trim(), from: md.from || undefined })
     md.open = false
     cur.value = k
-    rightTab.value = 'perms'
     toast('已创建角色，请勾选它可以访问的页面和操作')
   } catch (err: any) {
     toast('创建角色失败：' + (err?.message || '请稍后重试'), { type: 'crit' })
@@ -186,8 +184,9 @@ async function addRole() {
 async function delRole() {
   const r = role.value
   if (!r || r.builtin) return
-  if (members.value.length) {
-    toast('仍有 ' + members.value.length + ' 个账号属于该角色，请先在用户管理中调整', { type: 'warn' })
+  const totalMembers = Math.max(r.memberCount, r.members.length)
+  if (totalMembers) {
+    toast('仍有 ' + totalMembers + ' 个账号属于该角色，请先在用户管理中调整', { type: 'warn' })
     return
   }
   if (!(await confirmDlg({ title: '删除角色「' + r.name + '」？', msg: '删除后不可恢复。', ok: '删除', danger: true }))) return
@@ -202,7 +201,9 @@ async function delRole() {
 
 onMounted(async () => {
   try {
-    await access.fetchRoles()
+    if (!access.roles.length || access.roles.some((r) => !r.detailLoaded)) {
+      await access.fetchRoles()
+    }
     if (!cur.value && access.roles.length) cur.value = access.roles[0].key
   } catch (err: any) {
     toast('加载角色列表失败：' + (err?.message || '网络异常'), { type: 'crit' })
@@ -249,20 +250,12 @@ onMounted(async () => {
           <div class="sub">{{ role.all ? '系统管理员拥有全部权限，不可修改权限范围' : '未勾选页面时，该页面不会出现在菜单中；操作权限需先开放对应页面' }}</div>
         </div>
         <div class="r-head-right">
-          <div class="cyber-tabs" role="tablist" aria-label="角色详情视图">
-            <button type="button" role="tab" class="cyber-tab-item" :class="{ active: rightTab === 'perms' }" :aria-selected="rightTab === 'perms'" @click="rightTab = 'perms'">
-              <span>页面与操作权限</span>
-            </button>
-            <button type="button" role="tab" class="cyber-tab-item" :class="{ active: rightTab === 'members' }" :aria-selected="rightTab === 'members'" @click="rightTab = 'members'">
-              <span>角色成员</span>
-            </button>
-          </div>
           <a-button size="small" :disabled="!mayEdit" :title="dis" @click="openEditInfo"><AppIcon name="pencil" size="sm" />编辑信息</a-button>
           <a-button v-if="!role.builtin" size="small" danger :disabled="!mayEdit" :title="dis" @click="delRole"><AppIcon name="trash" size="sm" />删除角色</a-button>
         </div>
       </div>
 
-      <div v-if="rightTab === 'perms'" class="r-matrix">
+      <div class="r-matrix">
         <div v-for="g in NAV_GROUPS" :key="g.g" class="r-group">
           <div class="r-gh"><a-checkbox :checked="groupState(g.items).all" :indeterminate="groupState(g.items).some" :disabled="locked" @change="(e: any) => setGroup(g.items, e.target.checked)">{{ g.g }}</a-checkbox></div>
           <div v-for="p in g.items" :key="p" class="r-row" :class="{ off: !hasPage(p) }">
@@ -275,18 +268,6 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-      </div>
-
-      <div v-else class="r-members-panel">
-        <div v-if="members.length" class="r-mem">
-          <span v-for="u in members" :key="u.id" class="r-chip">
-            <i>{{ (u.full_name || u.username || '?').slice(0, 1) }}</i>
-            <span>{{ u.full_name }}</span>
-            <small class="mono">{{ u.username }}</small>
-            <small v-if="u.dept" class="muted">· {{ u.dept }}</small>
-          </span>
-        </div>
-        <EmptyState v-else icon="users" title="暂无角色成员" desc="可在用户管理页面中为账号分配该角色" />
       </div>
 
       <div v-if="dirty && mayEdit" class="r-save-wrap">
@@ -423,12 +404,6 @@ onMounted(async () => {
   overflow-y: auto;
   padding: 4px 20px 16px;
 }
-.r-members-panel {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 18px 20px;
-}
 .r-save-wrap {
   flex: none;
   padding: 10px 16px;
@@ -449,13 +424,9 @@ onMounted(async () => {
 .r-row.off > :deep(.ant-checkbox-wrapper) { color: var(--muted); }
 .r-acts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
 .faint { color: var(--faint); font-size: 12.5px; }
-.r-mem { display: flex; flex-wrap: wrap; gap: 10px; }
-.r-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(13,28,49,.5); font-size: 13px; }
-.r-chip i { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); }
-.r-chip small { color: var(--faint); }
 @media (max-width: 1100px) {
   .r-wrap { grid-template-columns: 1fr; height: auto; }
   .r-list, .r-perm-card { height: auto; max-height: none; }
-  .r-list-body, .r-matrix, .r-members-panel { max-height: 460px; }
+  .r-list-body, .r-matrix { max-height: 460px; }
 }
 </style>

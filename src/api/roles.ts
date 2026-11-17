@@ -2,10 +2,13 @@ import { api } from './client'
 
 export interface RoleListItem {
   id: number
-  code: string
-  name: string
+  code?: string
+  role_code?: string
+  name?: string
+  role_name?: string
   description: string | null
   is_builtin: boolean
+  is_all?: boolean
   sort_order: number
   member_count: number
   page_count: number
@@ -23,15 +26,20 @@ export interface PermissionNode {
 
 export interface RoleDetail {
   id: number
-  code: string
-  name: string
+  code?: string
+  role_code?: string
+  name?: string
+  role_name?: string
   description: string | null
   is_builtin: boolean
+  is_all?: boolean
   sort_order: number
   version: number
-  permissions: string[]
+  member_count?: number
+  permissions?: string[]
+  permission_codes?: string[]
   data_scope: Record<string, any> | null
-  members: Array<{
+  members?: Array<{
     id: number
     username: string
     full_name: string
