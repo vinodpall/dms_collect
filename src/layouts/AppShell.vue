@@ -5,7 +5,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import PageSkeleton from '@/components/PageSkeleton.vue'
 import CommandPalette from './CommandPalette.vue'
-import { NAV_GROUPS, PAGE_META, type PageKey } from '@/constants'
+import { NAV_GROUPS, PAGE_META, UNWIRED_PAGES, type PageKey } from '@/constants'
 import { useSession } from '@/stores/session'
 import { useAccess } from '@/stores/access'
 import { useAlerts } from '@/stores/alerts'
@@ -169,8 +169,8 @@ watch(current, (p) => { document.title = PAGE_META[p].title + ' · 数采管理�
       <aside class="pp-side">
         <a-menu mode="inline" :selected-keys="selected" class="pp-menu" @click="(e: any) => go(String(e.key))">
           <a-menu-item-group v-for="g in groups" :key="g.g" :title="g.g">
-            <a-menu-item v-for="id in g.items" :key="id">
-              <template #icon><AppIcon :name="PAGE_META[id].icon" /></template>{{ PAGE_META[id].title }}<span v-if="badge(id)" class="pp-mbadge" :class="{ soft: badge(id)!.soft }">{{ badge(id)!.n }}</span>
+            <a-menu-item v-for="id in g.items" :key="id" :class="{ 'pp-menu-unwired': UNWIRED_PAGES.has(id) }">
+              <template #icon><AppIcon :name="PAGE_META[id].icon" /></template><span class="pp-menu-name">{{ PAGE_META[id].title }}</span><span v-if="badge(id)" class="pp-mbadge" :class="{ soft: badge(id)!.soft }">{{ badge(id)!.n }}</span>
             </a-menu-item>
           </a-menu-item-group>
         </a-menu>

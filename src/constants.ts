@@ -39,6 +39,18 @@ export const PAGE_META: Record<PageKey, { title: string; icon: string }> = {
   roles: { title: '角色权限', icon: 'shield' },
 }
 
+/** 尚未对接后端接口的页面（左侧菜单名称以红色标识） */
+export const UNWIRED_PAGES: ReadonlySet<PageKey> = new Set<PageKey>([
+  'dashboard',
+  'tasks',
+  'monitor',
+  'pipeline',
+  'annotate',
+  'review',
+  'datasets',
+  'storage',
+])
+
 export const OPS = [{ n: '张杰', c: 'ZJ' }, { n: '李明', c: 'LM' }, { n: '王芳', c: 'WF' }, { n: '陈浩', c: 'CH' }]
 export type ScenKey = 'qmd' | 'fhd' | (string & {})
 /** 采集模式：可插拔模式注册表，与场景解耦，场景只给出推荐模式 */
