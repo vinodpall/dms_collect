@@ -52,3 +52,9 @@
 .cl-theme .ant-drawer .ant-drawer-header { border-bottom-color: var(--line); }
 .pp.cl .ant-btn-primary.ant-btn-background-ghost:not(:disabled) { background: transparent; border: 1px solid rgba(38,198,218,.6); color: var(--accent-text); box-shadow: none; }
 .pp.cl .ant-btn-primary.ant-btn-background-ghost:not(:disabled):hover { background: var(--accent-soft); }
+.pp.cl .ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.pp.cl .ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-left { background: var(--surface-2) !important; }
+.pp.cl .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-fix-right,
+.pp.cl .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-fix-left { background: var(--surface) !important; }
+.pp.cl .ant-table-wrapper .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.pp.cl .ant-table-wrapper .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left { background: var(--surface-2) !important; }

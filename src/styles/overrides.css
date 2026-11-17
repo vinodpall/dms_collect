@@ -1,12 +1,22 @@
 /* Ant Design Vue 与原型视觉对齐的少量覆盖 */
 body { font-family: var(--font-sans); }
-.ic { display: inline-block; vertical-align: -0.18em; flex: none; }
+.ic { display: inline-block; vertical-align: -0.18em; flex: none; min-height: 0; background: none; }
+.ic.sm { width: 15px; height: 15px; }
+.ic.lg { width: 22px; height: 22px; }
+.empty .ico { display: grid; place-items: center; overflow: hidden; }
+.empty .ico .ic.lg { width: 22px; height: 22px; }
 .hint-text { font-size: 11.5px; color: var(--muted, #B6CADC); margin-left: 6px; font-weight: 400; }
 .fmtcard > span { flex: 1; min-width: 0; }
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td { text-align: center !important; vertical-align: middle; }
 .ant-table-wrapper .ant-table-thead > tr > th { font-weight: 500; font-size: 13px; white-space: nowrap; }
+.ant-table-wrapper .ant-table-tbody > tr > td .cell-main { align-items: center; text-align: center; }
+.ant-table-wrapper .ant-table-tbody > tr > td .row { justify-content: center; }
 .ant-table-wrapper .ant-table-tbody > tr.row-click { cursor: pointer; }
+.ant-table-wrapper .ant-table-tbody > tr.row-off > td { opacity: 0.55; }
 .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td { background: var(--accent-soft) !important; }
 .ant-table-wrapper .ant-table-pagination.ant-pagination { margin: 14px 16px; }
+.grid-pager { display: flex; justify-content: flex-end; align-items: center; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
 .ant-card { box-shadow: var(--shadow-card); }
 .ant-card-head { min-height: 56px; }
 .ant-drawer .ant-drawer-header { align-items: flex-start; }

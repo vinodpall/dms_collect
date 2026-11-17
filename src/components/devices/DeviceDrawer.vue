@@ -87,11 +87,11 @@ function act(a: string) {
         <div v-if="occ" class="muted" style="font-size:12px;margin-top:6px">设备正在采集任务 {{ occ }} 中使用，结束后才能修改</div>
       </div>
       <div><h3 style="font-size:15px;font-weight:600;margin-bottom:10px">标定</h3>
-        <div v-if="d.calib" class="callout info" style="flex-direction:column;align-items:flex-start;gap:4px"><span><b>已标定</b> · {{ d.calib.at }} · {{ d.calib.by }}</span><span class="muted" style="font-size:12.5px">{{ d.calib.items.join('、') }}；长期有效，设备移位或维修后再重新标定</span></div>
+        <div v-if="d.calib" class="callout info" style="flex-direction:column;align-items:flex-start;gap:4px"><span><b>已标定</b><template v-if="d.calib.at && d.calib.at !== '已标定'"> · {{ d.calib.at }}</template> · {{ d.calib.by }}</span><span class="muted" style="font-size:12.5px">{{ d.calib.items.join('、') }}；长期有效，设备移位或维修后再重新标定</span></div>
         <div v-else class="callout warn"><AppIcon name="alert" /><span>尚未标定，采集前自检会被拦截。标定内容：{{ (CALIB_ITEMS[d.type] ?? CALIB_ITEMS['其他']).join('、') }}</span></div>
       </div>
       <div><h3 style="font-size:15px;font-weight:600;margin-bottom:10px">维护记录</h3>
-        <div class="list-i"><div v-for="x in [[d.calib?.at ?? '—', d.calib ? '完成一次性标定' : '待标定', d.calib?.by ?? '—'], ['10-02', '更换线缆', '赵工'], ['09-25', '固件升级', '赵工']]" :key="x[0]" class="li"><span class="mono muted" style="width:52px">{{ x[0] }}</span><span class="grow">{{ x[1] }}</span><span class="muted">{{ x[2] }}</span></div></div>
+        <div class="list-i"><div v-for="x in [[(d.calib?.at && d.calib.at !== '已标定') ? d.calib.at : (d.calib ? '已标定' : '—'), d.calib ? '完成一次性标定' : '待标定', d.calib?.by ?? '—'], ['10-02', '更换线缆', '赵工'], ['09-25', '固件升级', '赵工']]" :key="x[0] + x[1]" class="li"><span class="mono muted" style="width:52px">{{ x[0] }}</span><span class="grow">{{ x[1] }}</span><span class="muted">{{ x[2] }}</span></div></div>
       </div>
       <div><h3 style="font-size:15px;font-weight:600;margin-bottom:10px">故障记录</h3>
         <div v-if="faults.length" class="list-i"><div v-for="(f, i) in faults" :key="i" class="li" style="align-items:flex-start"><span class="alert-ico crit"><AppIcon name="alert" size="sm" /></span><span class="grow"><span class="tt" style="display:block;white-space:normal">{{ f.d }}</span><span class="ss">{{ f.t }} · {{ f.lv }} · {{ f.by }}</span></span></div></div>

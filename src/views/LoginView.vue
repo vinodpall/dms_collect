@@ -54,7 +54,7 @@ onBeforeUnmount(() => { api?.dispose() })
 </script>
 
 <template>
-  <div ref="root" class="lg">
+  <div ref="root" class="lg-page">
     <canvas ref="canvas" class="lg-canvas" aria-hidden="true" />
     <div class="lg-fx" aria-hidden="true" />
 

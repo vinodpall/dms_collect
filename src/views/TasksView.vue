@@ -40,24 +40,20 @@ const scenShort = (key: string) => dict.scenes?.find((s) => s.scene_key === key)
 const rows = computed(() => {
   const q = st.q.toLowerCase()
   const out = tasks.list.filter((t) => (st.status === 'all' || t.status === st.status) && (st.scen === 'all' || t.scen === st.scen) && (!q || (t.id + t.name + OPS[t.op].n + scenShort(t.scen)).toLowerCase().includes(q)))
-  const keyFn: Record<string, (t: Task) => number | string> = { id: (t) => t.id, progress: (t: Task) => t.done, status: (t) => TASK_ST[t.status][1], ts: (t) => t.ts }
-  const f = keyFn[st.key]
-  const d = st.dir === 'ascend' ? 1 : -1
-  return out.slice().sort((a, b) => { const x = f(a), y = f(b); return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'zh')) * d })
+  return out.slice().sort((a, b) => b.ts - a.ts)
 })
 watch(() => [st.status, st.scen, st.q], () => { st.page = 1; selected.value = [] })
 
 const columns = computed(() => [
-  { title: '任务', key: 'id', sorter: true, sortOrder: st.key === 'id' ? st.dir : null },
-  { title: '场景 / 方式', key: 'scen' },
-  { title: '操作员', key: 'op', width: 100 },
-  { title: '已采集', key: 'progress', width: 130, sorter: true, sortOrder: st.key === 'progress' ? st.dir : null },
-  { title: '状态', key: 'status', width: 110, sorter: true, sortOrder: st.key === 'status' ? st.dir : null },
-  { title: '最近更新', key: 'ts', align: 'right' as const, width: 130, sorter: true, sortOrder: st.key === 'ts' ? st.dir : null },
+  { title: '任务', key: 'id', align: 'center' as const },
+  { title: '场景 / 方式', key: 'scen', align: 'center' as const },
+  { title: '操作员', key: 'op', width: 120, align: 'center' as const },
+  { title: '已采集', key: 'progress', width: 130, align: 'center' as const },
+  { title: '状态', key: 'status', width: 120, align: 'center' as const },
+  { title: '最近更新', key: 'ts', align: 'center' as const, width: 140 },
 ])
-function onTableChange(p: { current?: number }, _f: unknown, s: { columnKey?: string; order?: 'ascend' | 'descend' | null }) {
+function onTableChange(p: { current?: number }) {
   st.page = p.current ?? 1
-  if (s && s.columnKey) { st.key = String(s.columnKey); st.dir = s.order ?? null; if (!s.order) { st.key = 'ts'; st.dir = 'descend' } }
 }
 const rowSelection = computed(() => ({ selectedRowKeys: selected.value, onChange: (k: (string | number)[]) => { selected.value = k as string[] } }))
 const customRow = (r: Task) => ({
@@ -92,14 +88,14 @@ const histRows = computed(() => {
 const SRC_OPTS = [{ value: 'all', label: '全部来源' }, ...(Object.keys(HIST_SRC) as HistSource[]).map((k) => ({ value: k, label: HIST_SRC[k] }))]
 const HIST_ST_OPTS = [{ value: 'all', label: '全部状态' }, ...(Object.keys(HIST_ST) as HistState[]).map((k) => ({ value: k, label: HIST_ST[k][1] }))]
 const histCols = [
-  { title: '文件', key: 'file' },
-  { title: '来源', key: 'source', width: 120 },
-  { title: '任务', key: 'task', width: 100 },
-  { title: '数据集', key: 'dataset', width: 90 },
-  { title: '时长', key: 'dur', width: 80, align: 'right' as const },
-  { title: '体量', key: 'size', width: 90, align: 'right' as const },
-  { title: '状态', key: 'state', width: 120 },
-  { title: '时间', key: 'at', width: 110, align: 'right' as const },
+  { title: '文件', key: 'file', align: 'center' as const },
+  { title: '来源', key: 'source', width: 120, align: 'center' as const },
+  { title: '任务', key: 'task', width: 100, align: 'center' as const },
+  { title: '数据集', key: 'dataset', width: 110, align: 'center' as const },
+  { title: '时长', key: 'dur', width: 90, align: 'center' as const },
+  { title: '体量', key: 'size', width: 100, align: 'center' as const },
+  { title: '状态', key: 'state', width: 120, align: 'center' as const },
+  { title: '时间', key: 'at', width: 120, align: 'center' as const },
 ]
 function openTask(id: string) { if (tasks.byId(id)) ui.taskDrawerId = id }
 function retryAll() {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -16,6 +16,19 @@ const activeMainTab = ref<'audit' | 'pipeline'>('audit')
 const search = ref('')
 const filterModule = ref<string>('all')
 const filterStatus = ref<string>('all')
+const auditPage = ref(1)
+
+const auditCols = [
+  { title: 'TraceID', key: 'traceId', width: 130, align: 'center' as const },
+  { title: '操作时间', key: 'time', width: 160, align: 'center' as const },
+  { title: '操作人', key: 'user', width: 130, align: 'center' as const },
+  { title: '业务模块', key: 'moduleName', width: 110, align: 'center' as const },
+  { title: '操作动作', key: 'action', width: 120, align: 'center' as const },
+  { title: '目标对象', key: 'target', width: 130, align: 'center' as const },
+  { title: '状态', key: 'status', width: 90, align: 'center' as const },
+  { title: '业务说明', key: 'summary', align: 'center' as const },
+  { title: '操作', key: 'act', width: 80, align: 'center' as const },
+]
 
 const filteredList = computed(() => {
   return logsStore.list.filter((l) => {
@@ -164,6 +177,22 @@ const pipelineLogs = ref<PipelineLogItem[]>([
 const algSearch = ref('')
 const algFilterLevel = ref<string>('all')
 const algFilterStage = ref<string>('all')
+const algPage = ref(1)
+
+const algCols = [
+  { title: '日志编号', key: 'id', width: 110, align: 'center' as const },
+  { title: '关联批次', key: 'batchId', width: 110, align: 'center' as const },
+  { title: '记录时间', key: 'time', width: 160, align: 'center' as const },
+  { title: '处理阶段', key: 'stage', width: 160, align: 'center' as const },
+  { title: '算法算子节点', key: 'node', width: 160, align: 'center' as const },
+  { title: '级别', key: 'level', width: 90, align: 'center' as const },
+  { title: '耗时', key: 'durationMs', width: 90, align: 'center' as const },
+  { title: '算法执行输出', key: 'message', align: 'center' as const },
+  { title: '操作', key: 'act', width: 80, align: 'center' as const },
+]
+
+watch([search, filterModule, filterStatus], () => { auditPage.value = 1 })
+watch([algSearch, algFilterLevel, algFilterStage], () => { algPage.value = 1 })
 
 const filteredAlgLogs = computed(() => {
   return pipelineLogs.value.filter((l) => {
@@ -235,7 +264,6 @@ function exportAlgCsv() {
           >
             <AppIcon name="shield" size="sm" />
             <span>用户操作审计日志</span>
-            <span class="count-badge">{{ logsStore.list.length }}</span>
           </button>
           <button
             type="button"
@@ -244,8 +272,7 @@ function exportAlgCsv() {
             @click="activeMainTab = 'pipeline'"
           >
             <AppIcon name="activity" size="sm" />
-            <span>算法数据处理日志 (Pipeline)</span>
-            <span class="count-badge">{{ pipelineLogs.length }}</span>
+            <span>算法数据处理日志</span>
           </button>
         </div>
       </div>
@@ -293,52 +320,59 @@ function exportAlgCsv() {
         </a-select>
       </div>
 
-      <div style="overflow-x:auto">
-        <table class="stbl" aria-label="操作日志表格">
-          <thead>
-            <tr>
-              <th style="width:110px">TraceID</th>
-              <th style="width:140px">操作时间</th>
-              <th style="width:100px">操作人</th>
-              <th style="width:110px">业务模块</th>
-              <th style="width:110px">操作动作</th>
-              <th style="width:130px">目标对象</th>
-              <th style="width:90px">状态</th>
-              <th>业务说明</th>
-              <th style="width:70px">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="l in filteredList" :key="l.id">
-              <td class="mono" style="font-size:11.5px">
-                <span class="ell-code" :title="'点击查看详情: ' + l.traceId" @click="viewDetail(l)">{{ l.traceId.slice(0, 10) }}...</span>
-              </td>
-              <td class="num muted" style="font-size:12px">{{ l.time }}</td>
-              <td><b>{{ l.user }}</b> <small class="muted">({{ l.role }})</small></td>
-              <td><span class="tag info">{{ l.moduleName }}</span></td>
-              <td><b>{{ l.action }}</b></td>
-              <td class="mono muted" style="font-size:12px">{{ l.target }}</td>
-              <td>
-                <StatusBadge
-                  :kind="(l.status === 'success' ? 'good' : l.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
-                  :text="l.status === 'success' ? '成功' : l.status === 'warn' ? '告警' : '失败'"
-                />
-              </td>
-              <td style="font-size:12.5px">{{ l.summary }}</td>
-              <td>
-                <a-button size="small" type="link" @click="viewDetail(l)">详情</a-button>
-              </td>
-            </tr>
-            <tr v-if="!filteredList.length">
-              <td colspan="9" style="text-align:center;padding:24px" class="muted">没有匹配的审计日志</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <a-table
+        :data-source="filteredList"
+        :columns="auditCols"
+        row-key="id"
+        size="middle"
+        :pagination="{
+          current: auditPage,
+          pageSize: 10,
+          showSizeChanger: false,
+          hideOnSinglePage: false,
+          showTotal: (total: number) => `共 ${total} 条记录`,
+          onChange: (p: number) => { auditPage = p },
+        }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'traceId'">
+            <span class="mono ell-code" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
+              {{ record.traceId.slice(0, 10) }}...
+            </span>
+          </template>
+          <template v-else-if="column.key === 'time'">
+            <span class="num muted" style="font-size:12px">{{ record.time }}</span>
+          </template>
+          <template v-else-if="column.key === 'user'">
+            <b>{{ record.user }}</b> <small class="muted">({{ record.role }})</small>
+          </template>
+          <template v-else-if="column.key === 'moduleName'">
+            <span class="tag info">{{ record.moduleName }}</span>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <b>{{ record.action }}</b>
+          </template>
+          <template v-else-if="column.key === 'target'">
+            <span class="mono muted" style="font-size:12px">{{ record.target }}</span>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <StatusBadge
+              :kind="(record.status === 'success' ? 'good' : record.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
+              :text="record.status === 'success' ? '成功' : record.status === 'warn' ? '告警' : '失败'"
+            />
+          </template>
+          <template v-else-if="column.key === 'summary'">
+            <span style="font-size:12.5px">{{ record.summary }}</span>
+          </template>
+          <template v-else-if="column.key === 'act'">
+            <a-button size="small" type="link" @click="viewDetail(record)">详情</a-button>
+          </template>
+        </template>
+      </a-table>
     </div>
   </template>
 
-  <!-- TAB 2: 算法数据处理日志 (需求 8) -->
+  <!-- TAB 2: 算法数据处理日志 -->
   <template v-else-if="activeMainTab === 'pipeline'">
     <div class="card">
       <div class="toolbar">
@@ -369,67 +403,90 @@ function exportAlgCsv() {
         </a-select>
       </div>
 
-      <div style="overflow-x:auto">
-        <table class="stbl" aria-label="算法数据处理日志表格">
-          <thead>
-            <tr>
-              <th style="width:100px">日志编号</th>
-              <th style="width:105px">关联批次</th>
-              <th style="width:140px">记录时间</th>
-              <th style="width:160px">处理阶段</th>
-              <th style="width:160px">算法算子节点</th>
-              <th style="width:85px">级别</th>
-              <th style="width:85px">耗时</th>
-              <th>算法执行输出</th>
-              <th style="width:70px">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="al in filteredAlgLogs" :key="al.id">
-              <td class="mono font-bold">{{ al.id }}</td>
-              <td class="mono text-accent">{{ al.batchId }}</td>
-              <td class="num muted" style="font-size:12px">{{ al.time }}</td>
-              <td><span class="tag info">{{ al.stage }}</span></td>
-              <td class="mono" style="font-size:12px">{{ al.node }}</td>
-              <td>
-                <span
-                  class="tag"
-                  :class="al.level === 'INFO' ? 'good' : al.level === 'WARN' ? 'warn' : 'crit'"
-                >
-                  {{ al.level }}
-                </span>
-              </td>
-              <td class="num muted" style="font-size:12px">{{ al.durationMs }} ms</td>
-              <td style="font-size:12.5px" :class="{ 'text-crit': al.level === 'ERROR' }">
-                {{ al.message }}
-              </td>
-              <td>
-                <a-button size="small" type="link" @click="viewAlgDetail(al)">详情</a-button>
-              </td>
-            </tr>
-            <tr v-if="!filteredAlgLogs.length">
-              <td colspan="9" style="text-align:center;padding:24px" class="muted">没有匹配的算法处理日志</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <a-table
+        :data-source="filteredAlgLogs"
+        :columns="algCols"
+        row-key="id"
+        size="middle"
+        :pagination="{
+          current: algPage,
+          pageSize: 10,
+          showSizeChanger: false,
+          hideOnSinglePage: false,
+          showTotal: (total: number) => `共 ${total} 条日志`,
+          onChange: (p: number) => { algPage = p },
+        }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'id'">
+            <span class="mono font-bold">{{ record.id }}</span>
+          </template>
+          <template v-else-if="column.key === 'batchId'">
+            <span class="mono text-accent">{{ record.batchId }}</span>
+          </template>
+          <template v-else-if="column.key === 'time'">
+            <span class="num muted" style="font-size:12px">{{ record.time }}</span>
+          </template>
+          <template v-else-if="column.key === 'stage'">
+            <span class="tag info">{{ record.stage }}</span>
+          </template>
+          <template v-else-if="column.key === 'node'">
+            <span class="mono" style="font-size:12px">{{ record.node }}</span>
+          </template>
+          <template v-else-if="column.key === 'level'">
+            <span
+              class="tag"
+              :class="record.level === 'INFO' ? 'good' : record.level === 'WARN' ? 'warn' : 'crit'"
+            >
+              {{ record.level }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'durationMs'">
+            <span class="num muted" style="font-size:12px">{{ record.durationMs }} ms</span>
+          </template>
+          <template v-else-if="column.key === 'message'">
+            <span style="font-size:12.5px" :class="{ 'text-crit': record.level === 'ERROR' }">
+              {{ record.message }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'act'">
+            <a-button size="small" type="link" @click="viewAlgDetail(record)">详情</a-button>
+          </template>
+        </template>
+      </a-table>
     </div>
   </template>
 
-  <!-- 用户审计日志详情模态框 -->
-  <a-modal v-model:open="detailModal.open" title="审计流水记录详情" :width="680" centered :footer="null">
-    <div v-if="detailModal.entry" style="display:flex;flex-direction:column;gap:14px">
-      <div class="row between" style="background:var(--surface-3);padding:10px 14px;border-radius:6px">
-        <div class="row" style="gap:8px">
-          <span class="mono" style="font-size:15px;font-weight:700">{{ detailModal.entry.traceId }}</span>
-          <a-button size="small" type="text" @click="copyText(detailModal.entry!.traceId)">复制</a-button>
+  <!-- 用户审计日志详情抽屉 -->
+  <a-drawer
+    :open="detailModal.open"
+    placement="right"
+    :width="640"
+    :closable="false"
+    destroy-on-close
+    @close="detailModal.open = false"
+  >
+    <template #title>
+      <div v-if="detailModal.entry" style="display:flex;flex-direction:column;gap:8px;width:100%">
+        <div class="row between">
+          <div class="row" style="gap:8px">
+            <span class="mono" style="font-weight:700">{{ detailModal.entry.traceId }}</span>
+            <a-button size="small" type="text" @click="copyText(detailModal.entry!.traceId)">复制</a-button>
+          </div>
+          <button type="button" class="icon-btn" aria-label="关闭" @click="detailModal.open = false">
+            <AppIcon name="x" />
+          </button>
         </div>
-        <StatusBadge
-          :kind="(detailModal.entry.status === 'success' ? 'good' : detailModal.entry.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
-          :text="detailModal.entry.status === 'success' ? '执行成功' : detailModal.entry.status === 'warn' ? '审核预警/打回' : '执行失败'"
-        />
+        <div class="row" style="gap:8px">
+          <StatusBadge
+            :kind="(detailModal.entry.status === 'success' ? 'good' : detailModal.entry.status === 'warn' ? 'warn' : 'crit') as BadgeKind"
+            :text="detailModal.entry.status === 'success' ? '执行成功' : detailModal.entry.status === 'warn' ? '审核预警/打回' : '执行失败'"
+          />
+          <span style="font-size:14px;font-weight:600">{{ detailModal.entry.action }} · {{ detailModal.entry.moduleName }}</span>
+        </div>
       </div>
-
+    </template>
+    <div v-if="detailModal.entry" style="display:flex;flex-direction:column;gap:16px">
       <div class="detail-grid">
         <div class="detail-row"><span class="k">日志主键</span><span class="v mono">{{ detailModal.entry.id }}</span></div>
         <div class="detail-row"><span class="k">记录时间</span><span class="v num">{{ detailModal.entry.time }}</span></div>
@@ -442,24 +499,40 @@ function exportAlgCsv() {
         <div class="detail-row" style="grid-column: span 2"><span class="k">业务说明</span><span class="v">{{ detailModal.entry.summary }}</span></div>
       </div>
     </div>
-  </a-modal>
+  </a-drawer>
 
-  <!-- 算法数据处理日志详情模态框 -->
-  <a-modal v-model:open="algDetailModal.open" title="算法数据处理日志详情" :width="700" centered :footer="null">
-    <div v-if="algDetailModal.log" style="display:flex;flex-direction:column;gap:14px">
-      <div class="row between" style="background:var(--surface-3);padding:10px 14px;border-radius:6px">
-        <div class="row center" style="gap:8px">
-          <span class="mono" style="font-size:15px;font-weight:700">{{ algDetailModal.log.id }}</span>
-          <span class="tag info">{{ algDetailModal.log.batchId }}</span>
+  <!-- 算法数据处理日志详情抽屉 -->
+  <a-drawer
+    :open="algDetailModal.open"
+    placement="right"
+    :width="640"
+    :closable="false"
+    destroy-on-close
+    @close="algDetailModal.open = false"
+  >
+    <template #title>
+      <div v-if="algDetailModal.log" style="display:flex;flex-direction:column;gap:8px;width:100%">
+        <div class="row between">
+          <div class="row" style="gap:8px">
+            <span class="mono" style="font-weight:700">{{ algDetailModal.log.id }}</span>
+            <span class="tag info">{{ algDetailModal.log.batchId }}</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="关闭" @click="algDetailModal.open = false">
+            <AppIcon name="x" />
+          </button>
         </div>
-        <span
-          class="tag"
-          :class="algDetailModal.log.level === 'INFO' ? 'good' : algDetailModal.log.level === 'WARN' ? 'warn' : 'crit'"
-        >
-          {{ algDetailModal.log.level }}
-        </span>
+        <div class="row" style="gap:8px">
+          <span
+            class="tag"
+            :class="algDetailModal.log.level === 'INFO' ? 'good' : algDetailModal.log.level === 'WARN' ? 'warn' : 'crit'"
+          >
+            {{ algDetailModal.log.level }}
+          </span>
+          <span style="font-size:14px;font-weight:600">{{ algDetailModal.log.stage }}</span>
+        </div>
       </div>
-
+    </template>
+    <div v-if="algDetailModal.log" style="display:flex;flex-direction:column;gap:16px">
       <div class="detail-grid">
         <div class="detail-row"><span class="k">记录时间</span><span class="v num">{{ algDetailModal.log.time }}</span></div>
         <div class="detail-row"><span class="k">执行耗时</span><span class="v num">{{ algDetailModal.log.durationMs }} 毫秒</span></div>
@@ -468,18 +541,18 @@ function exportAlgCsv() {
       </div>
 
       <div class="field">
-        <span class="label">执行消息 (Message)</span>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">执行消息 (Message)</div>
         <div class="mono" style="padding:10px 12px;background:#090d16;color:#38bdf8;border-radius:6px;font-size:12px">
           {{ algDetailModal.log.message }}
         </div>
       </div>
 
       <div v-if="algDetailModal.log.details" class="field">
-        <span class="label">算子详细追踪与技术参数 (Trace Details)</span>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">算子详细追踪与技术参数 (Trace Details)</div>
         <pre class="diff-pre" style="padding:10px 12px;background:#090d16;color:#a5f3fc;border-radius:6px;font-size:12px">{{ algDetailModal.log.details }}</pre>
       </div>
     </div>
-  </a-modal>
+  </a-drawer>
 </template>
 
 <style scoped>

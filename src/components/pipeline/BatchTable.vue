@@ -8,17 +8,30 @@ import type { Batch } from '@/stores/pipeline'
 defineProps<{ rows: Batch[]; mayEdit: boolean }>()
 const emit = defineEmits<{ (e: 'open', id: string): void; (e: 'retry', id: string): void }>()
 const columns = [
-  { title: '批次', key: 'id' },
-  { title: '来源任务', key: 'task' },
-  { title: '条数 / 大小', key: 'size', align: 'right' as const },
-  { title: '阶段进度', key: 'trk', width: 260 },
-  { title: '状态', key: 'state' },
-  { title: '操作', key: 'op', align: 'right' as const },
+  { title: '批次', key: 'id', align: 'center' as const },
+  { title: '来源任务', key: 'task', align: 'center' as const },
+  { title: '条数 / 大小', key: 'size', align: 'center' as const },
+  { title: '阶段进度', key: 'trk', width: 260, align: 'center' as const },
+  { title: '状态', key: 'state', align: 'center' as const },
+  { title: '操作', key: 'op', align: 'center' as const },
 ]
 const customRow = (b: Batch) => ({ class: 'row-click', onClick: () => emit('open', b.id) })
 </script>
 <template>
-  <a-table v-if="rows.length" :columns="columns" :data-source="rows" row-key="id" :pagination="false" :custom-row="customRow" :scroll="{ x: 820 }">
+  <a-table
+    v-if="rows.length"
+    :columns="columns"
+    :data-source="rows"
+    row-key="id"
+    :pagination="{
+      pageSize: 10,
+      showSizeChanger: false,
+      hideOnSinglePage: false,
+      showTotal: (n: number) => `共 ${n} 个批次`,
+    }"
+    :custom-row="customRow"
+    :scroll="{ x: 820 }"
+  >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'id'"><span class="mono">{{ (record as Batch).id }}</span></template>
       <template v-else-if="column.key === 'task'">

@@ -101,13 +101,13 @@ async function remove(u: UserRow) {
 }
 
 const columns = [
-  { title: '用户', key: 'user', width: 220 },
-  { title: '角色', key: 'role', width: 130 },
-  { title: '部门', dataIndex: 'dept', key: 'dept', width: 130 },
-  { title: '联系电话', key: 'phone', width: 150 },
-  { title: '最近登录', key: 'last', width: 120 },
-  { title: '状态', key: 'on', width: 110 },
-  { title: '操作', key: 'act', width: 230, fixed: 'right' as const },
+  { title: '用户', key: 'user', width: 220, align: 'center' as const },
+  { title: '角色', key: 'role', width: 130, align: 'center' as const },
+  { title: '部门', dataIndex: 'dept', key: 'dept', width: 130, align: 'center' as const },
+  { title: '联系电话', key: 'phone', width: 150, align: 'center' as const },
+  { title: '最近登录', key: 'last', width: 120, align: 'center' as const },
+  { title: '状态', key: 'on', width: 110, align: 'center' as const },
+  { title: '操作', key: 'act', width: 230, fixed: 'right' as const, align: 'center' as const },
 ]
 </script>
 
@@ -134,19 +134,19 @@ const columns = [
     </div>
     <a-table row-key="id" :columns="columns" :data-source="rows" :scroll="{ x: 1100 }" :pagination="{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 个账号` }">
       <template #bodyCell="{ column, record }">
-        <div v-if="column.key === 'user'" class="u-cell">
+        <div v-if="column.key === 'user'" class="u-cell" style="justify-content:center">
           <span class="u-av" :class="{ off: !record.on }">{{ record.name.slice(0, 1) }}</span>
-          <div class="cell-main"><span>{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span><small class="mono">{{ record.u }} · {{ record.email || '—' }}</small></div>
+          <div class="cell-main" style="align-items:center;text-align:center"><span>{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span><small class="mono">{{ record.u }} · {{ record.email || '—' }}</small></div>
         </div>
         <StatusBadge v-else-if="column.key === 'role'" :kind="access.roleMap[record.role]?.all ? 'info' : ''" :text="roleName(record.role)" />
         <span v-else-if="column.key === 'phone'" class="mono muted">{{ record.phone || '—' }}</span>
         <span v-else-if="column.key === 'last'" class="muted">{{ record.last }}</span>
-        <div v-else-if="column.key === 'on'" class="row" style="gap:8px">
+        <div v-else-if="column.key === 'on'" class="row" style="gap:8px;justify-content:center">
           <a-switch size="small" :checked="record.on" :disabled="!mayEdit || record.id === session.uid" :aria-label="'启用 ' + record.name" @change="(v: boolean) => toggle(record as UserRow, v)" />
           <span :class="record.on ? '' : 'muted'">{{ record.on ? '启用' : '停用' }}</span>
           <a-tooltip v-if="record.mustReset" title="使用临时密码，尚未修改"><AppIcon name="clock" size="sm" style="color:var(--warn)" /></a-tooltip>
         </div>
-        <div v-else-if="column.key === 'act'" class="row" style="gap:2px">
+        <div v-else-if="column.key === 'act'" class="row" style="gap:2px;justify-content:center">
           <a-button size="small" type="text" :disabled="!mayEdit" :title="dis" @click="openEdit(record as UserRow)"><AppIcon name="pencil" size="sm" />编辑</a-button>
           <a-button size="small" type="text" :disabled="!mayEdit" :title="dis" @click="resetPwd(record as UserRow)"><AppIcon name="lock" size="sm" />重置密码</a-button>
           <a-button size="small" type="text" danger :disabled="!mayEdit || record.id === session.uid" :title="dis" @click="remove(record as UserRow)"><AppIcon name="trash" size="sm" />删除</a-button>

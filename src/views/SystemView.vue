@@ -21,6 +21,14 @@ const tab = ref('ip')
 
 /* IP 白名单 */
 const wl = reactive({ v: '', err: '' })
+const wlPage = ref(1)
+const wlCols = [
+  { title: '序号', key: 'idx', width: 80, align: 'center' as const },
+  { title: 'IP 地址 / CIDR 网段', dataIndex: 'ip', key: 'ip', align: 'center' as const },
+  { title: '访问策略', key: 'st', width: 120, align: 'center' as const },
+  { title: '操作', key: 'act', width: 120, align: 'center' as const },
+]
+const wlData = computed(() => sys.whitelist.map((ip, i) => ({ ip, i })))
 const IP_RE = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)(\/(3[0-2]|[12]?\d))?$/
 function addIp() {
   const v = wl.v.trim()
@@ -70,11 +78,11 @@ function saveCfg() {
 function resetCfg() { Object.assign(draft, settings.cfg) }
 const alertSw = [['alertOffline', '设备离线'], ['alertDrop', '通道掉帧'], ['alertSync', '同步误差超限'], ['alertStorage', '存储容量预警']] as const
 const auditCols = [
-  { title: '时间', dataIndex: 't', key: 't', width: 130 },
-  { title: '用户', dataIndex: 'u', key: 'u', width: 90 },
-  { title: '类型', dataIndex: 'k', key: 'k', width: 90 },
-  { title: '操作', dataIndex: 'd', key: 'd' },
-  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 150 },
+  { title: '时间', dataIndex: 't', key: 't', width: 140, align: 'center' as const },
+  { title: '用户', dataIndex: 'u', key: 'u', width: 100, align: 'center' as const },
+  { title: '类型', dataIndex: 'k', key: 'k', width: 100, align: 'center' as const },
+  { title: '操作', dataIndex: 'd', key: 'd', align: 'center' as const },
+  { title: '来源 IP', dataIndex: 'ip', key: 'ip', width: 150, align: 'center' as const },
 ]
 </script>
 
@@ -128,7 +136,39 @@ const auditCols = [
       <a-form layout="vertical"><a-form-item label="添加地址" extra="支持单个 IPv4 或 CIDR 网段" :validate-status="wl.err ? 'error' : ''" :help="wl.err">
         <div class="row"><a-input v-model:value="wl.v" class="mono" placeholder="如 10.20.1.0/24 或 192.168.1.8" :disabled="!isAdmin" @press-enter="addIp" /><a-button type="primary" :disabled="!isAdmin" :title="dis" @click="addIp">添加</a-button></div>
       </a-form-item></a-form>
-      <div v-if="sys.whitelist.length" class="list-i"><div v-for="(x, i) in sys.whitelist" :key="x" class="li"><span class="mono grow">{{ x }}</span><a-button size="small" type="text" :disabled="!isAdmin" :title="dis" @click="delIp(i)"><AppIcon name="trash" size="sm" />移除</a-button></div></div>
+      <div v-if="sys.whitelist.length">
+        <a-table
+          :data-source="wlData"
+          :columns="wlCols"
+          row-key="ip"
+          size="middle"
+          :pagination="{
+            current: wlPage,
+            pageSize: 8,
+            showSizeChanger: false,
+            hideOnSinglePage: false,
+            showTotal: (total: number) => `共 ${total} 条白名单`,
+            onChange: (p: number) => { wlPage = p },
+          }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'idx'">
+              <span class="num muted">{{ record.i + 1 }}</span>
+            </template>
+            <template v-else-if="column.key === 'ip'">
+              <span class="mono font-bold">{{ record.ip }}</span>
+            </template>
+            <template v-else-if="column.key === 'st'">
+              <span class="tag good">允许访问</span>
+            </template>
+            <template v-else-if="column.key === 'act'">
+              <a-button size="small" type="link" danger :disabled="!isAdmin" :title="dis" @click="delIp(record.i)">
+                <AppIcon name="trash" size="sm" />移除
+              </a-button>
+            </template>
+          </template>
+        </a-table>
+      </div>
       <EmptyState v-else icon="shield" title="白名单为空" desc="启用状态下将拒绝所有访问" />
     </div>
   </div>
@@ -145,7 +185,20 @@ const auditCols = [
         :options="kinds.map((k) => ({ value: k, label: k === 'all' ? '全部类型' : k }))"
       />
     </div>
-    <a-table row-key="t" :columns="auditCols" :data-source="auRows.map((r, i) => ({ ...r, i }))" :scroll="{ x: 620 }" :pagination="{ current: au.page, pageSize: 10, showSizeChanger: false, showTotal: (n: number) => `共 ${n} 条记录，保留 180 天` }" @change="(p: { current?: number }) => (au.page = p.current ?? 1)">
+    <a-table
+      row-key="t"
+      :columns="auditCols"
+      :data-source="auRows.map((r, i) => ({ ...r, i }))"
+      :scroll="{ x: 620 }"
+      :pagination="{
+        current: au.page,
+        pageSize: 10,
+        showSizeChanger: false,
+        hideOnSinglePage: false,
+        showTotal: (n: number) => `共 ${n} 条记录，保留 180 天`,
+      }"
+      @change="(p: { current?: number }) => (au.page = p.current ?? 1)"
+    >
       <template #bodyCell="{ column, record }">
         <span v-if="column.key === 't'" class="num muted">{{ record.t }}</span>
         <StatusBadge v-else-if="column.key === 'k'" kind="" :text="record.k" plain />

@@ -75,33 +75,19 @@ watch(
   }
 )
 
-const sortOf = (k: string) => (st.key === k ? st.dir : null)
 const columns = computed(() => [
-  { title: '数据集', key: 'name', width: 240, sorter: true, sortOrder: sortOf('name') },
-  { title: '标签', key: 'tags', width: 175 },
-  { title: '条数 / 片段', key: 'count', width: 108, align: 'right' as const, sorter: true, sortOrder: sortOf('count') },
-  { title: '体量大小', key: 'size', width: 96, align: 'right' as const, sorter: true, sortOrder: sortOf('size') },
-  { title: '完整率 / 质检状态', key: 'quality', width: 152, align: 'right' as const, sorter: true, sortOrder: sortOf('quality') },
-  { title: '状态', key: 'status', width: 132 },
-  { title: '更新时间', key: 'updated', width: 130, align: 'right' as const, sorter: true, sortOrder: sortOf('updated') },
-  { title: '操作', key: 'action', align: 'center' as const, width: 146, fixed: 'right' },
+  { title: '数据集', key: 'name', width: 240, align: 'center' as const },
+  { title: '标签', key: 'tags', width: 175, align: 'center' as const },
+  { title: '条数 / 片段', key: 'count', width: 120, align: 'center' as const },
+  { title: '体量大小', key: 'size', width: 110, align: 'center' as const },
+  { title: '完整率 / 质检状态', key: 'quality', width: 152, align: 'center' as const },
+  { title: '状态', key: 'status', width: 132, align: 'center' as const },
+  { title: '更新时间', key: 'updated', width: 130, align: 'center' as const },
+  { title: '操作', key: 'action', align: 'center' as const, width: 146, fixed: 'right' as const },
 ])
 
-function onChange(
-  p: { current?: number },
-  _f: unknown,
-  s: { columnKey?: string; order?: 'ascend' | 'descend' | null }
-) {
+function onChange(p: { current?: number }) {
   st.page = p.current ?? 1
-  if (s?.columnKey) {
-    if (s.order) {
-      st.key = String(s.columnKey)
-      st.dir = s.order
-    } else {
-      st.key = 'updated'
-      st.dir = 'descend'
-    }
-  }
 }
 
 const customRow = (r: Dataset) => ({
@@ -160,13 +146,14 @@ function handleDownloadRaw(d: Dataset) {
       :data-source="rows"
       :custom-row="customRow"
       :scroll="{ x: 980 }"
-      @change="onChange as never"
       :pagination="{
         current: st.page,
         pageSize: 8,
         showSizeChanger: false,
+        hideOnSinglePage: false,
         showTotal: (n: number) => `共 ${n} 个数据集`,
       }"
+      @change="onChange as never"
     >
       <template #bodyCell="{ column, record }">
         <div v-if="column.key === 'name'" class="cell-main">
@@ -176,7 +163,7 @@ function handleDownloadRaw(d: Dataset) {
           </span>
           <small>{{ record.id }} · {{ SCEN[record.scen]?.mode || '多模态采集' }}</small>
         </div>
-        <div v-else-if="column.key === 'tags'" class="row wrap" style="gap:4px">
+        <div v-else-if="column.key === 'tags'" class="row wrap" style="gap:4px;justify-content:center">
           <span v-for="t in record.tags.slice(0, 3)" :key="t" class="tag" :class="{ info: t.includes('原始') }">
             {{ t }}
           </span>

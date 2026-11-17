@@ -250,11 +250,11 @@ async function act(a: string) {
   tasks.touch(t)
 }
 const epCols = [
-  { title: '数据文件', key: 'file' },
-  { title: '时长', key: 'dur', align: 'right' as const },
-  { title: '完整率', key: 'integrity', align: 'right' as const },
-  { title: '同步误差', key: 'sync', align: 'right' as const },
-  { title: '结论', key: 'qc' },
+  { title: '数据文件', key: 'file', align: 'center' as const },
+  { title: '时长', key: 'dur', align: 'center' as const },
+  { title: '完整率', key: 'integrity', align: 'center' as const },
+  { title: '同步误差', key: 'sync', align: 'center' as const },
+  { title: '结论', key: 'qc', align: 'center' as const },
 ]
 </script>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -24,6 +24,11 @@ type Tab = 'all' | ActLevel
 const tab = ref<Tab>('all')
 const scen = ref<'all' | ScenKey | 'common'>('all')
 const q = ref('')
+const itemPage = ref(1)
+const logPage = ref(1)
+const scenePage = ref(1)
+const scenePageSize = 6
+
 function match(x: DictItem, t: Tab) {
   if (t === 'all') return true
   return x.category === 'action' && (x.level ?? 'compound') === t
@@ -36,6 +41,27 @@ const rows = computed(() =>
     return !k || [x.name, x.code, ...x.aliases].some((v) => v.toLowerCase().includes(k))
   })
 )
+
+const itemCols = [
+  { title: '编码', key: 'code', width: 120, align: 'center' as const },
+  { title: '名称', key: 'name', width: 130, align: 'center' as const },
+  { title: '分级', key: 'level', width: 110, align: 'center' as const },
+  { title: '场景', key: 'scen', width: 110, align: 'center' as const },
+  { title: '定义与边界说明', key: 'desc', align: 'center' as const },
+  { title: '别名', key: 'aliases', width: 150, align: 'center' as const },
+  { title: '引用', key: 'usage', width: 80, align: 'center' as const },
+  { title: '启用', key: 'status', width: 80, align: 'center' as const },
+  { title: '操作', key: 'act', width: 120, align: 'center' as const },
+]
+
+const logCols = [
+  { title: '时间', key: 't', width: 150, align: 'center' as const },
+  { title: '版本', key: 'ver', width: 90, align: 'center' as const },
+  { title: '操作人', key: 'by', width: 90, align: 'center' as const },
+  { title: '操作', key: 'op', width: 80, align: 'center' as const },
+  { title: '词条', key: 'target', width: 140, align: 'center' as const },
+  { title: '内容', key: 'summary', align: 'center' as const },
+]
 /** 被标注引用的次数 */
 const usage = (name: string) =>
   ann.clips.reduce((a, c) => a + c.segs.filter((s) => s.n === name).length, 0)
@@ -48,6 +74,7 @@ const scenOpts = computed(() => {
 })
 
 const LEVEL_OPTS = (Object.keys(LEVELS) as ActLevel[]).map((k) => ({ value: k, label: LEVELS[k] }))
+const levelLabel = (lv?: ActLevel) => LEVELS[lv ?? 'compound'] ?? '标准子任务'
 const scenLabel = (s: DictItem['scen']) => {
   if (s === 'common') return '通用'
   const found = dict.scenes.find((sc) => sc.scene_key === s)
@@ -202,6 +229,15 @@ const sceneList = computed(() => {
   })
 })
 
+const paginatedScenes = computed(() => {
+  const start = (scenePage.value - 1) * scenePageSize
+  return sceneList.value.slice(start, start + scenePageSize)
+})
+
+watch([tab, scen, q], () => { itemPage.value = 1 })
+watch([logOp, logBy, logQ], () => { logPage.value = 1 })
+watch([sceneSearch, sceneStatus], () => { scenePage.value = 1 })
+
 const sceneModal = reactive({
   open: false,
   isEdit: false,
@@ -348,7 +384,6 @@ function wordCountOfScene(sceneKey: string) {
           >
             <AppIcon name="layers" size="sm" />
             <span>标注词条字典</span>
-            <span class="count-badge">{{ dict.items.length }}</span>
           </button>
           <button
             type="button"
@@ -358,7 +393,6 @@ function wordCountOfScene(sceneKey: string) {
           >
             <AppIcon name="grid" size="sm" />
             <span>采集场景管理</span>
-            <span class="count-badge">{{ dict.scenes.length }}</span>
           </button>
         </div>
       </div>
@@ -397,31 +431,41 @@ function wordCountOfScene(sceneKey: string) {
           <a-select v-model:value="logOp" style="width:130px" aria-label="操作类型" :options="[{ value: 'all', label: '全部操作' }, ...OPS.map((v) => ({ value: v, label: v }))]" />
           <a-select v-model:value="logBy" style="width:130px" aria-label="操作人" :options="byOpts" />
         </div>
-        <table class="stbl" aria-label="字典操作记录">
-          <thead>
-            <tr>
-              <th style="width:150px">时间</th>
-              <th style="width:90px">版本</th>
-              <th style="width:90px">操作人</th>
-              <th style="width:80px">操作</th>
-              <th style="width:140px">词条</th>
-              <th>内容</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(c, i) in logs" :key="i">
-              <td class="num muted">{{ c.t }}</td>
-              <td><span class="mono ver">{{ c.ver }}</span></td>
-              <td>{{ c.by }}</td>
-              <td><span class="tag" :class="OP_CLS[c.op]">{{ c.op }}</span></td>
-              <td><b>{{ c.target }}</b></td>
-              <td class="muted">{{ c.summary }}</td>
-            </tr>
-            <tr v-if="!logs.length">
-              <td colspan="6" class="muted" style="text-align:center;padding:24px">没有匹配的记录</td>
-            </tr>
-          </tbody>
-        </table>
+        <a-table
+          :data-source="logs"
+          :columns="logCols"
+          row-key="t"
+          size="middle"
+          :pagination="{
+            current: logPage,
+            pageSize: 10,
+            showSizeChanger: false,
+            hideOnSinglePage: false,
+            showTotal: (total: number) => `共 ${total} 条记录`,
+            onChange: (p: number) => { logPage = p },
+          }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 't'">
+              <span class="num muted">{{ record.t }}</span>
+            </template>
+            <template v-else-if="column.key === 'ver'">
+              <span class="mono ver">{{ record.ver }}</span>
+            </template>
+            <template v-else-if="column.key === 'by'">
+              <span>{{ record.by }}</span>
+            </template>
+            <template v-else-if="column.key === 'op'">
+              <span class="tag" :class="OP_CLS[record.op as DictOp]">{{ record.op }}</span>
+            </template>
+            <template v-else-if="column.key === 'target'">
+              <b>{{ record.target }}</b>
+            </template>
+            <template v-else-if="column.key === 'summary'">
+              <span class="muted">{{ record.summary }}</span>
+            </template>
+          </template>
+        </a-table>
       </div>
     </template>
 
@@ -448,44 +492,59 @@ function wordCountOfScene(sceneKey: string) {
             ]"
           />
         </div>
-        <table class="stbl" aria-label="字典词条">
-          <thead>
-            <tr>
-              <th style="width:120px">编码</th>
-              <th style="width:120px">名称</th>
-              <th style="width:110px">分级</th>
-              <th style="width:110px;white-space:nowrap">场景</th>
-              <th>定义与边界说明</th>
-              <th style="width:150px">别名</th>
-              <th style="width:60px">引用</th>
-              <th style="width:64px">启用</th>
-              <th style="width:120px">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="x in rows" :key="x.id" :class="{ off: x.status !== 'active' }">
-              <td class="mono"><b>{{ x.code }}</b></td>
-              <td><b>{{ x.name }}</b> <span v-if="x.required" class="tag crit" style="font-size:11px">必选</span></td>
-              <td>
-                <span class="tag" :class="x.category === 'object' ? 'good' : x.level === 'abnormal' ? 'warn' : 'info'">
-                  {{ x.category === 'object' ? '物体' : LEVELS[x.level ?? 'compound'] }}
-                </span>
-              </td>
-              <td class="muted" style="white-space:nowrap">{{ scenLabel(x.scen) }}</td>
-              <td class="muted" style="font-size:12.5px">{{ x.desc }}</td>
-              <td><span v-for="a in x.aliases" :key="a" class="alias">{{ a }}</span></td>
-              <td class="num muted">{{ usage(x.name) }}</td>
-              <td><a-switch size="small" :checked="x.status === 'active'" :aria-label="'启用 ' + x.name" @change="toggle(x)" /></td>
-              <td style="white-space:nowrap">
-                <a-button size="small" type="link" @click="openEdit(x)">编辑</a-button>
-                <a-button size="small" type="link" danger @click="del(x)">删除</a-button>
-              </td>
-            </tr>
-            <tr v-if="!rows.length">
-              <td colspan="9" class="muted" style="text-align:center;padding:24px">没有匹配的词条</td>
-            </tr>
-          </tbody>
-        </table>
+        <a-table
+          :data-source="rows"
+          :columns="itemCols"
+          row-key="id"
+          size="middle"
+          :row-class-name="(r: DictItem) => r.status !== 'active' ? 'off' : ''"
+          :pagination="{
+            current: itemPage,
+            pageSize: 10,
+            showSizeChanger: false,
+            hideOnSinglePage: false,
+            showTotal: (total: number) => `共 ${total} 条词条`,
+            onChange: (p: number) => { itemPage = p },
+          }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'code'">
+              <span class="mono"><b>{{ record.code }}</b></span>
+            </template>
+            <template v-else-if="column.key === 'name'">
+              <b>{{ record.name }}</b>
+              <span v-if="record.required" class="tag crit" style="font-size:11px;margin-left:4px">必选</span>
+            </template>
+            <template v-else-if="column.key === 'level'">
+              <span class="tag" :class="record.category === 'object' ? 'good' : record.level === 'abnormal' ? 'warn' : 'info'">
+                {{ record.category === 'object' ? '物体' : levelLabel(record.level) }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'scen'">
+              <span class="muted" style="white-space:nowrap">{{ scenLabel(record.scen) }}</span>
+            </template>
+            <template v-else-if="column.key === 'desc'">
+              <span class="muted" style="font-size:12.5px">{{ record.desc }}</span>
+            </template>
+            <template v-else-if="column.key === 'aliases'">
+              <div class="row" style="gap:4px;flex-wrap:wrap">
+                <span v-for="a in record.aliases" :key="a" class="alias">{{ a }}</span>
+              </div>
+            </template>
+            <template v-else-if="column.key === 'usage'">
+              <span class="num muted">{{ usage(record.name) }}</span>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              <a-switch size="small" :checked="record.status === 'active'" :aria-label="'启用 ' + record.name" @change="toggle(record)" />
+            </template>
+            <template v-else-if="column.key === 'act'">
+              <div class="row" style="gap:8px">
+                <a-button size="small" type="link" @click="openEdit(record)">编辑</a-button>
+                <a-button size="small" type="link" danger @click="del(record)">删除</a-button>
+              </div>
+            </template>
+          </template>
+        </a-table>
       </div>
     </template>
   </template>
@@ -510,7 +569,7 @@ function wordCountOfScene(sceneKey: string) {
       </div>
 
       <div class="scenes-grid">
-        <div v-for="s in sceneList" :key="s.id" class="scene-card" :class="{ disabled: !s.is_active }">
+        <div v-for="s in paginatedScenes" :key="s.id" class="scene-card" :class="{ disabled: !s.is_active }">
           <div class="sc-header">
             <div class="sc-title-wrap">
               <h3 class="sc-name">{{ s.name }}</h3>
@@ -561,6 +620,17 @@ function wordCountOfScene(sceneKey: string) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="grid-pager">
+        <a-pagination
+          v-model:current="scenePage"
+          :total="sceneList.length"
+          :page-size="scenePageSize"
+          :show-size-changer="false"
+          :hide-on-single-page="false"
+          :show-total="(total: number) => `共 ${total} 个场景`"
+        />
       </div>
     </div>
   </template>

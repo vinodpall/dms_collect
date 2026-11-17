@@ -1,5 +1,5 @@
 /* 登录页 —— 与「具身智能训练场」登录页同一套深色科技风格 */
-.lg {
+.lg-page {
   --bg: #10233a; --field: #142842; --line: rgba(46,211,230,.18); --cyan: #2ED3E6; --cyan-dk: #00ACC1; --ink: #F3F8FC; --muted: #B6CADC; --dim: #8EA6BE;
   --bad: #FF7A7A; --ok: #45E3A8; --amber: #FFC15C;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
@@ -73,7 +73,7 @@
 @keyframes lg-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 
 @media (max-width: 960px) {
-  .lg { grid-template-columns: 1fr; height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
+  .lg-page { grid-template-columns: 1fr; height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
   .lg-canvas { opacity: .45; }
   .lg-caption { display: none; }
   .lg-brand { left: 20px; top: 18px; } .lg-brand h1 { font-size: 20px; letter-spacing: 3px; } .lg-brand svg { width: 36px; height: 36px; }

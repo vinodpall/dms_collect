@@ -162,7 +162,10 @@ export const useTasks = defineStore('tasks', () => {
       const g = d.name
       push(d, g, '连接状态', msgOf[d.st], '在线', d.st === 'online')
       if (d.st !== 'online') return
-      push(d, g, '标定状态', d.calib ? '已标定 · ' + d.calib.at : '未标定', '已完成一次性标定', !!d.calib)
+      const calText = d.calib
+        ? (d.calib.at && d.calib.at !== '已标定' ? '已标定 · ' + d.calib.at : '已标定')
+        : '未标定'
+      push(d, g, '标定状态', calText, '已完成一次性标定', !!d.calib)
       const occ = occupant(d.id, t.id)
       push(d, g, '设备占用', occ ? '被 ' + occ + ' 占用' : '空闲', '未被其他任务占用', !occ)
       if (d.type === 'VR 一体机' || d.type === '动捕手套' || d.type === 'UMI') { const b = Math.round(42 + r() * 55); push(d, g, '电量', b + '%', '> 30%', b > 30) }

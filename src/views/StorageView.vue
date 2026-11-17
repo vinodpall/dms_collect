@@ -52,7 +52,7 @@ const switches = [['backup', '自动备份', '每日 02:00 增量备份到备份
   <div class="grid g-main">
     <div class="card">
       <div class="card-head"><div><h2>冷热分层</h2><div class="sub">按最近访问时间自动迁移</div></div></div>
-      <a-table :pagination="false" row-key="t" :data-source="[{ t: 'hot' }, { t: 'warm' }, { t: 'cold' }]" :columns="[{ title: '层级', key: 'lv', width: 80 }, { title: '介质', key: 'media' }, { title: '规则', key: 'rule' }, { title: '占用', key: 'size', align: 'right' }]">
+      <a-table :pagination="false" row-key="t" :data-source="[{ t: 'hot' }, { t: 'warm' }, { t: 'cold' }]" :columns="[{ title: '层级', key: 'lv', width: 80, align: 'center' }, { title: '介质', key: 'media', align: 'center' }, { title: '规则', key: 'rule', align: 'center' }, { title: '占用', key: 'size', align: 'center' }]">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'lv'"><StatusBadge :kind="record.t === 'hot' ? 'info' : record.t === 'warm' ? 'warn' : ''" :text="record.t === 'hot' ? '热' : record.t === 'warm' ? '温' : '冷'" /></template>
           <template v-else-if="column.key === 'media'">{{ record.t === 'hot' ? 'NVMe SSD' : record.t === 'warm' ? 'SAS 阵列' : '大容量 HDD / 对象存储' }}</template>

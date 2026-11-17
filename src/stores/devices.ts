@@ -213,7 +213,7 @@ export const useDevices = defineStore('devices', () => {
             fw: item.firmware || '—',
             calib: item.is_calibrated
               ? {
-                  at: item.calibrated_at ? item.calibrated_at.slice(5, 10) : '已标定',
+                  at: item.calibrated_at ? item.calibrated_at.slice(5, 10) : '',
                   by: item.calibrated_by_name || '赵工',
                   items: item.calib_items || CALIB_ITEMS[typeName] || CALIB_ITEMS['其他'],
                 }

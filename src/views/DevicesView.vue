@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -29,8 +29,7 @@ const st = reactive({
   type: 'all',
   cal: 'all' as 'all' | 'yes' | 'no',
   q: '',
-  key: 'id',
-  dir: 'ascend' as 'ascend' | 'descend',
+  page: 1,
 })
 const drawerId = ref<string | null>(null)
 const faultOpen = ref(false)
@@ -46,34 +45,29 @@ const rows = computed(() => {
       (st.cal === 'all' || (st.cal === 'yes') === !!d.calib) &&
       (!q || (d.id + d.name + d.loc + d.type).toLowerCase().includes(q))
   )
-  const k = st.key as keyof Device,
-    s = st.dir === 'ascend' ? 1 : -1
-  const val = (d: Device) => (k === 'calib' ? d.calib?.at ?? '' : String(d[k]))
-  return out.slice().sort((a, b) => val(a).localeCompare(val(b), 'zh') * s)
+  return out.slice().sort((a, b) => a.id.localeCompare(b.id, 'zh'))
 })
 
-const sortOf = (k: string) => (st.key === k ? st.dir : null)
+watch(
+  () => [st.s, st.station, st.type, st.cal, st.q],
+  () => {
+    st.page = 1
+  }
+)
+
 const columns = computed(() => [
-  { title: '设备', key: 'name', sorter: true, sortOrder: sortOf('name') },
-  { title: '类型', dataIndex: 'type', key: 'type' },
-  { title: '所属工位', dataIndex: 'station', key: 'station' },
-  { title: '位置', dataIndex: 'loc', key: 'loc' },
-  { title: '状态', key: 'st', sorter: true, sortOrder: sortOf('st') },
-  { title: '标定', key: 'calib', sorter: true, sortOrder: sortOf('calib') },
-  { title: '当前占用', key: 'occ' },
-  { title: '固件', dataIndex: 'fw', key: 'fw' },
+  { title: '设备', key: 'name', align: 'center' as const },
+  { title: '类型', dataIndex: 'type', key: 'type', align: 'center' as const },
+  { title: '所属工位', dataIndex: 'station', key: 'station', align: 'center' as const },
+  { title: '位置', dataIndex: 'loc', key: 'loc', align: 'center' as const },
+  { title: '状态', key: 'st', align: 'center' as const },
+  { title: '标定', key: 'calib', align: 'center' as const },
+  { title: '当前占用', key: 'occ', align: 'center' as const },
+  { title: '固件', dataIndex: 'fw', key: 'fw', align: 'center' as const },
 ])
 
-function onChange(_p: unknown, _f: unknown, s: { columnKey?: string; order?: 'ascend' | 'descend' | null }) {
-  if (s?.columnKey) {
-    if (s.order) {
-      st.key = String(s.columnKey)
-      st.dir = s.order
-    } else {
-      st.key = 'id'
-      st.dir = 'ascend'
-    }
-  }
+function onTableChange(p: { current?: number }) {
+  st.page = p?.current ?? 1
 }
 const customRow = (r: Device) => ({ class: 'row-click', onClick: () => (drawerId.value = r.id) })
 
@@ -115,6 +109,9 @@ const stations = ref<StationItem[]>([
 
 const stationSearch = ref('')
 const stationStatus = ref<'all' | 'online' | 'offline'>('all')
+const stationPage = ref(1)
+const stationPageSize = 6
+
 const stationModal = reactive({
   open: false,
   isEdit: false,
@@ -155,6 +152,18 @@ const filteredStations = computed(() => {
       (s.remark && s.remark.toLowerCase().includes(q))
     )
   })
+})
+
+watch(
+  () => [stationSearch.value, stationStatus.value],
+  () => {
+    stationPage.value = 1
+  }
+)
+
+const paginatedStations = computed(() => {
+  const start = (stationPage.value - 1) * stationPageSize
+  return filteredStations.value.slice(start, start + stationPageSize)
 })
 
 function openAddStation() {
@@ -260,7 +269,6 @@ async function saveStation() {
           >
             <AppIcon name="cpu" size="sm" />
             <span>设备台账管理</span>
-            <span class="count-badge">{{ store.list.length }}</span>
           </button>
           <button
             type="button"
@@ -270,7 +278,6 @@ async function saveStation() {
           >
             <AppIcon name="layers" size="sm" />
             <span>采集工位配置</span>
-            <span class="count-badge">{{ stations.length }}</span>
           </button>
         </div>
       </div>
@@ -355,8 +362,8 @@ async function saveStation() {
         :data-source="rows"
         :custom-row="customRow"
         :scroll="{ x: 820 }"
-        :pagination="{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
-        @change="onChange as never"
+        :pagination="{ current: st.page, pageSize: 20, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
+        @change="onTableChange as never"
       >
         <template #bodyCell="{ column, record }">
           <div v-if="column.key === 'name'" class="cell-main">
@@ -366,7 +373,7 @@ async function saveStation() {
           <StatusBadge
             v-else-if="column.key === 'calib'"
             :kind="record.calib ? 'good' : 'warn'"
-            :text="record.calib ? '已标定 · ' + record.calib.at : '未标定'"
+            :text="record.calib ? (record.calib.at && record.calib.at !== '已标定' ? '已标定 · ' + record.calib.at : '已标定') : '未标定'"
           />
           <span v-else-if="column.key === 'occ'" :class="tasks.occupant(record.id) ? 'mono' : 'muted'">
             {{ tasks.occupant(record.id) ?? '空闲' }}
@@ -410,7 +417,7 @@ async function saveStation() {
       </div>
 
       <div class="stations-grid">
-        <div v-for="stn in filteredStations" :key="stn.id" class="station-card">
+        <div v-for="stn in paginatedStations" :key="stn.id" class="station-card">
           <div class="stn-header">
             <div>
               <div class="row center" style="gap:8px">
@@ -466,6 +473,17 @@ async function saveStation() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="grid-pager">
+        <a-pagination
+          v-model:current="stationPage"
+          :page-size="stationPageSize"
+          :total="filteredStations.length"
+          :show-size-changer="false"
+          :hide-on-single-page="false"
+          :show-total="(n: number) => `共 ${n} 个工位`"
+        />
       </div>
     </div>
   </template>
