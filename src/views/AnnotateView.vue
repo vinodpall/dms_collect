@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
 })
 
-const isVr = computed(() => (clip.value ? SCEN[clip.value.scen].mode.includes('VR') : false))
+const isVr = computed(() => (clip.value ? (SCEN[clip.value.scen]?.mode ?? '').includes('VR') : false))
 function clearBatch() { router.replace({ name: 'annotate' }) }
 </script>
 
@@ -508,7 +508,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
               <StatusBadge :kind="CLIP_ST[clip.status][0] as BadgeKind" :text="CLIP_ST[clip.status][1]" />
             </div>
             <div class="muted" style="font-size:12.5px;margin-top:2px">
-              {{ SCEN[clip.scen].name }} · {{ SCEN[clip.scen].mode }} · {{ clip.dur }} 秒 · 批次 {{ clip.batch }}
+              {{ SCEN[clip.scen]?.name ?? clip.scen }} · {{ SCEN[clip.scen]?.mode ?? '' }} · {{ clip.dur }} 秒 · 批次 {{ clip.batch }}
               <template v-if="isVr"> · 含左右手灵巧手关节数据</template>
             </div>
           </div>

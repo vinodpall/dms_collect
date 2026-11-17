@@ -31,7 +31,7 @@ const emit = defineEmits<{ pick: [id: string]; 'update:filter': [v: string] }>()
         <button v-for="c in clips" :key="c.id" type="button" class="clip" :class="{ cur: cur === c.id }" @click="emit('pick', c.id)">
           <span class="f">{{ c.file }}</span>
           <span class="row between">
-            <span class="muted" style="font-size:12px">{{ SCEN[c.scen].short }} · {{ c.dur }} s · {{ c.batch }}</span>
+            <span class="muted" style="font-size:12px">{{ SCEN[c.scen]?.short ?? c.scen }} · {{ c.dur }} s · {{ c.batch }}</span>
             <StatusBadge :kind="CLIP_ST[c.status][0] as BadgeKind" :text="CLIP_ST[c.status][1]" />
           </span>
           <slot name="meta" :clip="c" />

@@ -263,7 +263,7 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
                 <span v-if="clip.status === 'submitted'" class="tag" :class="clip.prio === 'urgent' ? 'crit' : ''">{{ clip.prio === 'urgent' ? '加急' : '普通' }} · {{ dueText(clip) }}</span>
               </div>
               <div class="muted" style="font-size:12.5px;margin-top:2px">
-                {{ SCEN[clip.scen].name }} · {{ clip.dur }} 秒 · 批次 {{ clip.batch }} · 标注员 {{ clip.owner ?? '-' }}
+                {{ SCEN[clip.scen]?.name ?? clip.scen }} · {{ clip.dur }} 秒 · 批次 {{ clip.batch }} · 标注员 {{ clip.owner ?? '-' }}
               </div>
             </div>
           </div>

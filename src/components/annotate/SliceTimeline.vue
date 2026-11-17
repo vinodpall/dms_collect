@@ -11,10 +11,11 @@ const MIN = 0.3, SNAP = 0.12
 const track = ref<HTMLElement>()
 const sorted = computed(() => props.clip.segs.slice().sort((a, b) => a.s - b.s))
 const ticks = computed(() => {
-  const step = props.clip.dur > 40 ? 5 : props.clip.dur > 20 ? 2 : 1
-  return Array.from({ length: Math.floor(props.clip.dur / step) + 1 }, (_, i) => i * step)
+  const dur = props.clip.dur > 0 ? props.clip.dur : 1
+  const step = dur > 40 ? 5 : dur > 20 ? 2 : 1
+  return Array.from({ length: Math.floor(dur / step) + 1 }, (_, i) => i * step)
 })
-const pct = (v: number) => (v / props.clip.dur) * 100
+const pct = (v: number) => (props.clip.dur > 0 && Number.isFinite(v) ? (v / props.clip.dur) * 100 : 0)
 const r1 = (v: number) => Math.round(v * 10) / 10
 
 type Drag =
@@ -98,7 +99,8 @@ function onUp(e: PointerEvent) {
     const s = r1(Math.min(d.a, d.b)), en = r1(Math.max(d.a, d.b))
     if (en - s >= MIN) {
       const used = new Set(props.clip.segs.map((x) => x.n))
-      const n = SUB_NAMES[props.clip.scen].find((x) => !used.has(x)) ?? SUB_NAMES[props.clip.scen][0]
+      const candidates = SUB_NAMES[props.clip.scen] || []
+      const n = candidates.find((x) => !used.has(x)) ?? candidates[0] ?? '未命名'
       const seg: Seg = { id: newSegId(), s, e: en, n }
       props.clip.segs.push(seg); emit('select', seg.id); emit('changed')
     } else { emit('select', null); emit('update:t', d.a) }

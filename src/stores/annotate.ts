@@ -43,15 +43,17 @@ export const SUB_NAMES = new Proxy({} as Record<ScenKey, string[]>, {
 
 export const SUB_COLORS = ['#2F6FD1', '#2C8F7B', '#B86E1A', '#8A5CC9', '#C2476B', '#4A8FB8', '#D97706', '#059669', '#7C3AED', '#DB2777']
 
-function hashStr(s: string) {
+function hashStr(s = '') {
+  const str = String(s || '')
   let h = 0
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0
   return Math.abs(h)
 }
 
-export const colorOf = (_scen: unknown, name: string) => {
-  let idx = dictNames().indexOf(name)
-  if (idx < 0) idx = hashStr(name)
+export const colorOf = (_scen: unknown, name = '') => {
+  const key = String(name || '')
+  let idx = dictNames().indexOf(key)
+  if (idx < 0) idx = hashStr(key)
   return SUB_COLORS[idx % SUB_COLORS.length]
 }
 
@@ -117,19 +119,37 @@ export const useAnnotate = defineStore('annotate', () => {
     return !!(undoHistory.value[clipId] && undoHistory.value[clipId].length > 0)
   }
 
+  const DEFAULT_SEQ: Record<string, string[]> = {
+    qmd: ['抓取轮毂', '放置工位', '夹紧密封', '充气保压', '复位下料'],
+    fhd: ['取防护堵', '对准装配', '按压卡紧', '复位确认'],
+  }
+  const FALLBACK_SEQ = ['准备就绪', '执行抓取', '操作放置', '复位结束']
+
   const me = () => useSession().info.user
   function mkSegs(i: number, scen: ScenKey, dur: number, parts: number): Seg[] {
     const r = rng(900 + i)
-    const preset = dict.sequenceFor(scen)
+    const dictSeq = dict.sequenceFor(scen)
+    const preset = dictSeq.length ? dictSeq : (DEFAULT_SEQ[scen] ?? FALLBACK_SEQ)
+    const count = Math.max(1, parts)
+    const denom = Math.max(count, preset.length)
     const cuts = [0]
-    for (let k = 1; k < parts; k++) cuts.push(+((dur * k) / preset.length + (r() - 0.5)).toFixed(1))
-    cuts.push(parts === preset.length ? dur : +((dur * parts) / preset.length).toFixed(1))
-    return Array.from({ length: parts }, (_, k) => ({ id: newSegId(), s: cuts[k], e: cuts[k + 1], n: preset[k % preset.length] }))
+    for (let k = 1; k < count; k++) {
+      const prev = cuts[k - 1]
+      const raw = +((dur * k) / denom + (r() - 0.5) * 0.4).toFixed(1)
+      cuts.push(Math.min(+(dur - 0.3 * (count - k)).toFixed(1), Math.max(+(prev + 0.4).toFixed(1), raw)))
+    }
+    cuts.push(count === denom ? dur : Math.min(dur, +((dur * count) / denom).toFixed(1)))
+    return Array.from({ length: count }, (_, k) => ({
+      id: newSegId(),
+      s: cuts[k],
+      e: Math.max(+(cuts[k] + 0.3).toFixed(1), cuts[k + 1]),
+      n: preset[k % preset.length],
+    }))
   }
 
   function mk(i: number, scen: ScenKey, batch: string, status: ClipStatus, parts: number, extra: Partial<Clip> = {}): Clip {
     const r = rng(500 + i), dur = Math.round(14 + r() * 14)
-    return { id: 'C' + (200 + i), file: nameFile(SCEN[scen].code, TODAY, 120 - i, OPS[i % 4].c), scen, dur, batch, status, segs: parts ? mkSegs(i, scen, dur, parts) : [], ...extra }
+    return { id: 'C' + (200 + i), file: nameFile(SCEN[scen]?.code ?? String(scen).toUpperCase(), TODAY, 120 - i, OPS[i % 4].c), scen, dur, batch, status, segs: parts ? mkSegs(i, scen, dur, parts) : [], ...extra }
   }
 
   const ME = me()
@@ -151,7 +171,7 @@ export const useAnnotate = defineStore('annotate', () => {
 
   const c1 = clips.value[1]
   c1.reject = { reason: '“夹紧密封”结束时间偏早，应覆盖到开始充气前', by: '陈静', t: '今天 15:48' }
-  c1.segs[1].flag = '结束时间偏早'
+  if (c1.segs[1]) c1.segs[1].flag = '结束时间偏早'
 
   const byId = (id: string) => clips.value.find((c) => c.id === id)
   const countOf = (st: ClipStatus | ClipStatus[]) => clips.value.filter((c) => (Array.isArray(st) ? st.includes(c.status) : c.status === st)).length

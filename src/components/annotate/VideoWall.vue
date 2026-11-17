@@ -6,8 +6,8 @@ import { CAM_NAMES, FINGERS, JOINTS, joint, traj } from './motion'
 
 const props = defineProps<{ clip: Clip; t: number; playing: boolean }>()
 const u = computed(() => (props.clip.dur ? props.t / props.clip.dur : 0))
-const isVr = computed(() => SCEN[props.clip.scen].mode.includes('VR'))
-const names = computed(() => CAM_NAMES[props.clip.scen])
+const isVr = computed(() => (SCEN[props.clip.scen]?.mode ?? '').includes('VR'))
+const names = computed(() => CAM_NAMES[props.clip.scen] ?? CAM_NAMES.qmd)
 const pos = computed(() => traj(u.value, props.clip.scen))
 
 /* 每路相机用不同的观察角度投影末端位置 */

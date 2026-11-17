@@ -21,6 +21,15 @@ const loaders: Record<PageKey, () => Promise<unknown>> = {
   roles: () => import('@/views/RolesView.vue'),
 }
 
+if (typeof window !== 'undefined') {
+  const { pathname, search, hash } = window.location
+  if (pathname && pathname !== '/' && pathname !== '/index.html') {
+    const cleanHash = hash && hash !== '#' ? hash : `#${pathname.startsWith('/') ? pathname : '/' + pathname}`
+    const cleanSearch = cleanHash.includes('?') ? '' : search
+    window.history.replaceState(null, '', `/${cleanSearch}${cleanHash}`)
+  }
+}
+
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [

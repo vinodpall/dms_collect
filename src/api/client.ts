@@ -87,8 +87,10 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
       /* ignore */
     }
     window.dispatchEvent(new CustomEvent('dms:unauthorized'))
-    // 路由采用 createWebHashHistory()，避免使用 history pathname 跳转导致 404
-    if (!window.location.hash.startsWith('#/login')) {
+    // 路由采用 createWebHashHistory()，避免使用 history pathname 跳转导致 404 或产生 /login#/xxx
+    if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
+      window.history.replaceState(null, '', '/#/login')
+    } else if (!window.location.hash.startsWith('#/login')) {
       window.location.hash = '#/login'
     }
     throw new ApiError('登录已过期，请重新登录', 401)
