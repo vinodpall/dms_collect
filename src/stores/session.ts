@@ -175,9 +175,14 @@ export const useSession = defineStore('session', () => {
     }
   }
 
+  const SIDE_COLLAPSED_KEY = 'dms_side_collapsed'
   const theme = ref<ThemeMode>('dark')
   const dark = computed(() => true)
-  const collapsed = ref(false)
+  const collapsed = ref(lsGet(SIDE_COLLAPSED_KEY) === '1')
+  function toggleCollapsed() {
+    collapsed.value = !collapsed.value
+    lsSet(SIDE_COLLAPSED_KEY, collapsed.value ? '1' : '0')
+  }
   document.documentElement.setAttribute('data-theme', 'dark')
   document.documentElement.classList.add('cl-theme')
 
@@ -221,6 +226,7 @@ export const useSession = defineStore('session', () => {
     theme,
     dark,
     collapsed,
+    toggleCollapsed,
     info,
     isAdmin,
     can,

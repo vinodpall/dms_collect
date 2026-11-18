@@ -40,8 +40,9 @@
 .pp .av { width: 30px; height: 30px; display: grid; place-items: center; background: linear-gradient(135deg, #12B5CB, #1E88E5); color: #fff; font-weight: 600; clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px)); }
 
 .pp-body { flex: 1; min-height: 0; display: flex; }
-.pp-side { flex: none; width: 216px; display: flex; flex-direction: column; background: var(--side-bg); border-right: 1px solid rgba(var(--glow),.12); }
-.pp-menu.ant-menu { flex: 1; overflow-y: auto; background: transparent !important; border-inline-end: 0 !important; padding: 6px 10px 12px; }
+.pp-side { flex: none; width: 216px; display: flex; flex-direction: column; background: var(--side-bg); border-right: 1px solid rgba(var(--glow),.12); transition: width .2s cubic-bezier(.2, 0, 0, 1); overflow: hidden; }
+.pp-side.collapsed { width: 64px; }
+.pp-menu.ant-menu { flex: 1; width: 100% !important; overflow-y: auto; overflow-x: hidden; background: transparent !important; border-inline-end: 0 !important; padding: 6px 10px 12px; }
 .pp-menu .ant-menu-item-group-title { padding: 14px 12px 4px; font-size: 11px; letter-spacing: .14em; color: var(--faint); }
 .pp-menu .ant-menu-item { height: 38px; line-height: 38px; border-radius: 6px; margin-block: 2px; color: var(--muted); }
 .pp-menu .ant-menu-item-selected { color: var(--menu-on) !important; background: linear-gradient(90deg, rgba(var(--glow),.26), rgba(var(--glow),.04)) !important; box-shadow: inset 2px 0 0 var(--cyan); }
@@ -49,8 +50,22 @@
 .pp-menu .ant-menu-item.pp-menu-unwired .pp-menu-name,
 .pp-menu .ant-menu-item.pp-menu-unwired:hover .pp-menu-name,
 .pp-menu .ant-menu-item-selected.pp-menu-unwired .pp-menu-name { color: #FF5C5C !important; }
-.pp-side-foot { padding: 14px 20px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
-.pp i.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); display: inline-block; animation: pp-blink 3s ease-in-out infinite; }
+.pp-side.collapsed .pp-menu.ant-menu { padding: 8px 6px 12px; }
+.pp-side.collapsed .pp-menu .ant-menu-item-group-title { display: none !important; }
+.pp-side.collapsed .pp-menu .ant-menu-item-group:not(:first-child) { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(var(--glow), .1); }
+.pp-side.collapsed .pp-menu .ant-menu-item { width: 100% !important; padding: 0 !important; padding-inline: 0 !important; margin-inline: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; }
+.pp-side.collapsed .pp-menu .ant-menu-item .ant-menu-item-icon { margin-inline-end: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; }
+.pp-side.collapsed .pp-menu .ant-menu-item .ant-menu-title-content { display: none !important; }
+.pp-side.collapsed .pp-menu .ant-menu-item.pp-menu-unwired .ant-menu-item-icon,
+.pp-side.collapsed .pp-menu .ant-menu-item.pp-menu-unwired:hover .ant-menu-item-icon,
+.pp-side.collapsed .pp-menu .ant-menu-item-selected.pp-menu-unwired .ant-menu-item-icon { color: #FF5C5C !important; }
+.pp-side-foot { padding: 10px 12px 10px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; }
+.pp-foot-status { display: inline-flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.pp-foot-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-collapse-btn { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(var(--glow), .22); border-radius: 6px; background: rgba(var(--glow), .06); color: var(--muted); cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
+.pp-collapse-btn:hover { color: var(--cyan); background: rgba(var(--glow), .14); border-color: rgba(var(--glow), .48); }
+.pp-side.collapsed .pp-side-foot { padding: 10px 6px; justify-content: center; gap: 6px; }
+.pp i.dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); display: inline-block; animation: pp-blink 3s ease-in-out infinite; }
 @keyframes pp-blink { 50% { opacity: .35; } }
 .pp-main { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 28px; }
 .pp-main.flush { padding: 0; overflow: hidden; }

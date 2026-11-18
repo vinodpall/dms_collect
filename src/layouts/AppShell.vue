@@ -318,20 +318,39 @@ watch(current, (p) => { document.title = PAGE_META[p].title + ' · 数采管理�
       </div>
     </header>
     <div class="pp-body">
-      <aside class="pp-side">
-        <a-menu mode="inline" :selected-keys="selected" class="pp-menu" @click="(e: any) => go(String(e.key))">
+      <aside class="pp-side" :class="{ collapsed: session.collapsed }">
+        <a-menu
+          mode="inline"
+          :inline-collapsed="session.collapsed"
+          :selected-keys="selected"
+          class="pp-menu"
+          @click="(e: any) => go(String(e.key))"
+        >
           <a-menu-item-group v-for="g in groups" :key="g.g" :title="g.g">
             <a-menu-item v-for="id in g.items" :key="id" :class="{ 'pp-menu-unwired': UNWIRED_PAGES.has(id) }">
               <template #icon><AppIcon :name="PAGE_META[id].icon" /></template><span class="pp-menu-name">{{ PAGE_META[id].title }}</span><span v-if="badge(id)" class="pp-mbadge" :class="{ soft: badge(id)!.soft }">{{ badge(id)!.n }}</span>
             </a-menu-item>
           </a-menu-item-group>
         </a-menu>
-        <a-tooltip :title="sysHealthTip" placement="right">
-          <div class="pp-side-foot">
-            <i class="dot" :style="sysHealthy ? undefined : 'background:var(--crit);box-shadow:0 0 8px var(--crit)'" />
-            {{ sysHealthy ? '系统运行正常' : '后端服务异常' }}
-          </div>
-        </a-tooltip>
+        <div class="pp-side-foot">
+          <a-tooltip :title="session.collapsed ? `${sysHealthy ? '系统运行正常' : '后端服务异常'} · ${sysHealthTip}` : sysHealthTip" placement="right">
+            <div class="pp-foot-status">
+              <i class="dot" :style="sysHealthy ? undefined : 'background:var(--crit);box-shadow:0 0 8px var(--crit)'" />
+              <span v-if="!session.collapsed" class="pp-foot-text">{{ sysHealthy ? '系统运行正常' : '后端服务异常' }}</span>
+            </div>
+          </a-tooltip>
+          <a-tooltip :title="session.collapsed ? '展开左侧菜单' : '收起左侧菜单'" placement="right">
+            <button
+              type="button"
+              class="pp-collapse-btn"
+              :aria-label="session.collapsed ? '展开左侧菜单' : '收起左侧菜单'"
+              :aria-expanded="!session.collapsed"
+              @click="session.toggleCollapsed()"
+            >
+              <AppIcon :name="session.collapsed ? 'unfold' : 'fold'" size="sm" />
+            </button>
+          </a-tooltip>
+        </div>
       </aside>
       <main class="pp-main flush">
         <div ref="content" class="content cl-content" tabindex="-1">

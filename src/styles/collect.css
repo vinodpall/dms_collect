@@ -20,7 +20,7 @@
 /* ---------- 外壳 ---------- */
 .pp.cl .pp-main.flush { overflow: hidden; display: flex; }
 .pp.cl .cl-content { flex: 1; min-width: 0; height: 100%; overflow: auto; padding: 20px 24px 28px; }
-.pp.cl .cl-content > .page { max-width: 1560px; }
+.pp.cl .cl-content > .page { max-width: none; width: 100%; margin: 0; }
 .pp.cl .pp-menu .ant-menu-item .ant-menu-title-content { display: flex; align-items: center; gap: 8px; }
 .pp.cl .pp-menu .ant-menu-item .ic { width: 16px; height: 16px; }
 .pp-mbadge { margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--crit-solid); color: #fff; font: 600 11px/18px var(--mono, monospace); text-align: center; }
