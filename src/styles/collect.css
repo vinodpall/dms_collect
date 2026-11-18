@@ -23,8 +23,15 @@
 .pp.cl .cl-content > .page { max-width: none; width: 100%; margin: 0; }
 .pp.cl .pp-menu .ant-menu-item .ant-menu-title-content { display: flex; align-items: center; gap: 8px; }
 .pp.cl .pp-menu .ant-menu-item .ic { width: 16px; height: 16px; }
-.pp-mbadge { margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--crit-solid); color: #fff; font: 600 11px/18px var(--mono, monospace); text-align: center; }
+.pp-mbadge { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--crit-solid); color: #fff; font: 600 11px/1 var(--mono, monospace); text-align: center; box-sizing: border-box; vertical-align: middle; }
 .pp-mbadge.soft { background: rgba(38,198,218,.16); color: var(--accent-text); }
+.ant-tooltip .ant-tooltip-inner:has(.pp-menu-name) { display: inline-flex; align-items: center; padding: 6px 12px; background: #162A45; border: 1px solid rgba(46,211,230,.32); box-shadow: 0 8px 24px rgba(0,0,0,.45); line-height: 1.2; }
+.ant-tooltip:has(.pp-menu-name) .ant-tooltip-arrow::before { background: #162A45; }
+.ant-tooltip .ant-tooltip-inner .ant-menu-title-content { display: inline-flex; align-items: center; gap: 8px; line-height: 1.2; }
+.ant-tooltip .ant-tooltip-inner .pp-menu-name { display: inline-flex; align-items: center; color: var(--text); font-weight: 500; line-height: 1.2; }
+.ant-tooltip .ant-tooltip-inner .pp-mbadge { margin-left: 8px; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; font: 600 11px/1 var(--mono, monospace); background: rgba(255,107,107,.18); color: #FF8E8E; border: 1px solid rgba(255,122,122,.48); box-shadow: none; }
+.ant-tooltip .ant-tooltip-inner .ant-menu-title-content > .pp-mbadge { margin-left: 0; }
+.ant-tooltip .ant-tooltip-inner .pp-mbadge.soft { background: rgba(38,198,218,.18); color: #7FF3FF; border: 1px solid rgba(46,211,230,.45); }
 
 .pp.cl .cl-search { height: 32px; width: 260px; border-radius: 3px; border-color: rgba(46,211,230,.25); background: rgba(22,42,69,.7); margin-right: 6px; }
 .pp.cl .cl-search kbd { font: 11px var(--mono, monospace); color: var(--faint); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
