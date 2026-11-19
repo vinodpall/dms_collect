@@ -98,19 +98,24 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
 
   if (!res.ok) {
     let errMsg = `请求失败: HTTP ${res.status}`
+    let errCode = res.status
+    let errDetail: any = undefined
     try {
       const errJson = await res.json()
+      if (typeof errJson.code === 'number') errCode = errJson.code
+      if (errJson.detail !== undefined && errJson.detail !== null) errDetail = errJson.detail
+      else if (errJson.data !== undefined && errJson.data !== null) errDetail = errJson.data
       if (errJson.message) errMsg = errJson.message
       else if (errJson.detail) errMsg = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail)
     } catch {
       // ignore
     }
-    throw new ApiError(errMsg, res.status)
+    throw new ApiError(errMsg, errCode, errDetail)
   }
 
-  const result: ApiResponse<T> = await res.json()
+  const result: ApiResponse<T> & { detail?: any } = await res.json()
   if (result.code !== 0) {
-    throw new ApiError(result.message || '操作失败', result.code, result.data)
+    throw new ApiError(result.message || '操作失败', result.code, result.detail ?? result.data)
   }
 
   return result.data

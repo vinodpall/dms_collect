@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import PageHead from '@/components/PageHead.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import TaskDrawer from '@/components/tasks/TaskDrawer.vue'
 import TaskWizard from '@/components/tasks/TaskWizard.vue'
-import ImportDialog from '@/components/tasks/ImportDialog.vue'
+import ImportDialog, { type ImportMode } from '@/components/tasks/ImportDialog.vue'
+import EpisodeDrawer from '@/components/tasks/EpisodeDrawer.vue'
 import { MODES, NO_PERM, OPS, SCEN, TASK_ST, type ModeKey, type TaskStatus } from '@/constants'
-import { HIST_SRC, HIST_ST, useTasks, type HistSource, type HistState, type Task } from '@/stores/tasks'
+import {
+  episodesApi,
+  importsApi,
+  type EpisodeListItem,
+  type ImportJobListItem,
+  type ImportKind,
+  type ImportStatus,
+} from '@/api'
+import { useTasks, type Task } from '@/stores/tasks'
 import { useDict } from '@/stores/dict'
 import { useSession } from '@/stores/session'
 import { useUi } from '@/stores/ui'
@@ -22,6 +31,7 @@ const ui = useUi()
 const mayEdit = computed(() => session.can('tasks'))
 const dis = computed(() => (mayEdit.value ? undefined : NO_PERM))
 
+/* ---------- Tab 1：采集任务 ---------- */
 const st = reactive({ status: 'all' as 'all' | TaskStatus, scen: 'all', q: '', key: 'ts', dir: 'descend' as 'ascend' | 'descend' | null, page: 1 })
 const selected = ref<string[]>([])
 const STATUS_KEYS: TaskStatus[] = ['running', 'ready', 'paused', 'done', 'draft', 'cancel']
@@ -76,43 +86,266 @@ async function bulkCancel() {
   hit.forEach((t) => { t.status = 'cancel'; tasks.touch(t) })
   selected.value = []; toast('已取消 ' + hit.length + ' 个任务')
 }
-/* 采集历史：Episode 粒度，含采集产出、视频上传、LeRobot 导入 */
-const tab = ref<'tasks' | 'hist'>('tasks')
-const imp = reactive({ open: false, kind: 'video' as 'video' | 'lerobot' })
-const hs = reactive({ q: '', src: 'all' as 'all' | HistSource, state: 'all' as 'all' | HistState })
-const hist = computed(() => tasks.history())
-const histRows = computed(() => {
-  const q = hs.q.trim().toLowerCase()
-  return hist.value.filter((r) => (hs.src === 'all' || r.source === hs.src) && (hs.state === 'all' || r.state === hs.state) && (!q || (r.file + r.task + r.dataset).toLowerCase().includes(q)))
-})
-const SRC_OPTS = [{ value: 'all', label: '全部来源' }, ...(Object.keys(HIST_SRC) as HistSource[]).map((k) => ({ value: k, label: HIST_SRC[k] }))]
-const HIST_ST_OPTS = [{ value: 'all', label: '全部状态' }, ...(Object.keys(HIST_ST) as HistState[]).map((k) => ({ value: k, label: HIST_ST[k][1] }))]
-const histCols = [
-  { title: '文件', key: 'file', width: 220, ellipsis: true, align: 'center' as const },
-  { title: '来源', key: 'source', width: 115, ellipsis: true, align: 'center' as const },
-  { title: '任务', key: 'task', width: 100, ellipsis: true, align: 'center' as const },
-  { title: '数据集', key: 'dataset', width: 110, ellipsis: true, align: 'center' as const },
-  { title: '时长', key: 'dur', width: 85, align: 'center' as const },
-  { title: '体量', key: 'size', width: 95, align: 'center' as const },
-  { title: '状态', key: 'state', width: 115, align: 'center' as const },
-  { title: '时间', key: 'at', width: 120, ellipsis: true, align: 'center' as const },
-]
-function openTask(id: string) { if (tasks.byId(id)) ui.taskDrawerId = id }
-function retryAll() {
-  let n = 0
-  tasks.list.forEach((t) => [...t.retry].forEach((f) => { tasks.retryUpload(t, f); n++ }))
-  toast(n ? `已重传 ${n} 个文件` : '没有待重传的文件', { type: n ? undefined : 'warn' })
-}
-const retryCount = computed(() => tasks.list.reduce((a, t) => a + t.retry.length, 0))
 function clearFilters() { st.q = ''; st.status = 'all'; st.scen = 'all' }
 function created(id: string) {
   st.status = 'all'; st.page = 1
   toast('任务 ' + id + ' 已创建', { action: '查看', onAction: () => (ui.taskDrawerId = id) })
 }
+
+/* ---------- Tab 切换与抽屉状态 ---------- */
+const tab = ref<'tasks' | 'hist' | 'imports'>('tasks')
+const imp = reactive({ open: false, mode: 'video' as ImportMode, jobId: null as number | null })
+const activeEpisodeId = ref<number | null>(null)
+
+function openImportDrawer(mode: ImportMode) {
+  imp.jobId = null
+  imp.mode = mode
+  imp.open = true
+}
+function openImportJob(id: number) {
+  imp.jobId = id
+  imp.open = true
+}
+
+/* ---------- Tab 2：采集历史（对接 GET /api/v1/episodes） ---------- */
+const epQuery = reactive({
+  keyword: '',
+  source: 'all' as string,
+  sceneId: 'all' as 'all' | number,
+  verdict: 'all' as string,
+  hasPreview: 'all' as 'all' | 'true' | 'false',
+  page: 1,
+  size: 10,
+})
+const epLoading = ref(false)
+const epItems = ref<EpisodeListItem[]>([])
+const epTotal = ref(0)
+
+const EP_SOURCE_LABELS: Record<string, string> = {
+  vr: 'VR 遥操作',
+  umi: 'UMI 手持',
+  video: '视频上传',
+  lerobot: 'LeRobot 导入',
+}
+const EP_SRC_OPTS = [
+  { value: 'all', label: '全部来源' },
+  { value: 'umi', label: 'UMI 手持' },
+  { value: 'video', label: '视频上传' },
+  { value: 'vr', label: 'VR 遥操作' },
+  { value: 'lerobot', label: 'LeRobot 导入' },
+]
+const EP_SCENE_OPTS = computed(() => [
+  { value: 'all', label: '全部场景' },
+  ...(dict.scenes || []).map((s) => ({ value: s.id, label: s.short_name || s.name })),
+])
+const EP_VERDICT_OPTS = [
+  { value: 'all', label: '全部校验结论' },
+  { value: 'ok', label: '通过' },
+  { value: 'warn', label: '警告' },
+  { value: 'fail', label: '不通过' },
+]
+const EP_PREVIEW_OPTS = [
+  { value: 'all', label: '全部预览状态' },
+  { value: 'true', label: '可播放' },
+  { value: 'false', label: '无预览' },
+]
+
+function epVerdictBadge(v: EpisodeListItem['verdict']): { kind: 'good' | 'warn' | 'crit' | 'muted'; text: string } {
+  if (v === 'ok') return { kind: 'good', text: '通过' }
+  if (v === 'warn') return { kind: 'warn', text: '警告' }
+  if (v === 'fail') return { kind: 'crit', text: '不通过' }
+  return { kind: 'muted', text: '未校验' }
+}
+
+function fmtDurMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '—'
+  return `${(ms / 1000).toFixed(1)} s`
+}
+
+function fmtBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return iso.replace('T', ' ').replace(/\+08:00$/, '').slice(0, 16)
+}
+
+async function fetchEpisodes() {
+  epLoading.value = true
+  try {
+    const res = await episodesApi.list({
+      page: epQuery.page,
+      size: epQuery.size,
+      keyword: epQuery.keyword.trim() || undefined,
+      source: epQuery.source === 'all' ? undefined : epQuery.source,
+      scene_id: epQuery.sceneId === 'all' ? undefined : epQuery.sceneId,
+      verdict: epQuery.verdict === 'all' ? undefined : epQuery.verdict,
+      has_preview: epQuery.hasPreview === 'all' ? undefined : epQuery.hasPreview === 'true',
+    })
+    epItems.value = Array.isArray(res?.items) ? res.items : []
+    epTotal.value = res?.total ?? epItems.value.length
+  } catch (err: any) {
+    epItems.value = []
+    epTotal.value = 0
+    toast(err?.message || '加载采集历史失败', { type: 'warn' })
+  } finally {
+    epLoading.value = false
+  }
+}
+
+let epSearchTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => [epQuery.source, epQuery.sceneId, epQuery.verdict, epQuery.hasPreview],
+  () => {
+    epQuery.page = 1
+    if (tab.value === 'hist') fetchEpisodes()
+  },
+)
+watch(
+  () => epQuery.keyword,
+  () => {
+    if (epSearchTimer) clearTimeout(epSearchTimer)
+    epSearchTimer = setTimeout(() => {
+      epQuery.page = 1
+      if (tab.value === 'hist') fetchEpisodes()
+    }, 280)
+  },
+)
+
+function onEpTableChange(p: { current?: number }) {
+  epQuery.page = p.current ?? 1
+  fetchEpisodes()
+}
+
+const epCustomRow = (r: EpisodeListItem) => ({
+  class: 'row-click',
+  onClick: () => {
+    activeEpisodeId.value = r.id
+  },
+})
+
+const histCols = [
+  { title: '封面', key: 'thumb', width: 76, align: 'center' as const },
+  { title: '文件名', key: 'file_name', width: 220, ellipsis: true, align: 'center' as const },
+  { title: '来源', key: 'source', width: 100, ellipsis: true, align: 'center' as const },
+  { title: '场景', key: 'scene_name', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '数据集', key: 'dataset_name', width: 130, ellipsis: true, align: 'center' as const },
+  { title: '时长', key: 'duration_ms', width: 82, align: 'center' as const },
+  { title: '体量', key: 'size_bytes', width: 92, align: 'center' as const },
+  { title: '校验结论', key: 'verdict', width: 96, align: 'center' as const },
+  { title: '录制时间', key: 'recorded_at', width: 135, ellipsis: true, align: 'center' as const },
+  { title: '操作', key: 'act', width: 90, align: 'center' as const },
+]
+
+/* ---------- Tab 3：导入记录（对接 GET /api/v1/collect/imports） ---------- */
+const impQuery = reactive({
+  kind: 'all' as 'all' | ImportKind,
+  status: 'all' as 'all' | ImportStatus,
+  mine: false,
+  page: 1,
+  size: 10,
+})
+const impLoading = ref(false)
+const impItems = ref<ImportJobListItem[]>([])
+const impTotal = ref(0)
+
+const IMP_STATUS_MAP: Record<ImportStatus, ['good' | 'warn' | 'crit' | 'accent' | 'muted', string]> = {
+  uploading: ['accent', '上传中'],
+  validating: ['accent', '校验中'],
+  validated: ['warn', '待确认'],
+  confirmed: ['good', '已入库'],
+  failed: ['crit', '失败'],
+  canceled: ['muted', '已放弃'],
+}
+const IMP_KIND_OPTS = [
+  { value: 'all', label: '全部类型' },
+  { value: 'video', label: '视频上传' },
+  { value: 'umi', label: 'UMI 导入' },
+]
+const IMP_STATUS_OPTS = [
+  { value: 'all', label: '全部状态' },
+  { value: 'uploading', label: '上传中' },
+  { value: 'validating', label: '校验中' },
+  { value: 'validated', label: '待确认' },
+  { value: 'confirmed', label: '已入库' },
+  { value: 'failed', label: '失败' },
+  { value: 'canceled', label: '已放弃' },
+]
+
+async function fetchImportJobs() {
+  impLoading.value = true
+  try {
+    const res = await importsApi.list({
+      page: impQuery.page,
+      size: impQuery.size,
+      kind: impQuery.kind === 'all' ? undefined : impQuery.kind,
+      status: impQuery.status === 'all' ? undefined : impQuery.status,
+      mine: impQuery.mine ? true : undefined,
+    })
+    impItems.value = Array.isArray(res?.items) ? res.items : []
+    impTotal.value = res?.total ?? impItems.value.length
+  } catch (err: any) {
+    impItems.value = []
+    impTotal.value = 0
+    toast(err?.message || '加载导入记录失败', { type: 'warn' })
+  } finally {
+    impLoading.value = false
+  }
+}
+
+watch(
+  () => [impQuery.kind, impQuery.status, impQuery.mine],
+  () => {
+    impQuery.page = 1
+    if (tab.value === 'imports') fetchImportJobs()
+  },
+)
+
+function onImpTableChange(p: { current?: number }) {
+  impQuery.page = p.current ?? 1
+  fetchImportJobs()
+}
+
+const impCustomRow = (r: ImportJobListItem) => ({
+  class: 'row-click',
+  onClick: () => openImportJob(r.id),
+})
+
+const impCols = [
+  { title: '导入编号', key: 'id', width: 92, align: 'center' as const },
+  { title: '类型 / 来源', key: 'kind', width: 135, ellipsis: true, align: 'center' as const },
+  { title: '状态', key: 'status', width: 96, align: 'center' as const },
+  { title: '进度', key: 'progress', width: 150, ellipsis: true, align: 'center' as const },
+  { title: '文件数 / 体量', key: 'size', width: 130, align: 'center' as const },
+  { title: '校验 / 入库', key: 'summary', width: 150, ellipsis: true, align: 'center' as const },
+  { title: '创建时间', key: 'created_at', width: 135, ellipsis: true, align: 'center' as const },
+  { title: '操作', key: 'act', width: 90, align: 'center' as const },
+]
+
+watch(tab, (v) => {
+  if (v === 'hist') fetchEpisodes()
+  else if (v === 'imports') fetchImportJobs()
+})
+
+function onImportChanged() {
+  if (tab.value === 'hist') fetchEpisodes()
+  if (tab.value === 'imports') fetchImportJobs()
+}
+
+onMounted(() => {
+  if (!dict.scenes.length) {
+    dict.fetchAll()
+  }
+})
 </script>
 
 <template>
-  <PageHead title="采集任务" desc="每次采集：设备自检 → 场景复位与采集 → 数据校验 → 入库；也可上传视频或导入 LeRobot 数据">
+  <PageHead title="采集任务" desc="每次采集：设备自检 → 场景复位与采集 → 数据校验 → 入库；支持视频上传、UMI 目录上传与服务器目录导入">
     <template #desc>
       <div style="margin-top:10px">
         <div class="cyber-tabs" role="tablist" aria-label="任务视图切换">
@@ -138,36 +371,130 @@ function created(id: string) {
             <AppIcon name="clock" size="sm" />
             <span>采集历史</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            class="cyber-tab-item"
+            :class="{ active: tab === 'imports' }"
+            :aria-selected="tab === 'imports'"
+            @click="tab = 'imports'"
+          >
+            <AppIcon name="download" size="sm" />
+            <span>导入记录</span>
+          </button>
         </div>
       </div>
     </template>
-    <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'video'; imp.open = true"><AppIcon name="camera" />视频上传</a-button>
-    <a-button :disabled="!mayEdit" :title="dis" @click="imp.kind = 'lerobot'; imp.open = true"><AppIcon name="db" />LeRobot 导入</a-button>
+    <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('video')"><AppIcon name="camera" />数据导入</a-button>
+    <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('umi_server')"><AppIcon name="drive" />服务器目录导入</a-button>
     <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="ui.wizardOpen = true"><AppIcon name="plus" />新建任务</a-button>
   </PageHead>
 
+  <!-- 采集历史：真实 GET /api/v1/episodes -->
   <div v-if="tab === 'hist'" class="card">
     <div class="toolbar">
-      <a-input v-model:value="hs.q" class="grow" allow-clear placeholder="搜索文件名、任务、数据集" aria-label="搜索采集历史"><template #prefix><AppIcon name="search" /></template></a-input>
-      <a-select v-model:value="hs.src" style="width:140px" aria-label="来源" :options="SRC_OPTS" />
-      <a-select v-model:value="hs.state" style="width:140px" aria-label="状态" :options="HIST_ST_OPTS" />
-      <a-button :disabled="!retryCount" @click="retryAll"><AppIcon name="refresh" size="sm" />全部重传</a-button>
+      <a-input v-model:value="epQuery.keyword" class="grow" allow-clear placeholder="搜索文件名关键词" aria-label="搜索采集历史"><template #prefix><AppIcon name="search" /></template></a-input>
+      <a-select v-model:value="epQuery.source" style="width:130px" aria-label="来源" :options="EP_SRC_OPTS" />
+      <a-select v-model:value="epQuery.sceneId" style="width:140px" aria-label="场景" :options="EP_SCENE_OPTS" />
+      <a-select v-model:value="epQuery.verdict" style="width:130px" aria-label="校验结论" :options="EP_VERDICT_OPTS" />
+      <a-select v-model:value="epQuery.hasPreview" style="width:130px" aria-label="预览状态" :options="EP_PREVIEW_OPTS" />
+      <a-button :loading="epLoading" @click="fetchEpisodes"><AppIcon name="refresh" size="sm" />刷新</a-button>
     </div>
-    <a-table size="middle" :row-key="(r: { file: string; task: string }) => r.file + r.task" :columns="histCols" :data-source="histRows" :pagination="{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 条` }">
+    <a-table
+      size="middle"
+      row-key="id"
+      :loading="epLoading"
+      :columns="histCols"
+      :data-source="epItems"
+      :custom-row="epCustomRow"
+      :pagination="{
+        current: epQuery.page,
+        pageSize: epQuery.size,
+        total: epTotal,
+        showSizeChanger: false,
+        hideOnSinglePage: false,
+        showTotal: (n: number) => `共 ${n} 条`,
+      }"
+      @change="onEpTableChange as never"
+    >
       <template #bodyCell="{ column, record }">
-        <span v-if="column.key === 'file'" class="mono cell-ellipsis" style="font-size:12.5px" :title="record.file">{{ record.file }}</span>
-        <span v-else-if="column.key === 'source'" class="cell-ellipsis" :title="HIST_SRC[record.source as HistSource] || record.source">{{ HIST_SRC[record.source as HistSource] || record.source }}</span>
-        <a v-else-if="column.key === 'task' && record.task !== '—'" class="mono" @click="openTask(record.task)">{{ record.task }}</a>
-        <span v-else-if="column.key === 'dataset'" class="mono muted cell-ellipsis" :title="record.dataset">{{ record.dataset }}</span>
-        <span v-else-if="column.key === 'dur'" class="num">{{ record.dur }} s</span>
-        <span v-else-if="column.key === 'size'" class="num muted">{{ record.size }} GB</span>
-        <StatusBadge v-else-if="column.key === 'state'" :kind="HIST_ST[record.state as HistState][0]" :text="HIST_ST[record.state as HistState][1]" />
-        <span v-else-if="column.key === 'at'" class="muted num cell-ellipsis">{{ record.at }}</span>
+        <template v-if="column.key === 'thumb'">
+          <img v-if="record.thumb_url" :src="record.thumb_url" alt="" class="ep-list-thumb" />
+          <span v-else class="ep-list-thumb-empty muted">—</span>
+        </template>
+        <span v-else-if="column.key === 'file_name'" class="mono cell-ellipsis" style="font-size:12.5px" :title="record.file_name">{{ record.file_name }}</span>
+        <span v-else-if="column.key === 'source'" class="cell-ellipsis">{{ EP_SOURCE_LABELS[record.source] || record.source }}</span>
+        <span v-else-if="column.key === 'scene_name'" class="cell-ellipsis" :title="record.scene_name || '—'">{{ record.scene_name || '—' }}</span>
+        <span v-else-if="column.key === 'dataset_name'" class="muted cell-ellipsis" :title="record.dataset_name || '—'">{{ record.dataset_name || '—' }}</span>
+        <span v-else-if="column.key === 'duration_ms'" class="num">{{ fmtDurMs(record.duration_ms) }}</span>
+        <span v-else-if="column.key === 'size_bytes'" class="num muted">{{ fmtBytes(record.size_bytes) }}</span>
+        <StatusBadge v-else-if="column.key === 'verdict'" :kind="epVerdictBadge(record.verdict).kind" :text="epVerdictBadge(record.verdict).text" />
+        <span v-else-if="column.key === 'recorded_at'" class="muted num cell-ellipsis">{{ fmtTime(record.recorded_at || record.created_at) }}</span>
+        <a-button v-else-if="column.key === 'act'" size="small" type="link" @click.stop="activeEpisodeId = record.id">
+          {{ record.has_preview ? '回放详情' : '查看详情' }}
+        </a-button>
       </template>
-      <template #emptyText><EmptyState icon="inbox" title="没有符合条件的记录" desc="换个筛选条件试试" /></template>
+      <template #emptyText><EmptyState icon="inbox" title="暂无数据条目" desc="可以通过右上角“数据导入”或“服务器目录导入”导入数据" /></template>
     </a-table>
   </div>
 
+  <!-- 导入记录：真实 GET /api/v1/collect/imports -->
+  <div v-else-if="tab === 'imports'" class="card">
+    <div class="toolbar">
+      <a-select v-model:value="impQuery.kind" style="width:140px" aria-label="导入类型" :options="IMP_KIND_OPTS" />
+      <a-select v-model:value="impQuery.status" style="width:140px" aria-label="导入状态" :options="IMP_STATUS_OPTS" />
+      <a-checkbox v-model:checked="impQuery.mine">仅看我的</a-checkbox>
+      <div class="grow" />
+      <a-button :loading="impLoading" @click="fetchImportJobs"><AppIcon name="refresh" size="sm" />刷新</a-button>
+    </div>
+    <a-table
+      size="middle"
+      row-key="id"
+      :loading="impLoading"
+      :columns="impCols"
+      :data-source="impItems"
+      :custom-row="impCustomRow"
+      :pagination="{
+        current: impQuery.page,
+        pageSize: impQuery.size,
+        total: impTotal,
+        showSizeChanger: false,
+        hideOnSinglePage: false,
+        showTotal: (n: number) => `共 ${n} 条`,
+      }"
+      @change="onImpTableChange as never"
+    >
+      <template #bodyCell="{ column, record }">
+        <span v-if="column.key === 'id'" class="mono">#{{ record.id }}</span>
+        <span v-else-if="column.key === 'kind'" class="cell-ellipsis">
+          {{ record.kind === 'umi' ? (record.origin === 'server' ? 'UMI · 服务器目录' : 'UMI · 目录上传') : '视频上传' }}
+        </span>
+        <StatusBadge
+          v-else-if="column.key === 'status'"
+          :kind="IMP_STATUS_MAP[record.status as ImportStatus]?.[0] || 'muted'"
+          :text="IMP_STATUS_MAP[record.status as ImportStatus]?.[1] || record.status"
+        />
+        <span v-else-if="column.key === 'progress'" class="mono muted cell-ellipsis" :title="record.progress_text || `${record.progress}%`">
+          {{ record.progress }}%<template v-if="record.progress_text"> · {{ record.progress_text }}</template>
+        </span>
+        <span v-else-if="column.key === 'size'" class="mono muted">
+          {{ record.file_count }} 个 · {{ fmtBytes(record.size_bytes) }}
+        </span>
+        <span v-else-if="column.key === 'summary'" class="cell-ellipsis">
+          <template v-if="record.status === 'confirmed'">入库 {{ record.episode_count }} 条</template>
+          <template v-else-if="record.summary">通过 {{ record.summary.ok }} / 警告 {{ record.summary.warn }} / 失败 {{ record.summary.fail }}</template>
+          <span v-else class="muted">—</span>
+        </span>
+        <span v-else-if="column.key === 'created_at'" class="muted num cell-ellipsis">{{ fmtTime(record.created_at) }}</span>
+        <a-button v-else-if="column.key === 'act'" size="small" type="link" @click.stop="openImportJob(record.id)">
+          {{ record.status === 'validated' ? '去确认' : '查看' }}
+        </a-button>
+      </template>
+      <template #emptyText><EmptyState icon="download" title="暂无导入记录" desc="点击右上角“数据导入”或“服务器目录导入”发起首次导入" /></template>
+    </a-table>
+  </div>
+
+  <!-- 采集任务 -->
   <div v-else class="card">
     <div class="toolbar">
       <a-input v-model:value="st.q" class="grow" allow-clear placeholder="搜索任务编号、名称、操作员" aria-label="搜索任务"><template #prefix><AppIcon name="search" /></template></a-input>
@@ -198,5 +525,35 @@ function created(id: string) {
 
   <TaskDrawer :id="ui.taskDrawerId" @close="ui.taskDrawerId = null" />
   <TaskWizard :open="ui.wizardOpen" @close="ui.wizardOpen = false" @done="created" />
-  <ImportDialog :open="imp.open" :kind="imp.kind" @close="imp.open = false" />
+  <ImportDialog
+    :open="imp.open"
+    :initial-mode="imp.mode"
+    :job-id="imp.jobId"
+    @close="imp.open = false"
+    @changed="onImportChanged"
+    @open-episode="(id) => (activeEpisodeId = id)"
+  />
+  <EpisodeDrawer :episode-id="activeEpisodeId" @close="activeEpisodeId = null" />
 </template>
+
+<style scoped>
+.ep-list-thumb {
+  width: 56px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  display: block;
+  margin: 0 auto;
+}
+.ep-list-thumb-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 36px;
+  border-radius: 4px;
+  background: rgba(15, 31, 53, 0.6);
+  border: 1px dashed var(--line);
+}
+</style>
