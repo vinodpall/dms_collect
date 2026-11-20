@@ -1,0 +1,79 @@
+name: Deploy to 39 Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dms-collect
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Deploy dist to server via SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          HOST="${DEPLOY_HOST:-39.185.83.71}"
+          PORT="${DEPLOY_PORT:-22}"
+          TARGET_PATH="${DEPLOY_PATH:-/var/www/dms_collect/dist}"
+
+          if [ -z "${DEPLOY_USER:-}" ] || { [ -z "${DEPLOY_SSH_KEY:-}" ] && [ -z "${DEPLOY_PASSWORD:-}" ]; }; then
+            echo "::warning::未配置部署 Secrets（需要 DEPLOY_USER，以及 DEPLOY_SSH_KEY 或 DEPLOY_PASSWORD），已跳过上传步骤。"
+            exit 0
+          fi
+
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -p ${PORT}"
+
+          if [ -n "${DEPLOY_SSH_KEY:-}" ]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            SSH_CMD=(ssh -i ~/.ssh/deploy_key $SSH_OPTS "${DEPLOY_USER}@${HOST}")
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            export SSHPASS="$DEPLOY_PASSWORD"
+            SSH_CMD=(sshpass -e ssh $SSH_OPTS "${DEPLOY_USER}@${HOST}")
+          fi
+
+          REMOTE_SCRIPT="set -euo pipefail
+            TARGET='${TARGET_PATH}'
+            PARENT=\$(dirname \"\$TARGET\")
+            mkdir -p \"\$PARENT\"
+            rm -rf \"\${TARGET}.next\"
+            mkdir -p \"\${TARGET}.next\"
+            tar -xzf - -C \"\${TARGET}.next\"
+            rm -rf \"\${TARGET}.bak\"
+            if [ -d \"\$TARGET\" ]; then mv \"\$TARGET\" \"\${TARGET}.bak\"; fi
+            mv \"\${TARGET}.next\" \"\$TARGET\"
+            rm -rf \"\${TARGET}.bak\"
+          "
+
+          echo "Deploying dist/ to ${DEPLOY_USER}@${HOST}:${TARGET_PATH} (port ${PORT})..."
+          tar -czf - -C dist . | "${SSH_CMD[@]}" "$REMOTE_SCRIPT"
+          echo "Deploy succeeded."

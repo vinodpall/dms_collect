@@ -521,7 +521,6 @@ const channelCols = [
                     muted
                     playsinline
                     preload="metadata"
-                    crossorigin="anonymous"
                     @loadedmetadata="onVideoLoadedMetadata(v.camera)"
                     @error="onMediaError"
                   />
@@ -536,7 +535,6 @@ const channelCols = [
               ref="audioEl"
               :src="preview.audio.url"
               preload="metadata"
-              crossorigin="anonymous"
               @error="onMediaError"
             />
 
