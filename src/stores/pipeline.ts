@@ -1,72 +1,282 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import type { ScenKey } from '@/constants'
-import { STAGES, STAGE_MANUAL, SCEN } from '@/constants'
-import { useAlerts } from './alerts'
+import { computed, ref } from 'vue'
+import { STAGES } from '@/constants'
+import {
+  pipelineApi,
+  getToken,
+  type BatchEpisodeOut,
+  type BatchLogOut,
+  type BatchLogsOut,
+  type PipelineBatchDetail,
+  type PipelineBatchItem,
+  type PipelineBatchListParams,
+  type PipelineBatchState,
+  type PipelineOverview,
+  type RetryOut,
+} from '@/api'
 
-export type BatchState = 'ok' | 'running' | 'wait' | 'failed'
-export interface Batch { id: string; task: string; scen: ScenKey; count: number; stage: number; state: BatchState; pct: number; size: number }
+export type BatchState = PipelineBatchState
 
-export interface LogLine { t: string; lv?: 'WARN' | 'ERROR'; msg: string }
+export interface Batch {
+  numericId: number
+  id: string
+  sourceKind: string
+  task: string
+  sceneId: number
+  sceneName: string
+  datasetId: number
+  datasetName: string
+  count: number
+  stage: number
+  stageName: string
+  stageKind: string
+  state: BatchState
+  stateLabel: string
+  pct: number
+  sizeBytes: number
+  sizeText: string
+  failedCount: number
+  errorMsg: string
+  retryTimes: number
+  createdAt: string
+  updatedAt: string
+  finishedAt: string
+}
+
+export interface LogLine {
+  t: string
+  lv?: 'WARN' | 'ERROR'
+  fileName?: string
+  msg: string
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let idx = 0
+  let v = bytes
+  while (v >= 1024 && idx < units.length - 1) {
+    v /= 1024
+    idx++
+  }
+  return `${idx === 0 ? Math.round(v) : v.toFixed(v >= 100 ? 0 : 1)} ${units[idx]}`
+}
+
+function fmtTime(iso?: string | null): string {
+  if (!iso) return ''
+  return iso.replace('T', ' ').slice(0, 19)
+}
+
+function fmtLogTime(iso?: string | null): string {
+  if (!iso) return '[--:--:--]'
+  const s = iso.replace('T', ' ')
+  const m = s.match(/(\d{2}:\d{2}:\d{2})/)
+  return m ? `[${m[1]}]` : `[${s.slice(0, 19)}]`
+}
+
+function mapBatch(item: PipelineBatchItem): Batch {
+  const stageIdx = Math.max(0, Math.min(STAGES.length - 1, Number(item.stage ?? 0)))
+  const taskLabel =
+    item.task_code ||
+    (item.source_kind === 'import'
+      ? item.import_job_id
+        ? `导入 #${item.import_job_id}`
+        : '手动导入'
+      : item.task_id
+        ? `任务 #${item.task_id}`
+        : '-')
+  return {
+    numericId: item.id,
+    id: item.code || `B-${item.id}`,
+    sourceKind: item.source_kind || '',
+    task: taskLabel,
+    sceneId: item.scene_id,
+    sceneName: item.scene_name || item.dataset_name || '未分配场景',
+    datasetId: item.dataset_id,
+    datasetName: item.dataset_name || '',
+    count: item.episode_count ?? 0,
+    stage: stageIdx,
+    stageName: item.stage_name || STAGES[stageIdx] || '',
+    stageKind: item.stage_kind || '',
+    state: item.state,
+    stateLabel: item.state_label || '',
+    pct: Number(item.progress ?? 0),
+    sizeBytes: Number(item.size_bytes ?? 0),
+    sizeText: formatBytes(Number(item.size_bytes ?? 0)),
+    failedCount: Number(item.failed_count ?? 0),
+    errorMsg: item.error_msg || '',
+    retryTimes: Number(item.retry_times ?? 0),
+    createdAt: fmtTime(item.created_at),
+    updatedAt: fmtTime(item.updated_at),
+    finishedAt: fmtTime(item.finished_at),
+  }
+}
+
+export function mapLogItem(item: BatchLogOut): LogLine {
+  const lvRaw = (item.level || '').toLowerCase()
+  const lv: LogLine['lv'] =
+    lvRaw === 'error' || lvRaw === 'crit' ? 'ERROR' : lvRaw === 'warn' || lvRaw === 'warning' ? 'WARN' : undefined
+  return {
+    t: fmtLogTime(item.time),
+    lv,
+    fileName: item.file_name || undefined,
+    msg: item.message || '',
+  }
+}
 
 export const usePipeline = defineStore('pipeline', () => {
-  const batches = ref<Batch[]>([
-    { id: 'B-1013-01', task: 'TK-0138', scen: 'qmd', count: 58, stage: 5, state: 'ok', pct: 100, size: 52.4 },
-    { id: 'B-1013-02', task: 'TK-0137', scen: 'fhd', count: 41, stage: 4, state: 'running', pct: 62, size: 38.1 },
-    { id: 'B-1013-03', task: 'TK-0138', scen: 'qmd', count: 5, stage: 2, state: 'wait', pct: 0, size: 4.6 },
-    { id: 'B-1013-04', task: 'TK-0137', scen: 'fhd', count: 29, stage: 1, state: 'failed', pct: 40, size: 27.2 },
-    { id: 'B-1012-07', task: 'TK-0136', scen: 'qmd', count: 64, stage: 1, state: 'running', pct: 35, size: 59.9 },
-    { id: 'B-1012-06', task: 'TK-0136', scen: 'qmd', count: 47, stage: 1, state: 'running', pct: 78, size: 44.0 },
-    { id: 'B-1013-05', task: 'TK-0138', scen: 'qmd', count: 22, stage: 0, state: 'wait', pct: 0, size: 20.8 },
-    { id: 'B-1012-05', task: 'TK-0133', scen: 'fhd', count: 80, stage: 5, state: 'ok', pct: 100, size: 74.5 },
-    { id: 'B-1012-04', task: 'TK-0133', scen: 'fhd', count: 3, stage: 3, state: 'wait', pct: 0, size: 2.8 },
-  ])
-  const failedCount = () => batches.value.filter((b) => b.state === 'failed').length
-  const countAtStage = (i: number) => batches.value.filter((b) => b.stage === i).reduce((a, b) => a + b.count, 0)
-  /** 推进自动阶段（标准化、格式转换、入库）；手动标注 / 校验阶段不会自动流转 */
-  function tick() {
-    let changed = false
-    batches.value.forEach((b) => {
-      if (b.state !== 'running') return
-      b.pct += 7 + Math.random() * 8
-      changed = true
-      if (b.pct >= 100) {
-        b.pct = 0; b.stage++
-        if (STAGE_MANUAL.includes(b.stage)) b.state = 'wait'
-        else if (b.stage >= STAGES.length - 1) { b.stage = STAGES.length - 1; b.state = 'ok'; b.pct = 100 }
-      }
+  const overview = ref<PipelineOverview | null>(null)
+  const batches = ref<Batch[]>([])
+  const total = ref(0)
+  const loadingOverview = ref(false)
+  const loadingBatches = ref(false)
+  const loading = computed(() => loadingOverview.value || loadingBatches.value)
+
+  function isFailedBatch(b: { state: BatchState }): boolean {
+    return b.state === 'failed' || b.state === 'partial_failed'
+  }
+
+  const failedCount = () => {
+    if (overview.value?.batches) {
+      return (overview.value.batches.failed || 0) + (overview.value.batches.partial_failed || 0)
+    }
+    return batches.value.filter(isFailedBatch).length
+  }
+
+  const countAtStage = (i: number) => {
+    const st = overview.value?.stages?.find((s) => s.stage === i)
+    if (st) {
+      if (i === STAGES.length - 1 && st.episode_count === 0 && st.done > 0) return st.done
+      return st.episode_count
+    }
+    return batches.value.filter((b) => b.stage === i).reduce((a, b) => a + b.count, 0)
+  }
+
+  const stageFailed = (i: number) => {
+    const st = overview.value?.stages?.find((s) => s.stage === i)
+    if (st) return st.failed > 0
+    return batches.value.some((b) => b.stage === i && isFailedBatch(b))
+  }
+
+  async function fetchOverview(): Promise<PipelineOverview | null> {
+    if (!getToken()) return null
+    loadingOverview.value = true
+    try {
+      const data = await pipelineApi.overview()
+      overview.value = data
+      return data
+    } catch (err) {
+      console.warn('[pipeline] 获取流水线总览失败', err)
+      return null
+    } finally {
+      loadingOverview.value = false
+    }
+  }
+
+  async function fetchBatches(params?: PipelineBatchListParams): Promise<Batch[]> {
+    if (!getToken()) return []
+    loadingBatches.value = true
+    try {
+      const res = await pipelineApi.listBatches({ page: 1, size: 100, sort: '-created_at', ...params })
+      const items = (res?.items || []).map(mapBatch)
+      batches.value = items
+      total.value = res?.total ?? items.length
+      return items
+    } catch (err) {
+      console.warn('[pipeline] 获取批次列表失败', err)
+      return batches.value
+    } finally {
+      loadingBatches.value = false
+    }
+  }
+
+  async function refreshAll(params?: PipelineBatchListParams): Promise<void> {
+    await Promise.all([fetchOverview(), fetchBatches(params)])
+  }
+
+  async function fetchBatchDetail(numericId: number): Promise<PipelineBatchDetail | null> {
+    if (!getToken()) return null
+    const detail = await pipelineApi.getBatch(numericId)
+    if (detail) {
+      const mapped = mapBatch(detail)
+      const idx = batches.value.findIndex((b) => b.numericId === numericId)
+      if (idx >= 0) batches.value[idx] = mapped
+    }
+    return detail
+  }
+
+  async function fetchBatchLogs(numericId: number): Promise<BatchLogsOut | null> {
+    if (!getToken()) return null
+    return await pipelineApi.getBatchLogs(numericId)
+  }
+
+  async function retryBatch(numericId: number): Promise<PipelineBatchDetail> {
+    const detail = await pipelineApi.retryBatch(numericId)
+    const mapped = mapBatch(detail)
+    const idx = batches.value.findIndex((b) => b.numericId === numericId)
+    if (idx >= 0) batches.value[idx] = mapped
+    await fetchOverview()
+    return detail
+  }
+
+  async function retryAllFailed(): Promise<RetryOut> {
+    const res = await pipelineApi.retryAllFailed()
+    await refreshAll()
+    return res
+  }
+
+  async function retryEpisode(episodeId: number, batchNumericId?: number): Promise<BatchEpisodeOut> {
+    const ep = await pipelineApi.retryEpisode(episodeId)
+    if (batchNumericId) {
+      await Promise.all([fetchBatchDetail(batchNumericId), fetchOverview()])
+    } else {
+      await refreshAll()
+    }
+    return ep
+  }
+
+  /** 兼容未接入后端的 annotate store 调用 */
+  function sync(_batchId: string, _c: { todo: number; submitted: number; rejected: number; approved: number; total: number }) {
+    /* 流水线状态已由后端驱动 */
+  }
+
+  function reset() {
+    overview.value = null
+    batches.value = []
+    total.value = 0
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dms:login', () => {
+      refreshAll().catch(() => {})
     })
-    return changed
+    window.addEventListener('dms:logout', reset)
   }
-  /** 标注全部提交 → 进入标注校验；有被打回 → 回到手动标注；全部通过 → 进入格式转换 */
-  function sync(batchId: string, c: { todo: number; submitted: number; rejected: number; approved: number; total: number }) {
-    const b = batches.value.find((x) => x.id === batchId)
-    if (!b || b.stage < 2 || b.stage > 3) return
-    if (c.total && c.approved === c.total) { b.stage = 4; b.state = 'running'; b.pct = 0; return }
-    if (c.todo + c.rejected > 0) { b.stage = 2; b.state = 'wait'; return }
-    b.stage = 3; b.state = 'wait'
+
+  if (getToken()) {
+    refreshAll().catch((e) => console.warn('[pipeline] 初始化流水线数据失败', e))
   }
-  /** 批次处理日志；lv 为 WARN/ERROR 时高亮 */
-  function batchLog(b: Batch): LogLine[] {
-    const sc = SCEN[b.scen].code
-    const lines: LogLine[] = [{ t: '[16:02:11]', msg: '批次 ' + b.id + ' 进入流水线，共 ' + b.count + ' 条，' + b.size + ' GB' }]
-    const upto = b.state === 'ok' ? b.stage + 1 : b.stage
-    for (let i = 0; i < upto; i++) if (i > 0 || b.stage > 0) lines.push({ t: '[16:0' + (3 + i) + ':' + String(10 + i * 7).padStart(2, '0') + ']', msg: STAGES[i] + ' 完成' })
-    if (b.state === 'failed') {
-      lines.push({ t: '[14:57:42]', lv: 'WARN', msg: 'camera_3 话题时间戳不连续，丢失 12 帧' })
-      lines.push({ t: '[14:58:03]', lv: 'ERROR', msg: '数据标准化失败：' + sc + '_20261013_029.bag → lsdataset 转换出错' })
-      lines.push({ t: '[14:58:03]', lv: 'ERROR', msg: '批次已暂停，等待人工处理' })
-    } else if (b.state === 'wait' && b.stage === 2) lines.push({ t: '[16:20:00]', msg: '等待标注员完成手动标注（子任务级）' })
-    else if (b.state === 'wait' && b.stage === 3) lines.push({ t: '[16:20:00]', msg: '标注已全部提交，等待审核员审核' })
-    return lines
+
+  return {
+    overview,
+    batches,
+    total,
+    loading,
+    loadingOverview,
+    loadingBatches,
+    isFailedBatch,
+    failedCount,
+    countAtStage,
+    stageFailed,
+    fetchOverview,
+    fetchBatches,
+    refreshAll,
+    fetchBatchDetail,
+    fetchBatchLogs,
+    retryBatch,
+    retryAllFailed,
+    retryEpisode,
+    sync,
+    reset,
   }
-  /** 重试失败批次，并确认流水线告警；成功返回 true */
-  function retry(id: string) {
-    const b = batches.value.find((x) => x.id === id)
-    if (!b || b.state !== 'failed') return false
-    b.state = 'running'; b.pct = 5
-    useAlerts().ackFirst('pipeline')
-    return true
-  }
-  return { batches, failedCount, countAtStage, tick, sync, batchLog, retry }
 })

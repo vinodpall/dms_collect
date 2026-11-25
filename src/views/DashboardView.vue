@@ -60,7 +60,7 @@ function openTask(id: string) {
   ui.taskDrawerId = id
   go('tasks')
 }
-const stageFail = (i: number) => pipeline.batches.some((b) => b.stage === i && b.state === 'failed')
+const stageFail = (i: number) => pipeline.stageFailed(i)
 const goals = [{ name: '轮毂气密性检测', v: 2106, t: 5000 }, { name: '防护堵安装', v: 1736, t: 5000 }]
 </script>
 

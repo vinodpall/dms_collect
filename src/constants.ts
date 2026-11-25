@@ -44,7 +44,6 @@ export const UNWIRED_PAGES: ReadonlySet<PageKey> = new Set<PageKey>([
   'dashboard',
   'tasks',
   'monitor',
-  'pipeline',
   'annotate',
   'review',
   'datasets',

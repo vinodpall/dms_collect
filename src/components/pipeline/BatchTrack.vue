@@ -5,7 +5,7 @@ import type { Batch } from '@/stores/pipeline'
 defineProps<{ b: Batch }>()
 function cls(b: Batch, i: number) {
   if (i < b.stage || (i === b.stage && b.state === 'ok')) return 'done'
-  if (i === b.stage) return b.state === 'failed' ? 'fail' : b.state === 'wait' ? 'wait' : 'cur'
+  if (i === b.stage) return b.state === 'failed' || b.state === 'partial_failed' ? 'fail' : b.state === 'wait' ? 'wait' : 'cur'
   return ''
 }
 </script>
