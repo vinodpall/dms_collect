@@ -200,13 +200,15 @@ async function remove(u: UserRow) {
 }
 
 const columns = [
-  { title: '用户', key: 'user', width: 220, ellipsis: true, align: 'center' as const },
-  { title: '角色', key: 'role', width: 130, ellipsis: true, align: 'center' as const },
-  { title: '部门', key: 'dept', width: 120, ellipsis: true, align: 'center' as const },
-  { title: '联系电话', key: 'phone', width: 140, ellipsis: true, align: 'center' as const },
-  { title: '最近登录', key: 'last', width: 150, ellipsis: true, align: 'center' as const },
-  { title: '状态', key: 'on', width: 120, align: 'center' as const },
-  { title: '操作', key: 'act', width: 175, align: 'center' as const },
+  { title: '用户', key: 'user', width: 130, ellipsis: true, align: 'center' as const },
+  { title: '账号', key: 'account', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '角色', key: 'role', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '部门', key: 'dept', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '联系电话', key: 'phone', width: 130, ellipsis: true, align: 'center' as const },
+  { title: '邮箱', key: 'email', width: 170, ellipsis: true, align: 'center' as const },
+  { title: '最近登录', key: 'last', width: 145, ellipsis: true, align: 'center' as const },
+  { title: '状态', key: 'on', width: 115, align: 'center' as const },
+  { title: '操作', key: 'act', width: 170, align: 'center' as const },
 ]
 </script>
 
@@ -237,6 +239,7 @@ const columns = [
       :columns="columns"
       :data-source="access.users"
       :loading="access.loadingUsers"
+      :scroll="{ x: 1120 }"
       :pagination="{
         current: st.page,
         pageSize: 10,
@@ -248,21 +251,21 @@ const columns = [
       }"
     >
       <template #bodyCell="{ column, record }">
-        <div v-if="column.key === 'user'" class="u-cell">
-          <span class="u-av" :class="{ off: !record.on }">{{ record.name.slice(0, 1) }}</span>
-          <div class="cell-main" style="align-items:flex-start;text-align:left;flex:1">
-            <span :title="record.name">{{ record.name }}<em v-if="record.id === session.uid" class="u-me">当前</em></span>
-            <small class="mono" :title="`${record.u} · ${record.email || '—'}`">{{ record.u }} · {{ record.email || '—' }}</small>
-          </div>
-        </div>
+        <span v-if="column.key === 'user'" class="u-name" :title="record.name">
+          <span class="cell-ellipsis">{{ record.name }}</span><em v-if="record.id === session.uid" class="u-me">当前</em>
+        </span>
+        <span v-else-if="column.key === 'account'" class="mono cell-ellipsis" :title="record.u">{{ record.u }}</span>
         <StatusBadge v-else-if="column.key === 'role'" :kind="access.roleMap[record.role]?.all ? 'info' : ''" :text="roleName(record.role)" />
         <span v-else-if="column.key === 'dept'" class="muted cell-ellipsis" :title="record.dept || ''">{{ record.dept || '—' }}</span>
         <span v-else-if="column.key === 'phone'" class="mono muted cell-ellipsis" :title="record.phone || ''">{{ record.phone || '—' }}</span>
+        <span v-else-if="column.key === 'email'" class="mono muted cell-ellipsis" :title="record.email || ''">{{ record.email || '—' }}</span>
         <span v-else-if="column.key === 'last'" class="muted cell-ellipsis" :title="record.last || ''">{{ record.last || '—' }}</span>
-        <div v-else-if="column.key === 'on'" class="row" style="gap:8px;justify-content:center;white-space:nowrap">
+        <div v-else-if="column.key === 'on'" class="u-status-cell">
           <a-switch size="small" :checked="record.on" :disabled="!mayEdit || record.id === session.uid" :aria-label="'启用 ' + record.name" @change="(v: boolean) => toggle(record as UserRow, v)" />
           <span :class="record.on ? '' : 'muted'">{{ record.on ? '启用' : '停用' }}</span>
-          <a-tooltip v-if="record.mustReset" title="使用临时密码，尚未修改"><AppIcon name="clock" size="sm" style="color:var(--warn)" /></a-tooltip>
+          <span class="u-status-flag">
+            <a-tooltip v-if="record.mustReset" title="尚未修改初始密码"><AppIcon name="clock" size="sm" style="color:var(--warn)" /></a-tooltip>
+          </span>
         </div>
         <div v-else-if="column.key === 'act'" class="act-links">
           <a-button size="small" type="link" :disabled="!mayEdit" :title="dis" @click="openEdit(record as UserRow)">编辑</a-button>
@@ -297,17 +300,17 @@ const columns = [
 
   <a-modal v-model:open="rp.open" :title="rp.title" ok-text="我已记下" :cancel-button-props="{ style: { display: 'none' } }" width="440px" @ok="rp.open = false">
     <p class="muted" style="margin:8px 0 14px">
-      {{ rp.name }}（<span class="mono">{{ rp.u }}</span>）的临时密码如下<template v-if="rp.hours">（{{ rp.hours }} 小时内有效）</template>，关闭后将不再显示：
+      {{ rp.name }}（<span class="mono">{{ rp.u }}</span>）的{{ rp.hours ? '临时密码' : '初始密码' }}如下<template v-if="rp.hours">（{{ rp.hours }} 小时内有效）</template>，关闭后将不再显示：
     </p>
     <div class="row"><code class="u-pwd grow">{{ rp.pwd }}</code><a-button @click="copy(rp.pwd)"><AppIcon name="copy" size="sm" />复制</a-button></div>
   </a-modal>
 </template>
 
 <style scoped>
-.u-cell { display: inline-flex; align-items: center; gap: 10px; width: 190px; max-width: 100%; margin: 0 auto; text-align: left; }
-.u-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--on-accent); background: linear-gradient(135deg, #2ED3E6, #3B8BFF); }
-.u-av.off { background: var(--surface-3); color: var(--faint); }
-.u-me { font-style: normal; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 11px; background: var(--accent-soft); color: var(--accent-text); }
+.u-name { display: inline-flex; align-items: center; justify-content: center; max-width: 100%; }
+.u-me { flex: none; font-style: normal; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 11px; background: var(--accent-soft); color: var(--accent-text); }
+.u-status-cell { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+.u-status-flag { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex: none; }
 .u-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .u-form { margin-top: 12px; }
 .u-hint { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12.5px; }

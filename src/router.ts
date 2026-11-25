@@ -75,3 +75,42 @@ router.beforeEach(async (to) => {
   }
   return true
 })
+
+const CHUNK_RELOAD_KEY = 'dms_chunk_reload_at'
+function isChunkLoadError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '')
+  return (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module') ||
+    msg.includes('Unable to preload CSS')
+  )
+}
+function reloadForFreshChunks(targetFullPath?: string) {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0)
+    if (now - last < 15000) return
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now))
+  } catch {
+    /* ignore */
+  }
+  if (targetFullPath && targetFullPath.startsWith('/')) {
+    window.location.hash = `#${targetFullPath}`
+  }
+  window.location.reload()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault()
+    reloadForFreshChunks()
+  })
+}
+
+router.onError((err, to) => {
+  if (isChunkLoadError(err)) {
+    reloadForFreshChunks(to?.fullPath)
+  }
+})

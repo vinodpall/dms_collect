@@ -246,7 +246,7 @@ onMounted(() => {
   clock = window.setInterval(() => { now.value = new Date() }, 1000)
   fetchNotifications()
   checkHealth()
-  if (session.user?.mustReset) toast('当前使用的是临时密码，请尽快在右上角修改密码', { type: 'warn' })
+  if (session.user?.mustReset) toast('当前使用的是初始密码，请尽快在右上角修改密码', { type: 'warn' })
 })
 onBeforeUnmount(() => { clearTimeout(timer); clearInterval(clock); document.removeEventListener('keydown', onKey) })
 watch(current, (p) => { document.title = PAGE_META[p].title + ' · 数采管理平台' }, { immediate: true })
