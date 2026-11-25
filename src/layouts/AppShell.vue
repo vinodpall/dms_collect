@@ -60,7 +60,7 @@ const content = ref<HTMLElement>()
 watch(loading, (v) => { if (!v && content.value) content.value.scrollTop = 0 })
 
 /** 账号被停用 / 角色权限变更 / 401 失效时及时生效 */
-watch(() => session.authed, (v) => { if (!v) { router.replace({ name: 'login' }); toast('登录状态已失效，请重新登录', { type: 'warn' }) } })
+watch(() => session.authed, (v) => { if (!v && route.name !== 'login') router.replace({ name: 'login' }) }, { immediate: true })
 watch(() => session.allowed(current.value), (v) => {
   if (!session.authed || v) return
   const first = (Object.keys(PAGE_META) as PageKey[]).find((k) => session.allowed(k))

@@ -25,16 +25,44 @@ export interface UserSessionProfile {
 
 const USER_CACHE_KEY = 'dms_user_profile'
 
-export const useSession = defineStore('session', () => {
-  const token = ref<string | null>(getToken())
-  let cachedProfile: UserSessionProfile | null = null
+function isJwtExpired(jwt: string | null): boolean {
+  if (!jwt) return false
+  const parts = jwt.split('.')
+  if (parts.length !== 3) return false
   try {
-    const raw = lsGet(USER_CACHE_KEY)
-    if (raw) cachedProfile = JSON.parse(raw)
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+    const payload = JSON.parse(atob(padded))
+    if (typeof payload?.exp === 'number') {
+      return payload.exp * 1000 <= Date.now()
+    }
   } catch {
-    cachedProfile = null
+    /* ignore non-standard tokens */
+  }
+  return false
+}
+
+export const useSession = defineStore('session', () => {
+  let initialToken = getToken()
+  let cachedProfile: UserSessionProfile | null = null
+  if (initialToken && isJwtExpired(initialToken)) {
+    initialToken = null
+    removeToken()
+    try {
+      localStorage.removeItem(USER_CACHE_KEY)
+    } catch {
+      /* ignore */
+    }
+  } else {
+    try {
+      const raw = lsGet(USER_CACHE_KEY)
+      if (raw) cachedProfile = JSON.parse(raw)
+    } catch {
+      cachedProfile = null
+    }
   }
 
+  const token = ref<string | null>(initialToken)
   const profile = ref<UserSessionProfile | null>(cachedProfile)
   const authed = computed(() => !!token.value && !!profile.value)
   const role = computed<RoleKey>(() => profile.value?.role ?? '')
@@ -78,7 +106,12 @@ export const useSession = defineStore('session', () => {
     }
   }
 
+  let verified = false
+  let verifyPromise: Promise<void> | null = null
+
   function clearSessionLocal() {
+    verified = false
+    verifyPromise = null
     token.value = null
     removeToken()
     saveProfile(null)
@@ -154,9 +187,24 @@ export const useSession = defineStore('session', () => {
         mustReset: !!me.user.must_reset_pwd,
       }
       saveProfile(userProfile)
+      verified = true
     } catch (err) {
+      if (token.value) verified = true
       console.warn('[session] 获取用户信息失败', err)
     }
+  }
+
+  /**
+   * 首次进入页面时校验一次本地缓存的 token（并发复用同一次请求）
+   */
+  async function ensureVerified(): Promise<void> {
+    if (verified || !getToken()) return
+    if (!verifyPromise) {
+      verifyPromise = fetchMe().finally(() => {
+        verifyPromise = null
+      })
+    }
+    await verifyPromise
   }
 
   function clearMustReset() {
@@ -209,11 +257,6 @@ export const useSession = defineStore('session', () => {
     /* 统一深色赛博主题 */
   }
 
-  // 页面加载时若已有 token 则静默拉取一次最新用户信息
-  if (token.value) {
-    fetchMe()
-  }
-
   return {
     uid: computed(() => profile.value?.id ?? ''),
     user,
@@ -222,6 +265,7 @@ export const useSession = defineStore('session', () => {
     login,
     logout,
     fetchMe,
+    ensureVerified,
     clearMustReset,
     theme,
     dark,

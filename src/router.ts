@@ -40,16 +40,37 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+let lastUnauthorizedToastAt = 0
+if (typeof window !== 'undefined') {
+  window.addEventListener('dms:unauthorized', () => {
+    const now = Date.now()
+    if (now - lastUnauthorizedToastAt > 2000) {
+      lastUnauthorizedToastAt = now
+      toast('登录状态已失效，请重新登录', { type: 'warn' })
+    }
+    const currentRoute = router.currentRoute.value
+    if (currentRoute.name !== 'login') {
+      const redirect =
+        currentRoute.name && currentRoute.fullPath && currentRoute.fullPath !== '/' && currentRoute.fullPath !== '/dashboard'
+          ? { redirect: currentRoute.fullPath }
+          : {}
+      router.replace({ name: 'login', query: redirect }).catch(() => {})
+    }
+  })
+}
+
+router.beforeEach(async (to) => {
   const s0 = useSession()
+  if (s0.authed) {
+    await s0.ensureVerified()
+  }
   if (!s0.authed && !to.meta.public) return { name: 'login', query: to.fullPath === '/dashboard' ? {} : { redirect: to.fullPath } }
   if (s0.authed && to.name === 'login') return { name: 'dashboard' }
   const page = to.meta.page as PageKey | undefined
   if (!page) return true
-  const s = useSession()
-  if (!s.allowed(page)) {
+  if (!s0.allowed(page)) {
     toast('当前角色没有访问该页面的权限', { type: 'warn' })
-    const first = keys.find((k) => s.allowed(k))
+    const first = keys.find((k) => s0.allowed(k))
     return first && first !== to.name ? { name: first } : true
   }
   return true

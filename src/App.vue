@@ -12,7 +12,7 @@ import ToastHost from '@/components/ToastHost.vue'
 dayjs.locale('zh-cn')
 const session = useSession()
 const route = useRoute()
-const inApp = computed(() => !!route.meta.page)
+const inApp = computed(() => !!route.meta.page && session.authed)
 const theme = computed(() => buildTheme(session.dark))
 </script>
 <template>

@@ -79,7 +79,7 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
     headers,
   })
 
-  if (res.status === 401 && !options.skipAuth) {
+  function handleUnauthorized(): never {
     removeToken()
     try {
       localStorage.removeItem('dms_user_profile')
@@ -87,13 +87,11 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
       /* ignore */
     }
     window.dispatchEvent(new CustomEvent('dms:unauthorized'))
-    // 路由采用 createWebHashHistory()，避免使用 history pathname 跳转导致 404 或产生 /login#/xxx
-    if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
-      window.history.replaceState(null, '', '/#/login')
-    } else if (!window.location.hash.startsWith('#/login')) {
-      window.location.hash = '#/login'
-    }
     throw new ApiError('登录已过期，请重新登录', 401)
+  }
+
+  if (res.status === 401 && !options.skipAuth) {
+    handleUnauthorized()
   }
 
   if (!res.ok) {
@@ -114,6 +112,9 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
   }
 
   const result: ApiResponse<T> & { detail?: any } = await res.json()
+  if (result.code === 401 && !options.skipAuth) {
+    handleUnauthorized()
+  }
   if (result.code !== 0) {
     throw new ApiError(result.message || '操作失败', result.code, result.detail ?? result.data)
   }
