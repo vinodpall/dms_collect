@@ -68,13 +68,14 @@ watch(
 )
 
 const columns = computed(() => [
-  { title: '设备', key: 'name', width: 185, ellipsis: true, align: 'center' as const },
+  { title: '设备', key: 'name', width: 180, ellipsis: true, align: 'center' as const },
   { title: '类型', dataIndex: 'type', key: 'type', width: 95, ellipsis: true, align: 'center' as const },
-  { title: '所属工位', dataIndex: 'station', key: 'station', width: 135, ellipsis: true, align: 'center' as const },
-  { title: '位置', key: 'loc', width: 120, ellipsis: true, align: 'center' as const },
-  { title: '状态', key: 'st', width: 90, align: 'center' as const },
-  { title: '标定', key: 'calib', width: 135, align: 'center' as const },
-  { title: '当前占用', key: 'occ', width: 125, ellipsis: true, align: 'center' as const },
+  { title: '型号', key: 'model', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '所属工位', dataIndex: 'station', key: 'station', width: 125, ellipsis: true, align: 'center' as const },
+  { title: '位置', key: 'loc', width: 115, ellipsis: true, align: 'center' as const },
+  { title: '状态', key: 'st', width: 85, align: 'center' as const },
+  { title: '标定', key: 'calib', width: 130, align: 'center' as const },
+  { title: '当前占用', key: 'occ', width: 115, ellipsis: true, align: 'center' as const },
   { title: '固件', key: 'fw', width: 95, ellipsis: true, align: 'center' as const },
 ])
 
@@ -335,6 +336,7 @@ async function saveStation() {
         :columns="columns"
         :data-source="rows"
         :loading="store.loading"
+        :scroll="{ x: 1060 }"
         :custom-row="customRow"
         :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
         @change="onTableChange as never"
@@ -343,6 +345,7 @@ async function saveStation() {
           <div v-if="column.key === 'name'" class="cell-main">
             <span :title="record.name">{{ record.name }}</span><small class="mono" :title="record.id">{{ record.id }}</small>
           </div>
+          <span v-else-if="column.key === 'model'" class="muted cell-ellipsis" :title="record.model || ''">{{ record.model || '—' }}</span>
           <span v-else-if="column.key === 'station'" class="cell-ellipsis" :title="record.station || ''">{{ record.station || '—' }}</span>
           <span v-else-if="column.key === 'loc'" class="muted cell-ellipsis" :title="record.loc || ''">{{ record.loc || '—' }}</span>
           <StatusBadge

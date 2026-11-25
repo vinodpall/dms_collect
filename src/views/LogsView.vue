@@ -34,14 +34,14 @@ const moduleOptions = [
 ]
 
 const auditCols = [
-  { title: 'TraceID', key: 'traceId', width: 130, ellipsis: true, align: 'center' as const },
-  { title: '操作时间', key: 'time', width: 165, ellipsis: true, align: 'center' as const },
-  { title: '操作人', key: 'user', width: 110, ellipsis: true, align: 'center' as const },
-  { title: '业务模块', key: 'moduleName', width: 110, ellipsis: true, align: 'center' as const },
-  { title: '操作动作', key: 'action', width: 120, ellipsis: true, align: 'center' as const },
-  { title: '目标对象', key: 'target', width: 140, ellipsis: true, align: 'center' as const },
+  { title: '序号', key: 'seq', width: 64, align: 'center' as const },
+  { title: '操作时间', key: 'time', width: 160, ellipsis: true, align: 'center' as const },
+  { title: '操作人', key: 'user', width: 105, ellipsis: true, align: 'center' as const },
+  { title: '业务模块', key: 'moduleName', width: 105, ellipsis: true, align: 'center' as const },
+  { title: '操作动作', key: 'action', width: 115, ellipsis: true, align: 'center' as const },
+  { title: '目标对象', key: 'target', ellipsis: true, align: 'center' as const },
   { title: '状态', key: 'status', width: 90, align: 'center' as const },
-  { title: '业务说明', key: 'summary', ellipsis: true, align: 'center' as const },
+  { title: '业务说明', key: 'summary', width: 190, ellipsis: true, align: 'center' as const },
   { title: '操作', key: 'act', width: 80, align: 'center' as const },
 ]
 
@@ -258,7 +258,7 @@ function exportAlgCsv() {
 </script>
 
 <template>
-  <PageHead title="操作审计日志" desc="用户操作安全审计流水与算法数据处理日志中心">
+  <PageHead title="日志管理" desc="用户操作安全审计流水与算法数据处理日志中心">
     <template #desc>
       <div style="margin-top:10px">
         <div class="cyber-tabs">
@@ -334,12 +334,9 @@ function exportAlgCsv() {
           onChange: (p: number) => { auditPage = p; loadAuditLogs() },
         }"
       >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'traceId'">
-            <span v-if="record.traceId" class="mono ell-code cell-ellipsis" :title="'点击查看详情: ' + record.traceId" @click="viewDetail(record)">
-              {{ record.traceId }}
-            </span>
-            <span v-else class="muted">—</span>
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'seq'">
+            <span class="num muted">{{ (auditPage - 1) * auditPageSize + index + 1 }}</span>
           </template>
           <template v-else-if="column.key === 'time'">
             <span class="num muted cell-ellipsis" style="font-size:12px" :title="record.time">{{ record.time }}</span>

@@ -143,7 +143,11 @@ async function openNotif(item: ShellNotif) {
   }
 }
 
-function logout() { session.logout(); router.replace({ name: 'login' }); toast('已退出登录') }
+async function logout() {
+  await session.logout()
+  await router.replace({ name: 'login' })
+  toast('已退出登录')
+}
 
 /* 修改密码（对接 /auth/password） */
 const pw = reactive({ open: false, old: '', n1: '', n2: '', err: '', busy: false })

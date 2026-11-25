@@ -33,7 +33,7 @@ export const PAGE_META: Record<PageKey, { title: string; icon: string }> = {
   datasets: { title: '数据集管理', icon: 'db' },
   storage: { title: '存储管理', icon: 'drive' },
   devices: { title: '设备管理', icon: 'cpu' },
-  logs: { title: '操作审计日志', icon: 'file' },
+  logs: { title: '日志管理', icon: 'file' },
   system: { title: '系统管理', icon: 'settings' },
   users: { title: '用户管理', icon: 'users' },
   roles: { title: '角色权限', icon: 'shield' },

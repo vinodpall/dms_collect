@@ -183,6 +183,16 @@ export const useDevices = defineStore('devices', () => {
   function mapApiDevice(item: ApiDeviceItem): Device {
     const typeName = item.type_label || TYPE_CODE_TO_LABEL[item.device_type] || item.device_type
     const meta = typeMeta(item.device_type || typeName)
+    const stationName = item.station_name || stations.value.find((s) => s.id === item.station_id)?.name || ''
+    const cal = item.calibration
+    const calAtRaw = cal?.created_at || item.calibrated_at || ''
+    const calItemsRaw = Array.isArray(cal?.items)
+      ? cal.items
+      : Array.isArray(item.calib_items)
+        ? item.calib_items
+        : Array.isArray(item.calib_items_template) && item.calib_items_template.length
+          ? item.calib_items_template
+          : meta.calibItems
     return {
       id: item.code,
       numericId: item.id,
@@ -191,7 +201,7 @@ export const useDevices = defineStore('devices', () => {
       typeCode: item.device_type,
       st: item.status,
       loc: item.location || '',
-      station: item.station_name || '',
+      station: stationName,
       stationId: item.station_id,
       model: item.model || '',
       vendor: item.vendor || '',
@@ -203,9 +213,9 @@ export const useDevices = defineStore('devices', () => {
       occupiedTaskCode: item.occupied_task_code || '',
       calib: item.is_calibrated
         ? {
-            at: item.calibrated_at ? item.calibrated_at.replace('T', ' ').slice(0, 16) : '',
-            by: item.calibrated_by_name || '—',
-            items: item.calib_items?.length ? item.calib_items : meta.calibItems,
+            at: calAtRaw ? calAtRaw.replace('T', ' ').slice(0, 16) : '',
+            by: cal?.calibrated_by_name || item.calibrated_by_name || '—',
+            items: calItemsRaw,
           }
         : null,
       cfg: item.config && item.config.rate ? (item.config as DevCfg) : { ...meta.def },

@@ -404,7 +404,7 @@ export const useAccess = defineStore('access', () => {
         if (v && !restricted.has(k)) can[k] = 1
       }
     }
-    const roleCode = 'role_' + Date.now().toString(36)
+    const roleCode = 'r_' + Date.now().toString(36).toLowerCase()
     const permCodes = encodePermissions(pages, can)
 
     const res = await rolesApi.create({

@@ -103,11 +103,16 @@ async function submit() {
       </div>
       <div class="two">
         <a-form-item label="安装位置"><a-input v-model:value="f.loc" placeholder="如：工位上方 / 机械臂末端" :maxlength="30" /></a-form-item>
-        <a-form-item label="固件版本"><a-input v-model:value="f.fw" class="mono" placeholder="如：5.9.2" :maxlength="20" /></a-form-item>
+        <a-form-item label="序列号 (SN)"><a-input v-model:value="f.serialNo" class="mono" placeholder="可选" :maxlength="50" /></a-form-item>
       </div>
       <div class="two">
-        <a-form-item label="设备型号" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.model" placeholder="可选" :maxlength="40" /></a-form-item>
-        <a-form-item label="生产厂商" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.vendor" placeholder="可选" :maxlength="40" /></a-form-item>
+        <a-form-item label="设备型号"><a-input v-model:value="f.model" placeholder="可选" :maxlength="40" /></a-form-item>
+        <a-form-item label="生产厂商"><a-input v-model:value="f.vendor" placeholder="可选" :maxlength="40" /></a-form-item>
+      </div>
+      <div class="three">
+        <a-form-item label="固件版本" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.fw" class="mono" placeholder="如：5.9.2" :maxlength="20" /></a-form-item>
+        <a-form-item label="连接 IP" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.connIp" class="mono" placeholder="如：192.168.10.21" :maxlength="64" /></a-form-item>
+        <a-form-item label="通信端口" :class="{ 'mb-0': !meta }"><a-input-number v-model:value="f.connPort" :min="1" :max="65535" placeholder="可选" style="width:100%" /></a-form-item>
       </div>
       <template v-if="meta">
         <div class="label-row">采集参数 <span class="muted">配置一次，后续采集任务沿用</span></div>

@@ -64,6 +64,16 @@ export interface DeviceItem {
   calibrated_by?: number | null
   calibrated_by_name?: string | null
   calib_items?: string[] | null
+  calibration?: {
+    id: number
+    items: string[] | Record<string, any> | null
+    calibrated_by: number
+    calibrated_by_name?: string | null
+    is_valid: boolean
+    invalid_reason?: string | null
+    created_at: string
+  } | null
+  calib_items_template?: string[] | null
   occupied_task_id: number | null
   occupied_task_code: string | null
   version: number
