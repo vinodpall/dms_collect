@@ -350,6 +350,18 @@ onMounted(() => {
     <template #desc>
       <div style="margin-top:10px">
         <div class="cyber-tabs" role="tablist" aria-label="视图切换">
+          <a-tooltip title="当前阶段暂未开放手动采集任务，请先使用服务器目录预处理导入">
+            <button
+              type="button"
+              role="tab"
+              class="cyber-tab-item is-disabled"
+              disabled
+              aria-disabled="true"
+            >
+              <AppIcon name="task" size="sm" />
+              <span>采集任务</span>
+            </button>
+          </a-tooltip>
           <button
             type="button"
             role="tab"
@@ -377,6 +389,9 @@ onMounted(() => {
     </template>
     <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('video')"><AppIcon name="camera" />本地文件导入</a-button>
     <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="openImportDrawer('umi_server')"><AppIcon name="drive" />服务器目录预处理导入</a-button>
+    <a-tooltip title="当前阶段暂未开放手动新建采集任务">
+      <a-button disabled><AppIcon name="plus" />新建任务</a-button>
+    </a-tooltip>
   </PageHead>
 
   <!-- 采集历史：真实 GET /api/v1/episodes -->
@@ -544,5 +559,14 @@ onMounted(() => {
   border-radius: 4px;
   background: rgba(15, 31, 53, 0.6);
   border: 1px dashed var(--line);
+}
+.cyber-tab-item.is-disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+.cyber-tab-item.is-disabled:hover {
+  color: var(--muted);
+  background: transparent;
 }
 </style>
