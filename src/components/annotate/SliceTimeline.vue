@@ -113,7 +113,9 @@ onBeforeUnmount(() => { drag.value = null })
 <template>
   <div class="tl">
     <div ref="track" class="tl-track" :class="{ edit: editable }" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
-      <div class="ruler"><span v-for="k in ticks" :key="k" class="tk" :style="{ left: pct(k) + '%' }"><i />{{ k }}s</span></div>
+      <div class="ruler">
+        <span v-for="k in ticks" :key="k" class="tk" :class="{ end: pct(k) >= 96 }" :style="{ left: pct(k) + '%' }"><i />{{ k }}s</span>
+      </div>
       <div class="lane">
         <div v-for="s in sorted" :key="s.id" class="sg" :class="{ sel: selected === s.id, flag: !!s.flag }" :data-seg="s.id" :style="{ left: pct(s.s) + '%', width: pct(s.e - s.s) + '%', background: colorOf(clip.scen, s.n) }" :title="s.n + ' ' + s.s + '–' + s.e + ' s' + (s.flag ? '（审核：' + s.flag + '）' : '')">
           <i v-if="editable" class="h l" data-h="l" /><span class="nm">{{ s.n }}</span><i v-if="editable" class="h r" data-h="r" />
@@ -121,17 +123,19 @@ onBeforeUnmount(() => { drag.value = null })
         <div v-if="ghost" class="sg ghost" :style="{ left: pct(ghost.s) + '%', width: pct(ghost.e - ghost.s) + '%' }"><span class="nm">{{ (ghost.e - ghost.s).toFixed(1) }}s</span></div>
         <span v-if="!clip.segs.length && !ghost" class="tl-empty">{{ editable ? '拖拽或按 A 创建切片' : '暂无标注' }}</span>
       </div>
-      <span class="ph" :style="{ left: pct(t) + '%' }"><b>{{ fmtT(t) }}</b></span>
+      <span class="ph" :class="{ flip: pct(t) > 85 }" :style="{ left: `min(${pct(t)}%, calc(100% - 2px))` }"><b>{{ fmtT(t) }}</b></span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.tl-track { position: relative; user-select: none; touch-action: none; border-radius: 8px; background: var(--surface-3); padding: 0 0 8px; cursor: pointer; }
+.tl-track { position: relative; user-select: none; touch-action: none; border-radius: 8px; background: var(--surface-3); padding: 0 0 8px; cursor: pointer; overflow: hidden; }
 .tl-track.edit { cursor: crosshair; }
 .ruler { position: relative; height: 22px; border-bottom: 1px solid var(--line); cursor: ew-resize; }
-.tk { position: absolute; top: 0; font-size: 10.5px; color: var(--faint); padding-left: 4px; line-height: 20px; }
+.tk { position: absolute; top: 0; font-size: 10.5px; color: var(--faint); padding-left: 4px; line-height: 20px; white-space: nowrap; }
 .tk i { position: absolute; left: 0; top: 14px; width: 1px; height: 8px; background: var(--line-strong); }
+.tk.end { transform: translateX(-100%); padding-left: 0; padding-right: 4px; }
+.tk.end i { left: auto; right: 0; }
 .lane { position: relative; height: 46px; margin: 8px 0 0; overflow: hidden; }
 .sg { position: absolute; top: 0; bottom: 0; border-radius: 6px; color: #fff; display: flex; align-items: center; min-width: 4px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset; cursor: grab; }
 .sg .nm { flex: 1; padding: 0 9px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
@@ -144,4 +148,5 @@ onBeforeUnmount(() => { drag.value = null })
 .tl-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; color: var(--faint); font-size: 12px; pointer-events: none; }
 .ph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--crit-solid); pointer-events: none; z-index: 3; }
 .ph b { position: absolute; top: 2px; left: 5px; padding: 0 5px; border-radius: 3px; background: var(--crit-solid); color: #fff; font: 600 10.5px/16px var(--font-mono); white-space: nowrap; }
+.ph.flip b { left: auto; right: 5px; }
 </style>
