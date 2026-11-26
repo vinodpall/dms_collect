@@ -105,10 +105,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="vwall-wrap">
     <div v-if="allVideos.length" class="vwall-bar">
-      <span class="muted" style="font-size:12px">
-        共 {{ allVideos.length }} 路同步预览视频
-        <template v-if="preview?.expires_at"> · 链接有效至 {{ preview.expires_at.replace('T', ' ').slice(11, 16) }}</template>
-      </span>
+      <span class="muted" style="font-size:12px">{{ allVideos.length }} 路视频</span>
       <div class="row" style="gap:6px">
         <div v-if="hasFisheyeSubset" class="vseg-mini">
           <button type="button" :class="{ active: camView === 'all' }" @click="camView = 'all'">全部 ({{ allVideos.length }})</button>

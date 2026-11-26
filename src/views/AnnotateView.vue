@@ -676,14 +676,14 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <!-- 我的任务：完整切片标注工作区 -->
         <template v-else>
-          <div class="row" style="gap:10px;flex-wrap:wrap">
-            <a-button type="primary" :disabled="!clip.dur" @click="toggle">
-              <AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}
+          <div class="mine-toolbar">
+            <a-button size="small" type="primary" :disabled="!clip.dur" @click="toggle">
+              <AppIcon :name="playing ? 'pause' : 'play'" size="sm" />{{ playing ? '暂停' : '播放' }}
             </a-button>
-            <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
-            <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
+            <span class="mono num" style="font-size:12.5px;white-space:nowrap">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
+            <a-select v-model:value="speed" size="small" style="width:72px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
             <span v-if="nowSeg" class="tag" :style="{ background: colorOf(clip.scen, nowSeg.n), color: '#fff' }">
-              当前：{{ nowSeg.n }}
+              {{ nowSeg.n }}
             </span>
             <span class="grow" />
             <template v-if="editable">
@@ -696,28 +696,17 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
                   </a-menu>
                 </template>
               </a-dropdown>
-              <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增切片 <kbd>A</kbd></a-button>
-              <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />向下合并 <kbd>M</kbd></a-button>
-              <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除切片 <kbd>D</kbd></a-button>
+              <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增 <kbd>A</kbd></a-button>
+              <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />合并 <kbd>M</kbd></a-button>
+              <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除 <kbd>D</kbd></a-button>
             </template>
           </div>
 
           <SliceTimeline v-model:t="t" :clip="clip" :selected="sel" :editable="editable" @select="sel = $event" @changed="changed" />
 
-          <div class="muted hint-row">
-            <template v-if="editable">
-              <span>快捷提示：播放中按 <kbd>A</kbd> 切分/新增；<kbd>M</kbd> 合并；<kbd>D</kbd> 删除；<kbd>←</kbd><kbd>→</kbd> 微调 0.1s；<kbd>Ctrl+S</kbd> 保存草稿</span>
-            </template>
-            <template v-else>
-              <span>只读模式：当前数据处于【{{ clip.statusLabel }}】状态</span>
-            </template>
-            <span class="grow" />
-            <span>覆盖率 <b>{{ coverage }}%</b></span>
-          </div>
-
-          <div class="row between" style="margin-top:6px">
-            <span style="font-weight:600;font-size:13.5px">子任务切片明细 ({{ sorted.length }})</span>
-            <span class="muted" style="font-size:12px">子任务名称来自 <a @click="router.push({ name: 'dict' })">标注字典 {{ dict.version }}</a></span>
+          <div class="row between" style="margin-top:2px">
+            <span style="font-weight:600;font-size:13px">子任务切片 ({{ sorted.length }})</span>
+            <span class="muted" style="font-size:12px">覆盖率 <b>{{ coverage }}%</b></span>
           </div>
 
           <table class="stbl" aria-label="子任务切片列表">
@@ -784,24 +773,19 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
                 </td>
               </tr>
               <tr v-if="!sorted.length">
-                <td colspan="6" class="muted" style="text-align:center;padding:24px">
-                  暂无切片数据{{ editable ? '，可点「规则预切分」自动生成，或在时间轴上拖拽 / 按 A 键新增' : '' }}
-                </td>
+                <td colspan="6" class="muted" style="text-align:center;padding:20px">暂无切片</td>
               </tr>
             </tbody>
           </table>
 
           <div class="actbar">
-            <span class="muted grow" style="font-size:12px">
-              <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>A</kbd> 切分/新增　<kbd>M</kbd> 合并　<kbd>D</kbd> 删除　<kbd>Ctrl+S</kbd> 保存
-            </span>
             <template v-if="clip.status === 'submitted'">
-              <span class="muted" style="font-size:12.5px;margin-right:8px">已提交审核员审核，等待质检结果</span>
+              <span class="muted" style="font-size:12.5px">已提交审核，等待质检</span>
               <a-button :loading="busy" :disabled="!canLabel" @click="withdraw">撤回提交</a-button>
             </template>
             <template v-else-if="clip.status === 'approved'">
               <span style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px">
-                <AppIcon name="check" size="sm" />{{ clip.statusLabel || '已通过审核并归档' }}
+                <AppIcon name="check" size="sm" />{{ clip.statusLabel || '已通过审核' }}
               </span>
             </template>
             <template v-else-if="editable">
@@ -940,11 +924,10 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 <style scoped>
 .ann2 { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 640px; }
 .work { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.pool-playbar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
+.pool-playbar, .mine-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
 .pool-playbar :deep(.ant-slider) { margin: 4px 6px; }
 .pool-world3d { flex: 1; min-height: 360px; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px; }
-.hint-row { display: flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .stbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -960,7 +943,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 .claim :deep(.ant-select-selection-item) { line-height: 26px !important; }
 .claim .grow { flex: 1; min-width: 0; }
 .claim .ct { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.actbar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; margin-top: 4px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.actbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 12px; margin-top: auto; border-top: 1px solid var(--line); flex-wrap: wrap; }
 kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); }
 .val-banner { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--line); }
 .val-banner.pass { background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.3); }

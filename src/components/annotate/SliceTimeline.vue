@@ -119,7 +119,7 @@ onBeforeUnmount(() => { drag.value = null })
           <i v-if="editable" class="h l" data-h="l" /><span class="nm">{{ s.n }}</span><i v-if="editable" class="h r" data-h="r" />
         </div>
         <div v-if="ghost" class="sg ghost" :style="{ left: pct(ghost.s) + '%', width: pct(ghost.e - ghost.s) + '%' }"><span class="nm">{{ (ghost.e - ghost.s).toFixed(1) }}s</span></div>
-        <span v-if="!clip.segs.length && !ghost" class="empty">{{ editable ? '在此处按住鼠标左右拖动，创建子任务切片' : '暂无标注' }}</span>
+        <span v-if="!clip.segs.length && !ghost" class="tl-empty">{{ editable ? '拖拽或按 A 创建切片' : '暂无标注' }}</span>
       </div>
       <span class="ph" :style="{ left: pct(t) + '%' }"><b>{{ fmtT(t) }}</b></span>
     </div>
@@ -132,7 +132,7 @@ onBeforeUnmount(() => { drag.value = null })
 .ruler { position: relative; height: 22px; border-bottom: 1px solid var(--line); cursor: ew-resize; }
 .tk { position: absolute; top: 0; font-size: 10.5px; color: var(--faint); padding-left: 4px; line-height: 20px; }
 .tk i { position: absolute; left: 0; top: 14px; width: 1px; height: 8px; background: var(--line-strong); }
-.lane { position: relative; height: 46px; margin: 8px 0 0; }
+.lane { position: relative; height: 46px; margin: 8px 0 0; overflow: hidden; }
 .sg { position: absolute; top: 0; bottom: 0; border-radius: 6px; color: #fff; display: flex; align-items: center; min-width: 4px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset; cursor: grab; }
 .sg .nm { flex: 1; padding: 0 9px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .sg.sel { box-shadow: 0 0 0 2px var(--text), 0 2px 8px rgba(0,0,0,.3); z-index: 2; }
@@ -141,7 +141,7 @@ onBeforeUnmount(() => { drag.value = null })
 .h { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255,255,255,.18); }
 .h.l { left: 0; } .h.r { right: 0; }
 .h::after { content: ''; position: absolute; top: 14px; bottom: 14px; left: 3px; width: 2px; border-radius: 1px; background: rgba(255,255,255,.8); }
-.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12.5px; pointer-events: none; }
+.tl-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; color: var(--faint); font-size: 12px; pointer-events: none; }
 .ph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--crit-solid); pointer-events: none; z-index: 3; }
 .ph b { position: absolute; top: 2px; left: 5px; padding: 0 5px; border-radius: 3px; background: var(--crit-solid); color: #fff; font: 600 10.5px/16px var(--font-mono); white-space: nowrap; }
 </style>
