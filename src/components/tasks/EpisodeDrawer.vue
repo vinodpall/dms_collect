@@ -4,6 +4,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import SignalGroupChart from './SignalGroupChart.vue'
+import EpisodeWorld3D from './EpisodeWorld3D.vue'
 import {
   episodesApi,
   type EpisodeDetail,
@@ -31,6 +32,7 @@ const signalsError = ref('')
 
 const refreshingPreview = ref(false)
 const camView = ref<'all' | 'fisheye'>('all')
+const showWorld3D = ref(true)
 const activeSection = ref<'signals' | 'channels' | 'meta'>('signals')
 const sideFilter = ref<'all' | 'left' | 'right' | 'other'>('all')
 
@@ -487,9 +489,14 @@ const channelCols = [
                 共 {{ allVideos.length }} 路视频{{ preview.audio ? ' · 含音频' : '' }}
               </span>
             </div>
-            <div v-if="hasFisheyeSubset" class="seg" role="group" aria-label="画面模式">
-              <button type="button" :aria-pressed="camView === 'all'" @click="camView = 'all'">全部画面 ({{ allVideos.length }}路)</button>
-              <button type="button" :aria-pressed="camView === 'fisheye'" @click="camView = 'fisheye'">仅鱼眼 (省带宽)</button>
+            <div class="row" style="gap:8px;align-items:center">
+              <div v-if="hasFisheyeSubset" class="seg" role="group" aria-label="画面模式">
+                <button type="button" :aria-pressed="camView === 'all'" @click="camView = 'all'">全部画面 ({{ allVideos.length }}路)</button>
+                <button type="button" :aria-pressed="camView === 'fisheye'" @click="camView = 'fisheye'">仅鱼眼 (省带宽)</button>
+              </div>
+              <a-button v-if="preview?.has_signals" size="small" :type="showWorld3D ? 'primary' : 'default'" @click="showWorld3D = !showWorld3D">
+                {{ showWorld3D ? '隐藏世界坐标系' : '显示世界坐标系' }}
+              </a-button>
             </div>
           </div>
 
@@ -501,32 +508,40 @@ const channelCols = [
           />
 
           <template v-else>
-            <div
-              class="ep-video-grid"
-              :class="{
-                single: visibleVideos.length === 1,
-                dual: visibleVideos.length === 2,
-                multi: visibleVideos.length >= 3,
-              }"
-            >
-              <div v-for="v in visibleVideos" :key="v.camera" class="ep-video-tile">
-                <div class="ep-video-label">
-                  <span>{{ v.label || v.camera }}</span>
-                  <span class="mono muted">{{ v.width }}×{{ v.height }} · {{ v.fps }}fps</span>
-                </div>
-                <div class="ep-video-stage">
-                  <video
-                    :ref="(el) => setVideoRef(v.camera, el)"
-                    :src="v.url"
-                    muted
-                    playsinline
-                    preload="metadata"
-                    @loadedmetadata="onVideoLoadedMetadata(v.camera)"
-                    @error="onMediaError"
-                  />
-                  <div v-if="isBlackFrame(v)" class="ep-black-tip">无画面区间</div>
+            <div class="ep-stage-split" :class="{ 'with-3d': showWorld3D && preview.has_signals }">
+              <div
+                class="ep-video-grid"
+                :class="{
+                  single: visibleVideos.length === 1,
+                  dual: visibleVideos.length === 2,
+                  multi: visibleVideos.length >= 3,
+                }"
+              >
+                <div v-for="v in visibleVideos" :key="v.camera" class="ep-video-tile">
+                  <div class="ep-video-label">
+                    <span>{{ v.label || v.camera }}</span>
+                    <span class="mono muted">{{ v.width }}×{{ v.height }} · {{ v.fps }}fps</span>
+                  </div>
+                  <div class="ep-video-stage">
+                    <video
+                      :ref="(el) => setVideoRef(v.camera, el)"
+                      :src="v.url"
+                      muted
+                      playsinline
+                      preload="metadata"
+                      @loadedmetadata="onVideoLoadedMetadata(v.camera)"
+                      @error="onMediaError"
+                    />
+                    <div v-if="isBlackFrame(v)" class="ep-black-tip">无画面区间</div>
+                  </div>
                 </div>
               </div>
+              <EpisodeWorld3D
+                v-if="showWorld3D && preview.has_signals"
+                :signals="signals"
+                :current-ms="currentMs"
+                :loading="signalsLoading"
+              />
             </div>
 
             <!-- 独立同步音频轨道 -->
@@ -763,6 +778,20 @@ const channelCols = [
   gap: 10px;
   margin-bottom: 10px;
   flex-wrap: wrap;
+}
+.ep-stage-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+.ep-stage-split.with-3d {
+  grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr);
+}
+@media (max-width: 960px) {
+  .ep-stage-split.with-3d {
+    grid-template-columns: 1fr;
+  }
 }
 .ep-video-grid {
   display: grid;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { colorOf, newSegId, SUB_NAMES, type Clip, type Seg } from '@/stores/annotate'
+import { colorOf, newSegId, SUB_NAMES, useAnnotate, type Clip, type Seg } from '@/stores/annotate'
 import { clamp } from '@/utils'
 import { fmtT } from './motion'
 
@@ -101,7 +101,8 @@ function onUp(e: PointerEvent) {
       const used = new Set(props.clip.segs.map((x) => x.n))
       const candidates = SUB_NAMES[props.clip.scen] || []
       const n = candidates.find((x) => !used.has(x)) ?? candidates[0] ?? '未命名'
-      const seg: Seg = { id: newSegId(), s, e: en, n }
+      const dictItemId = useAnnotate().resolveDictItemId(n, 0, props.clip.scen)
+      const seg: Seg = { id: newSegId(), serverId: null, dictItemId, s, e: en, n, source: 'manual' }
       props.clip.segs.push(seg); emit('select', seg.id); emit('changed')
     } else { emit('select', null); emit('update:t', d.a) }
   } else if (d.k !== 'seek' && moved) emit('changed')

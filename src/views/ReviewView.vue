@@ -10,58 +10,144 @@ import VideoWall from '@/components/annotate/VideoWall.vue'
 import SliceTimeline from '@/components/annotate/SliceTimeline.vue'
 import { fmtT } from '@/components/annotate/motion'
 import { CLIP_ST, colorOf, useAnnotate, type Clip, type Seg } from '@/stores/annotate'
-import { ISSUE_KIND, REJECT_TPL, SEV, VERDICT, useReview, type IssueKind, type IssueSev, type Verdict } from '@/stores/review'
+import {
+  DIM_SCORE_DEFS,
+  ISSUE_KIND,
+  REASON_OPTS,
+  SEV,
+  VERDICT,
+  useReview,
+  type IssueKind,
+  type IssueSev,
+  type Verdict,
+} from '@/stores/review'
 import { useDict } from '@/stores/dict'
-import { useLogs } from '@/stores/logs'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
-import { SCEN, type BadgeKind } from '@/constants'
+import { confirmDlg } from '@/composables/confirm'
+import type { BadgeKind } from '@/constants'
 import { clamp } from '@/utils'
 
-const store = useAnnotate()
+const annStore = useAnnotate()
 const rv = useReview()
 const dict = useDict()
-const logs = useLogs()
 const session = useSession()
 const router = useRouter()
-const me = computed(() => session.info.user)
 
+const canReview = computed(() => session.can('review'))
 const activeTab = ref<'review' | 'stats'>('review')
 const shortcutGuideOpen = ref(false)
+const busy = ref(false)
 
-/* 待审池（未领取，按 加急 → 时限 排序）/ 我的审核 / 已审 */
+/* 待审池 / 我的审核 / 已审 */
 const view = ref<'pool' | 'mine' | 'done'>('mine')
-const myReview = computed(() => store.clips.filter((c) => c.status === 'submitted' && c.reviewer === me.value))
-const done = computed(() => store.clips.filter((c) => c.status === 'approved' || c.status === 'rejected'))
-const vis = computed(() => (view.value === 'pool' ? store.reviewPool : view.value === 'mine' ? myReview.value : done.value))
 const claimN = ref(5)
-const clip = computed<Clip | undefined>(() => store.byId(store.cur))
-const inPool = computed(() => !!clip.value && clip.value.status === 'submitted' && !clip.value.reviewer)
-const reviewable = computed(() => !!clip.value && clip.value.status === 'submitted' && clip.value.reviewer === me.value)
+const clip = computed<Clip | undefined>(() => rv.byNumericId(rv.curId))
+const inPool = computed(() => !!clip.value && clip.value.status === 'submitted' && !clip.value.reviewerId)
+const reviewable = computed(() => canReview.value && !!clip.value && clip.value.reviewable)
 
-function doClaim(x?: Clip) {
-  const got = store.claimReview(x ?? claimN.value)
-  if (!got.length) return toast('待审池为空', { type: 'warn' })
-  view.value = 'mine'
-  pick(got[0].id)
-  toast(`已领取 ${got.length} 条待审数据`)
+const poolCount = computed(() => rv.summary?.pool ?? 0)
+const mineCount = computed(() => rv.summary?.mine ?? 0)
+const doneCount = computed(() => rv.summary?.done_total ?? 0)
+
+function dueText(c: Clip) {
+  if (!c.dueAt) return ''
+  const diffH = Math.round((new Date(c.dueAt).getTime() - Date.now()) / 3600000)
+  if (c.overdue || diffH <= 0) return '已超时'
+  return diffH < 24 ? `${diffH} 小时内` : `${Math.ceil(diffH / 24)} 天内`
 }
-const dueText = (c: Clip) => (c.dueH == null ? '' : c.dueH < 24 ? `${c.dueH} 小时内` : `${Math.ceil(c.dueH / 24)} 天内`)
 
-function pick(id: string) {
-  store.cur = id
+async function loadList(keepCur = true) {
+  try {
+    const list = await rv.fetchItems({ view: view.value })
+    if (!list.length) {
+      rv.curId = null
+      return
+    }
+    if (!keepCur || !list.some((c) => c.numericId === rv.curId)) {
+      await pick(list[0].numericId)
+    }
+  } catch (err: any) {
+    toast(err?.message || '加载审核列表失败', { type: 'warn' })
+  }
+}
+
+async function pick(id: number) {
+  rv.curId = id
   t.value = 0
   playing.value = false
   sel.value = null
+  try {
+    const detail = await rv.fetchDetail(id)
+    if (detail && detail.reviewable && !orig.value[detail.numericId]) {
+      orig.value[detail.numericId] = cloneSegs(detail.segs)
+    }
+  } catch (err: any) {
+    toast(err?.message || '加载审核详情失败', { type: 'warn' })
+  }
 }
-function ensureCur() {
-  if (vis.value.length && !vis.value.some((c) => c.id === store.cur)) pick(vis.value[0].id)
-}
-watch(vis, ensureCur)
-onMounted(() => {
-  if (!myReview.value.length) view.value = 'pool'
-  ensureCur()
+
+watch(view, () => loadList(false))
+watch(activeTab, (tab) => {
+  if (tab === 'stats') {
+    rv.fetchStats(rv.statsRange).catch(() => {})
+    rv.fetchSampleRatio().catch(() => {})
+  }
 })
+
+async function doClaim(x?: Clip) {
+  busy.value = true
+  try {
+    const payload = x ? { ids: [x.numericId] } : { count: claimN.value }
+    const res = await rv.claim(payload)
+    if (!res.claimed.length) {
+      toast('待审池中没有可领取的数据（自动跳过本人标注）', { type: 'warn' })
+      return
+    }
+    toast(`已领取 ${res.claimed.length} 条待审数据`)
+    const firstId = res.claimed[0].id
+    if (view.value !== 'mine') view.value = 'mine'
+    await loadList(false)
+    await pick(firstId)
+  } catch (err: any) {
+    toast(err?.message || '领取失败', { type: 'crit' })
+  } finally {
+    busy.value = false
+  }
+}
+
+async function doRelease() {
+  const c = clip.value
+  if (!c) return
+  if (!(await confirmDlg({ title: '放回待审池？', msg: '放回后其他审核员可以领取审核。', ok: '放回' }))) return
+  busy.value = true
+  try {
+    await rv.release(c.numericId)
+    delete orig.value[c.numericId]
+    toast('已放回待审池')
+    await loadList(false)
+  } catch (err: any) {
+    toast(err?.message || '放回待审池失败', { type: 'crit' })
+  } finally {
+    busy.value = false
+  }
+}
+
+async function refreshPreview() {
+  const c = clip.value
+  if (!c) return
+  try {
+    const preview = await annStore.refreshUrls(c.numericId)
+    c.preview = preview
+    if (preview.duration_ms > 0) {
+      c.durationMs = preview.duration_ms
+      c.dur = +(preview.duration_ms / 1000).toFixed(2)
+    }
+    toast('预览地址已刷新')
+  } catch (err: any) {
+    toast(err?.message || '刷新预览地址失败', { type: 'warn' })
+  }
+}
 
 /* 播放控制 */
 const t = ref(0)
@@ -69,34 +155,47 @@ const playing = ref(false)
 const speed = ref(1)
 const sel = ref<number | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
-onMounted(() => {
+
+onMounted(async () => {
   timer = setInterval(() => {
-    if (!playing.value || !clip.value) return
+    if (!playing.value || !clip.value || !clip.value.dur) return
     t.value = Math.min(clip.value.dur, +(t.value + 0.1 * speed.value).toFixed(2))
     if (t.value >= clip.value.dur) playing.value = false
   }, 100)
+  window.addEventListener('keydown', onKey, true)
+
+  if (!dict.items.length) dict.fetchAll().catch(() => {})
+  const sum = await rv.fetchSummary()
+  if (sum && sum.mine === 0 && sum.pool > 0) {
+    view.value = 'pool'
+  }
+  await loadList(false)
 })
+
 function toggle() {
-  if (!clip.value) return
+  if (!clip.value || !clip.value.dur) return
   if (t.value >= clip.value.dur) t.value = 0
   playing.value = !playing.value
 }
 
 const sorted = computed(() => (clip.value ? clip.value.segs.slice().sort((a, b) => a.s - b.s) : []))
-const coverage = computed(() => (clip.value ? Math.min(100, Math.round((sorted.value.reduce((a, s) => a + (s.e - s.s), 0) / clip.value.dur) * 100)) : 0))
-const issues = computed(() => (clip.value ? rv.getIssues(clip.value.id) : []))
-const issueOf = (seg: Seg) => issues.value.find((x) => x.segId === seg.id)
-const fatalN = computed(() => issues.value.filter((x) => x.severity === 'fatal').length)
+const coverage = computed(() => {
+  if (!clip.value || !clip.value.dur) return 0
+  return Math.min(100, Math.round((sorted.value.reduce((a, s) => a + Math.max(0, s.e - s.s), 0) / clip.value.dur) * 100))
+})
 
-/* 审核员直接修正切片：领取时保存原始快照，与当前切片对比得出修改项；有修改时「通过」即为「修改后通过」 */
-const orig = ref<Record<string, Seg[]>>({})
-const cloneSegs = (l: Seg[]) => l.map((x) => ({ id: x.id, s: x.s, e: x.e, n: x.n }))
-watch([() => clip.value?.id, reviewable], () => {
-  const c = clip.value
-  if (c && reviewable.value && !orig.value[c.id]) orig.value[c.id] = cloneSegs(c.segs)
-}, { immediate: true })
+const openIssues = computed(() => (clip.value ? clip.value.issues.filter((x) => x.open) : []))
+const issueOf = (seg: Seg) =>
+  openIssues.value.find((x) => x.segment_id != null && (x.segment_id === seg.serverId || x.segment_id === seg.id))
+const fatalN = computed(() => openIssues.value.filter((x) => x.severity === 'fatal').length)
+
+/* 审核员直接修正切片对比 */
+const orig = ref<Record<number, Seg[]>>({})
+const cloneSegs = (l: Seg[]) => l.map((x) => ({ ...x }))
+
 const edits = computed<string[]>(() => {
-  const c = clip.value, o = c ? orig.value[c.id] : undefined
+  const c = clip.value
+  const o = c ? orig.value[c.numericId] : undefined
   if (!c || !o) return []
   const out: string[] = []
   for (const a of o) {
@@ -108,90 +207,196 @@ const edits = computed<string[]>(() => {
   for (const b of c.segs) if (!o.some((a) => a.id === b.id)) out.push(`新增「${b.n}」${b.s.toFixed(1)}–${b.e.toFixed(1)}s`)
   return out
 })
+
 function revertEdits() {
-  const c = clip.value, o = c ? orig.value[c.id] : undefined
+  const c = clip.value
+  const o = c ? orig.value[c.numericId] : undefined
   if (!c || !o) return
   c.segs = cloneSegs(o)
   toast('已撤销全部修改')
 }
-const subOpts = computed(() => (clip.value ? store.namesFor(clip.value.scen).map((n) => ({ value: n, label: n })) : []))
+
+const subOpts = computed(() => {
+  if (!clip.value) return []
+  const actions = dict.actionsFor(clip.value.scen || undefined)
+  const list = actions.length ? actions : dict.actionsFor()
+  return list.map((x) => ({ value: x.name, label: x.name }))
+})
+
+function onSegLabelChange(seg: Seg) {
+  if (!clip.value) return
+  seg.dictItemId = annStore.resolveDictItemId(seg.n, seg.dictItemId, clip.value.scen)
+}
+
 function bounds(seg: Seg): [number, number] {
   const i = sorted.value.findIndex((x) => x.id === seg.id)
   return [i > 0 ? sorted.value[i - 1].e : 0, i < sorted.value.length - 1 ? sorted.value[i + 1].s : clip.value?.dur ?? 0]
 }
+
 function setTime(seg: Seg, key: 's' | 'e', v: unknown) {
   const n = Number(v)
   if (v === null || v === '' || Number.isNaN(n)) return
   const [lo, hi] = bounds(seg)
-  const s = key === 's' ? n : seg.s, e = key === 'e' ? n : seg.e
+  const s = key === 's' ? n : seg.s
+  const e = key === 'e' ? n : seg.e
   if (s < lo - 0.001 || e > hi + 0.001 || e - s < 0.3) return toast('时间范围无效：不能与相邻切片重叠，且时长至少 0.3s', { type: 'warn' })
   seg[key] = +n.toFixed(1)
 }
+
 function delSeg(seg: Seg) {
   const c = clip.value
   if (!c) return
   c.segs = c.segs.filter((x) => x.id !== seg.id)
-  rv.removeIssue(c.id, seg.id)
   if (sel.value === seg.id) sel.value = null
 }
 
-/* 问题标记：类型 + 严重度 */
-const issueModal = reactive({ open: false, seg: null as Seg | null, kind: 'boundary' as IssueKind, severity: 'warn' as IssueSev, desc: '' })
+/* 问题标记（对接 POST/DELETE /review/items/{id}/issues） */
+const KIND_OPTS = (Object.keys(ISSUE_KIND) as IssueKind[]).map((k) => ({ value: k, label: ISSUE_KIND[k] }))
+const issueModal = reactive({
+  open: false,
+  saving: false,
+  seg: null as Seg | null,
+  kind: 'boundary' as IssueKind,
+  severity: 'normal' as IssueSev,
+  desc: '',
+})
+
 function openTagIssue(seg: Seg) {
   const old = issueOf(seg)
-  Object.assign(issueModal, { open: true, seg, kind: old?.kind ?? 'boundary', severity: old?.severity ?? 'warn', desc: old?.desc ?? seg.flag ?? '' })
+  Object.assign(issueModal, {
+    open: true,
+    saving: false,
+    seg,
+    kind: old?.issue_type ?? 'boundary',
+    severity: old?.severity ?? 'normal',
+    desc: old?.description ?? '',
+  })
 }
-function saveIssue() {
-  const c = clip.value, seg = issueModal.seg
+
+async function saveIssue() {
+  const c = clip.value
+  const seg = issueModal.seg
   if (!c || !seg) return
   const desc = issueModal.desc.trim()
   if (!desc) return toast('请填写问题说明', { type: 'warn' })
-  seg.flag = `[${SEV[issueModal.severity][1]}] ${desc}`
-  rv.addIssue(c.id, { segId: seg.id, kind: issueModal.kind, severity: issueModal.severity, desc })
-  logs.addLog({ user: me.value, role: session.info.name, module: 'review', moduleName: '审核工作台', action: '标记问题', target: `${c.file} · [${seg.n}]`, summary: `${SEV[issueModal.severity][1]}问题（${ISSUE_KIND[issueModal.kind]}）：${desc}` })
-  issueModal.open = false
-  toast('已记录问题')
-}
-function removeIssue(seg: Seg) {
-  seg.flag = undefined
-  if (clip.value) rv.removeIssue(clip.value.id, seg.id)
-  toast('已取消问题标记')
+  issueModal.saving = true
+  try {
+    await rv.addIssue(c.numericId, {
+      segment_id: seg.serverId ?? null,
+      at_ms: Math.round(seg.s * 1000),
+      issue_type: issueModal.kind,
+      severity: issueModal.severity,
+      description: desc,
+    })
+    issueModal.open = false
+    toast('已记录问题')
+  } catch (err: any) {
+    toast(err?.message || '标记问题失败', { type: 'crit' })
+  } finally {
+    issueModal.saving = false
+  }
 }
 
-/* 四种审核结论 */
-const KIND_OPTS = (Object.keys(ISSUE_KIND) as IssueKind[]).map((k) => ({ value: k, label: ISSUE_KIND[k] }))
-const dec = reactive({ open: false, v: 'pass' as Verdict, reasons: [] as string[], text: '' })
+async function removeIssue(seg: Seg) {
+  const c = clip.value
+  const iss = issueOf(seg)
+  if (!c || !iss) return
+  busy.value = true
+  try {
+    await rv.removeIssue(c.numericId, iss.id)
+    toast('已取消问题标记')
+  } catch (err: any) {
+    toast(err?.message || '删除问题标记失败', { type: 'crit' })
+  } finally {
+    busy.value = false
+  }
+}
+
+/* 四种审核结论（对接 POST /review/items/{id}/decide） */
+const dec = reactive({
+  open: false,
+  saving: false,
+  v: 'approve' as Verdict,
+  reasons: [] as IssueKind[],
+  text: '',
+  enableScore: false,
+  scores: { time: 5, action: 5, obj: 5, semantic: 5, outcome: 5, consistency: 5 } as Record<string, number>,
+})
+
 function openDecision(v: Verdict) {
   if (!reviewable.value) return
-  if (v === 'pass' && edits.value.length) v = 'fixpass'
-  if (v === 'pass' && fatalN.value) return toast('存在致命问题，请先直接修正切片或驳回', { type: 'warn' })
-  const flagged = sorted.value.filter((s) => issueOf(s)).map((s) => `「${s.n}」${issueOf(s)!.desc}`).join('；')
-  Object.assign(dec, { open: true, v, reasons: [], text: v === 'reject' || v === 'redo' ? flagged : '' })
+  if (v === 'approve' && edits.value.length) v = 'approve_modified'
+  if (v === 'approve' && fatalN.value) return toast('存在致命问题，请先直接修正切片或驳回', { type: 'warn' })
+  const flagged = openIssues.value.map((x) => x.description).join('；')
+  const defaultReasons = Array.from(new Set(openIssues.value.map((x) => x.issue_type)))
+  Object.assign(dec, {
+    open: true,
+    saving: false,
+    v,
+    reasons: v === 'reject' || v === 'redo' ? defaultReasons : [],
+    text: v === 'reject' || v === 'redo' ? flagged : '',
+    enableScore: false,
+    scores: { time: 5, action: 5, obj: 5, semantic: 5, outcome: 5, consistency: 5 },
+  })
 }
-function confirmDecision() {
+
+async function confirmDecision() {
   const c = clip.value
   if (!c) return
   const text = dec.text.trim()
-  if ((dec.v === 'reject' || dec.v === 'redo') && !text && !dec.reasons.length) return toast('请选择原因或填写说明', { type: 'warn' })
-  const reason = dec.v === 'fixpass' ? [edits.value.join('；'), text].filter(Boolean).join('；') : [...dec.reasons, text].filter(Boolean).join('；')
-  if (dec.v === 'reject') revertEdits()
-  delete orig.value[c.id]
-  const annotator = c.owner ?? '未知'
-  if (dec.v === 'pass' || dec.v === 'fixpass') store.approve(c)
-  else if (dec.v === 'reject') store.reject(c, reason, me.value)
-  else store.redo(c, reason, me.value)
-  rv.record({ clipId: c.id, annotator, reviewer: me.value, verdict: dec.v, reasons: dec.v === 'pass' ? [] : dec.v === 'fixpass' ? ['审核员修正 ' + edits.value.length + ' 处'] : dec.reasons.length ? dec.reasons : [text] })
-  logs.addLog({ user: me.value, role: session.info.name, module: 'review', moduleName: '审核工作台', action: VERDICT[dec.v][1], target: `${c.file} · 批次 ${c.batch}`, status: dec.v === 'pass' || dec.v === 'fixpass' ? undefined : 'warn', summary: VERDICT[dec.v][1] + (reason ? '：' + reason : '') })
-  dec.open = false
-  toast({ pass: '已通过，数据进入格式转换', fixpass: '已修改并通过', reject: `已驳回给 ${annotator} 修改`, redo: '已退回重做，数据回到标注任务池' }[dec.v])
+  if (dec.v === 'reject' && !dec.reasons.length) return toast('驳回时请至少选择一项原因', { type: 'warn' })
+  if (dec.reasons.includes('other') && !text) return toast('选择「其他原因」时请填写补充说明', { type: 'warn' })
+
+  dec.saving = true
+  try {
+    await rv.decide(c.numericId, {
+      version: c.version,
+      decision: dec.v,
+      segments: dec.v === 'approve_modified' ? annStore.segsToPayload(c.segs, c.scen) : undefined,
+      reasons: dec.v === 'reject' || dec.v === 'redo' ? dec.reasons : undefined,
+      comment: text || undefined,
+      dim_scores: dec.enableScore ? { ...dec.scores } : undefined,
+    })
+    delete orig.value[c.numericId]
+    dec.open = false
+    toast(
+      {
+        approve: '已通过，数据进入后续流程',
+        approve_modified: '已修改并通过',
+        reject: `已驳回给 ${c.owner || '标注员'} 修改`,
+        redo: '已退回重做，数据回到标注任务池',
+      }[dec.v]
+    )
+    await loadList(false)
+  } catch (err: any) {
+    toast(err?.message || '提交审核决定失败', { type: 'crit' })
+  } finally {
+    dec.saving = false
+  }
+}
+
+/* 抽检比例保存 */
+const savingRatio = ref(false)
+async function saveSampleRatio() {
+  savingRatio.value = true
+  try {
+    await rv.updateSampleRatio(rv.sampleRate)
+    toast(`抽检比例已更新为 ${rv.sampleRate}%`)
+  } catch (err: any) {
+    toast(err?.message || '更新抽检比例失败', { type: 'crit' })
+  } finally {
+    savingRatio.value = false
+  }
 }
 
 /* 快捷键 */
 function onKey(e: KeyboardEvent) {
   if (issueModal.open || dec.open || shortcutGuideOpen.value || activeTab.value !== 'review') return
-  const el = e.target as HTMLElement, tag = el?.tagName
+  const el = e.target as HTMLElement
+  const tag = el?.tagName
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el?.closest?.('.ant-select') || el?.closest?.('.ant-input') || el?.closest?.('.ant-rate') || el?.isContentEditable) return
-  const k = e.key.toLowerCase(), code = e.code
+  const k = e.key.toLowerCase()
+  const code = e.code
   if (code === 'Space') { e.preventDefault(); toggle(); return }
   if (code === 'ArrowLeft' && clip.value) { e.preventDefault(); t.value = clamp(+(t.value - (e.shiftKey ? 2 : 0.1)).toFixed(2), 0, clip.value.dur); return }
   if (code === 'ArrowRight' && clip.value) { e.preventDefault(); t.value = clamp(+(t.value + (e.shiftKey ? 2 : 0.1)).toFixed(2), 0, clip.value.dur); return }
@@ -204,16 +409,14 @@ function onKey(e: KeyboardEvent) {
   }
   if (k === 'escape') sel.value = null
 }
-onMounted(() => window.addEventListener('keydown', onKey, true))
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey, true)
   if (timer) clearInterval(timer)
 })
 
-/* 质量统计 */
-const st = computed(() => rv.stats)
-const maxReason = computed(() => Math.max(1, ...st.value.reasons.map((r) => r[1])))
-const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.n)))
+const maxReason = computed(() => Math.max(1, ...(rv.stats?.reasons || []).map((r) => r.count)))
+const maxVerdict = computed(() => Math.max(1, ...(rv.stats?.decisions || []).map((r) => r.count)))
 </script>
 
 <template>
@@ -230,18 +433,26 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
 
   <template v-if="activeTab === 'review'">
     <div class="card ann2">
-      <ClipList filter="" :clips="vis" :cur="clip?.id ?? null" :filters="[]" :empty-desc="view === 'pool' ? '待审池为空' : view === 'mine' ? '没有待审数据，可去待审池领取' : '暂无已审数据'" @pick="pick">
+      <ClipList
+        filter=""
+        :clips="rv.items"
+        :cur="clip?.numericId ?? null"
+        :filters="[]"
+        :loading="rv.loadingList"
+        :empty-desc="view === 'pool' ? '待审池为空' : view === 'mine' ? '没有待审数据，可去待审池领取' : '暂无已审数据'"
+        @pick="pick"
+      >
         <template #head>
           <div class="vseg" role="tablist" aria-label="审核视图">
-            <button type="button" role="tab" :aria-selected="view === 'pool'" @click="view = 'pool'">待审池 <span class="num">{{ store.reviewPool.length }}</span></button>
-            <button type="button" role="tab" :aria-selected="view === 'mine'" @click="view = 'mine'">我的审核 <span class="num">{{ myReview.length }}</span></button>
-            <button type="button" role="tab" :aria-selected="view === 'done'" @click="view = 'done'">已审 <span class="num">{{ done.length }}</span></button>
+            <button type="button" role="tab" :aria-selected="view === 'pool'" @click="view = 'pool'">待审池 <span class="num">{{ poolCount }}</span></button>
+            <button type="button" role="tab" :aria-selected="view === 'mine'" @click="view = 'mine'">我的审核 <span class="num">{{ mineCount }}</span></button>
+            <button type="button" role="tab" :aria-selected="view === 'done'" @click="view = 'done'">已审 <span class="num">{{ doneCount }}</span></button>
           </div>
           <div v-if="view === 'pool'" class="claim">
             <span class="ct">每次领取</span>
             <a-input-number v-model:value="claimN" size="small" :min="1" :max="10" style="width:60px" aria-label="领取条数" />
             <span class="ct">条</span><span class="grow" />
-            <a-button size="small" type="primary" :disabled="!store.reviewPool.length" title="按加急优先、时限从近到远领取" @click="doClaim()">批量领取</a-button>
+            <a-button size="small" type="primary" :loading="busy" :disabled="!rv.items.length || !canReview" title="按加急优先、时限从近到远领取" @click="doClaim()">批量领取</a-button>
           </div>
         </template>
         <template #meta="{ clip: c }">
@@ -249,50 +460,56 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
             <span class="tag" :class="c.prio === 'urgent' ? 'crit' : ''" style="font-size:11px">{{ c.prio === 'urgent' ? '加急' : '普通' }}</span>
             <span class="muted">{{ dueText(c) }} · 标注 {{ c.owner ?? '-' }}</span>
           </span>
+          <span v-else-if="c.decisionLabel" class="muted" style="font-size:11.5px">
+            结论：{{ c.decisionLabel }}<template v-if="c.decidedAt"> · {{ c.decidedAt.replace('T', ' ').slice(5, 16) }}</template>
+          </span>
         </template>
       </ClipList>
 
       <div class="work">
-        <EmptyState v-if="!clip || !vis.length" icon="inbox" title="请选择一条数据" desc="从待审池领取后开始审核" />
+        <EmptyState v-if="!clip" icon="inbox" title="请选择一条数据" desc="从待审池领取后开始审核" />
         <template v-else>
           <div class="row between" style="gap:12px;align-items:flex-start">
             <div style="min-width:0">
               <div class="row" style="gap:8px">
-                <span class="mono ell">{{ clip.file }}</span>
-                <StatusBadge :kind="CLIP_ST[clip.status][0] as BadgeKind" :text="CLIP_ST[clip.status][1]" />
-                <span v-if="clip.status === 'submitted'" class="tag" :class="clip.prio === 'urgent' ? 'crit' : ''">{{ clip.prio === 'urgent' ? '加急' : '普通' }} · {{ dueText(clip) }}</span>
+                <span class="mono ell">{{ clip.id }} · {{ clip.file }}</span>
+                <StatusBadge :kind="(CLIP_ST[clip.status]?.[0] || 'info') as BadgeKind" :text="clip.statusLabel" />
+                <span v-if="clip.status === 'submitted'" class="tag" :class="clip.prio === 'urgent' || clip.overdue ? 'crit' : ''">{{ clip.prio === 'urgent' ? '加急' : '普通' }}<template v-if="dueText(clip)"> · {{ dueText(clip) }}</template></span>
               </div>
               <div class="muted" style="font-size:12.5px;margin-top:2px">
-                {{ SCEN[clip.scen]?.name ?? clip.scen }} · {{ clip.dur }} 秒 · 批次 {{ clip.batch }} · 标注员 {{ clip.owner ?? '-' }}
+                {{ clip.sceneName || clip.scen || '未分配场景' }} · {{ clip.dur ? clip.dur.toFixed(1) + ' 秒' : '—' }} · 批次 {{ clip.batch || '—' }} · 标注员 {{ clip.owner ?? '-' }}
               </div>
             </div>
+            <a-button v-if="reviewable" size="small" :loading="busy" @click="doRelease">放回待审池</a-button>
           </div>
 
           <div v-if="inPool" class="callout info">
             <AppIcon name="inbox" /><span class="grow">该数据在待审池中，领取后才能审核</span>
-            <a-button size="small" type="primary" @click="doClaim(clip)">领取此条</a-button>
+            <a-button size="small" type="primary" :loading="busy" :disabled="!canReview" @click="doClaim(clip)">领取此条</a-button>
           </div>
-          <div v-else-if="clip.status === 'submitted' && clip.reviewer !== me" class="callout"><AppIcon name="user" /><span>已由 {{ clip.reviewer }} 领取审核，当前只读</span></div>
+          <div v-else-if="clip.status === 'submitted' && !reviewable && clip.reviewer" class="callout">
+            <AppIcon name="user" /><span>已由 {{ clip.reviewer }} 领取审核，当前只读</span>
+          </div>
           <div v-if="clip.submitNote" class="callout"><AppIcon name="info" /><span><b>标注员说明：</b>{{ clip.submitNote }}</span></div>
-          <div v-if="clip.reject && clip.status === 'rejected'" class="callout warn" role="alert">
-            <AppIcon name="alert" /><span><b>驳回原因：</b>{{ clip.reject.reason }}<span class="muted"> —— {{ clip.reject.by }} · {{ clip.reject.t }}</span></span>
+          <div v-if="clip.rejectReason && clip.status === 'rejected'" class="callout warn" role="alert">
+            <AppIcon name="alert" /><span><b>驳回原因：</b>{{ clip.rejectReason }}</span>
           </div>
 
-          <VideoWall :clip="clip" :t="t" :playing="playing" />
+          <VideoWall :clip="clip" :t="t" :playing="playing" :speed="speed" :loading="rv.loadingDetail" @refresh="refreshPreview" />
 
           <div class="row" style="gap:10px;flex-wrap:wrap">
-            <a-button type="primary" @click="toggle"><AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}</a-button>
+            <a-button type="primary" :disabled="!clip.dur" @click="toggle"><AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}</a-button>
             <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
             <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
             <span class="grow" />
-            <span class="muted" style="font-size:12.5px">覆盖率 {{ coverage }}% · 切片 {{ sorted.length }} 个 · 问题 {{ issues.length }} 个</span>
+            <span class="muted" style="font-size:12.5px">覆盖率 {{ coverage }}% · 切片 {{ sorted.length }} 个 · 问题 {{ openIssues.length }} 个</span>
           </div>
 
           <SliceTimeline v-model:t="t" :clip="clip" :selected="sel" :editable="reviewable" @select="sel = $event" />
 
           <div v-if="reviewable" class="callout" :class="edits.length ? 'info' : ''">
             <AppIcon :name="edits.length ? 'pencil' : 'info'" />
-            <span class="grow" v-if="!edits.length">小问题可直接在时间轴拖动边界，或在下表修改子任务、起止时间、删除切片；修改后点「修改后通过」即可，无需退回标注员</span>
+            <span class="grow" v-if="!edits.length">小问题可直接在时间轴拖动边界，或在下表修改子任务、起止时间、删除切片；修改后点「修改后通过」即可</span>
             <span class="grow" v-else><b>已修正 {{ edits.length }} 处：</b>{{ edits.slice(0, 3).join('；') }}{{ edits.length > 3 ? ' 等' : '' }}</span>
             <a-button v-if="edits.length" size="small" @click="revertEdits">撤销全部修改</a-button>
           </div>
@@ -306,7 +523,7 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
               <tr v-for="s in sorted" :key="s.id" :class="{ sel: sel === s.id, flag: !!issueOf(s) }" @click="sel = s.id">
                 <td><i class="dot" :style="{ background: colorOf(clip.scen, s.n) }" /></td>
                 <td>
-                  <a-select v-if="reviewable" v-model:value="s.n" size="small" style="width:100%" aria-label="子任务" :options="subOpts" @click.stop />
+                  <a-select v-if="reviewable" v-model:value="s.n" size="small" style="width:100%" aria-label="子任务" :options="subOpts" @click.stop @change="onSegLabelChange(s)" />
                   <b v-else>{{ s.n }}</b>
                   <span v-if="!dict.isValid(s.n)" class="tag crit" style="font-size:10.5px;margin-left:4px">非字典</span>
                 </td>
@@ -314,7 +531,10 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
                 <td @click.stop><a-input-number v-if="reviewable" :value="s.e" size="small" :min="0" :max="clip.dur" :step="0.1" style="width:100%" aria-label="结束时间" @change="(v: unknown) => setTime(s, 'e', v)" /><span v-else class="num">{{ s.e.toFixed(1) }}</span></td>
                 <td class="num muted">{{ (s.e - s.s).toFixed(1) }} s</td>
                 <td>
-                  <template v-if="issueOf(s)"><span class="tag" :class="SEV[issueOf(s)!.severity][0]" style="font-size:11px">{{ SEV[issueOf(s)!.severity][1] }}</span> <span style="font-size:12px">{{ ISSUE_KIND[issueOf(s)!.kind] }}：{{ issueOf(s)!.desc }}</span></template>
+                  <template v-if="issueOf(s)">
+                    <span class="tag" :class="SEV[issueOf(s)!.severity]?.[0] || 'warn'" style="font-size:11px">{{ issueOf(s)!.severity_label }}</span>
+                    <span style="font-size:12px;margin-left:4px">{{ issueOf(s)!.issue_type_label }}：{{ issueOf(s)!.description }}</span>
+                  </template>
                   <span v-else class="muted" style="font-size:12px">—</span>
                 </td>
                 <td @click.stop>
@@ -337,10 +557,17 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
             <template v-if="reviewable">
               <a-button danger @click="openDecision('redo')">退回重做</a-button>
               <a-button danger @click="openDecision('reject')">驳回</a-button>
-              <a-button type="primary" :disabled="fatalN > 0 && !edits.length" :title="fatalN && !edits.length ? '存在致命问题，请直接修正切片或驳回' : undefined" @click="openDecision('pass')"><AppIcon name="check" size="sm" />{{ edits.length ? '修改后通过' : '通过' }}</a-button>
+              <a-button
+                type="primary"
+                :disabled="fatalN > 0 && !edits.length"
+                :title="fatalN && !edits.length ? '存在致命问题，请直接修正切片或驳回' : undefined"
+                @click="openDecision('approve')"
+              >
+                <AppIcon name="check" size="sm" />{{ edits.length ? '修改后通过' : '通过' }}
+              </a-button>
             </template>
-            <a-button v-else-if="inPool" type="primary" @click="doClaim(clip)">领取此条</a-button>
-            <span v-else-if="clip.status === 'approved'" style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px"><AppIcon name="check" size="sm" />已通过并归档</span>
+            <a-button v-else-if="inPool" type="primary" :loading="busy" :disabled="!canReview" @click="doClaim(clip)">领取此条</a-button>
+            <span v-else-if="clip.status === 'approved'" style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px"><AppIcon name="check" size="sm" />{{ clip.statusLabel || '已通过并归档' }}</span>
             <span v-else-if="clip.status === 'rejected'" class="muted" style="font-size:12px">已驳回给标注员修改</span>
           </div>
         </template>
@@ -348,59 +575,144 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
     </div>
   </template>
 
+  <!-- TAB 2: 质量统计（对接 GET /review/stats & GET/PUT /review/settings/sample-ratio） -->
   <template v-else>
-    <div class="grid g4" style="margin-bottom:16px">
-      <div class="card kpi"><span class="k">今日审核</span><span class="v">{{ st.today }}<small>条</small></span><span class="d">累计 {{ st.total }} 条</span></div>
-      <div class="card kpi"><span class="k">通过率</span><span class="v">{{ st.passRate }}<small>%</small></span><span class="d">含修改后通过</span></div>
-      <div class="card kpi"><span class="k">驳回率</span><span class="v">{{ st.rejectRate }}<small>%</small></span><span class="d">含退回重做</span></div>
-      <div class="card kpi"><span class="k">修改后通过</span><span class="v">{{ st.fixRate }}<small>%</small></span><span class="d">审核员直接修正的占比</span></div>
+    <div class="row between" style="margin-bottom:12px">
+      <div class="seg" role="group" aria-label="统计周期">
+        <button type="button" :aria-pressed="rv.statsRange === 'today'" @click="rv.fetchStats('today')">今天</button>
+        <button type="button" :aria-pressed="rv.statsRange === '7d'" @click="rv.fetchStats('7d')">近 7 天</button>
+        <button type="button" :aria-pressed="rv.statsRange === '30d'" @click="rv.fetchStats('30d')">近 30 天</button>
+      </div>
+      <a-button size="small" :loading="rv.loadingStats" @click="rv.fetchStats(rv.statsRange)"><AppIcon name="refresh" size="sm" />刷新统计</a-button>
     </div>
-    <div class="stat-grid">
-      <div class="card pad">
-        <b>审核结论分布</b>
-        <div v-for="x in st.verdicts" :key="x.v" class="bar-row"><span class="bl">{{ VERDICT[x.v][1] }}</span><span class="bt"><i :class="VERDICT[x.v][0]" :style="{ width: (x.n / maxVerdict) * 100 + '%' }" /></span><span class="num">{{ x.n }}</span></div>
+
+    <a-spin :spinning="rv.loadingStats">
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="card kpi"><span class="k">今日审核</span><span class="v">{{ rv.stats?.today_count ?? 0 }}<small>条</small></span><span class="d">周期累计 {{ rv.stats?.total ?? 0 }} 条 · 免检 {{ rv.stats?.exempt_count ?? 0 }} 条</span></div>
+        <div class="card kpi"><span class="k">通过率</span><span class="v">{{ rv.stats?.pass_rate != null ? Math.round(rv.stats.pass_rate) : '—' }}<small v-if="rv.stats?.pass_rate != null">%</small></span><span class="d">含修改后通过</span></div>
+        <div class="card kpi"><span class="k">驳回率</span><span class="v">{{ rv.stats?.reject_rate != null ? Math.round(rv.stats.reject_rate) : '—' }}<small v-if="rv.stats?.reject_rate != null">%</small></span><span class="d">含退回重做</span></div>
+        <div class="card kpi"><span class="k">修改后通过</span><span class="v">{{ rv.stats?.modified_rate != null ? Math.round(rv.stats.modified_rate) : '—' }}<small v-if="rv.stats?.modified_rate != null">%</small></span><span class="d">平均审核耗时 {{ rv.stats?.avg_duration_s != null ? rv.stats.avg_duration_s + 's' : '—' }}</span></div>
       </div>
-      <div class="card pad">
-        <b>常见驳回原因</b>
-        <div v-for="r in st.reasons.slice(0, 6)" :key="r[0]" class="bar-row"><span class="bl wide" :title="r[0]">{{ r[0] }}</span><span class="bt"><i class="warn" :style="{ width: (r[1] / maxReason) * 100 + '%' }" /></span><span class="num">{{ r[1] }}</span></div>
-        <div v-if="!st.reasons.length" class="muted">暂无</div>
+
+      <div class="stat-grid">
+        <div class="card pad">
+          <b>审核结论分布</b>
+          <div v-for="x in rv.stats?.decisions || []" :key="x.key" class="bar-row">
+            <span class="bl">{{ x.label }}</span>
+            <span class="bt"><i :class="VERDICT[x.key as Verdict]?.[0] || 'info'" :style="{ width: (x.count / maxVerdict) * 100 + '%' }" /></span>
+            <span class="num">{{ x.count }}</span>
+          </div>
+          <div v-if="!rv.stats?.decisions?.length" class="muted" style="margin-top:10px">暂无记录</div>
+        </div>
+
+        <div class="card pad">
+          <b>常见驳回原因</b>
+          <div v-for="r in (rv.stats?.reasons || []).slice(0, 6)" :key="r.key" class="bar-row">
+            <span class="bl wide" :title="r.label">{{ r.label }}</span>
+            <span class="bt"><i class="warn" :style="{ width: (r.count / maxReason) * 100 + '%' }" /></span>
+            <span class="num">{{ r.count }}</span>
+          </div>
+          <div v-if="!rv.stats?.reasons?.length" class="muted" style="margin-top:10px">暂无驳回记录</div>
+        </div>
+
+        <div class="card pad">
+          <b>抽检比例配置</b>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px;line-height:1.6">标注员提交后按比例随机抽中进入待审池，0% 全部免检，100% 为全检</div>
+          <div class="row" style="gap:8px">
+            <a-input-number v-model:value="rv.sampleRate" :min="0" :max="100" :step="10" addon-after="%" style="width:130px" :disabled="!canReview" aria-label="抽检比例" />
+            <a-button type="primary" size="small" :loading="savingRatio" :disabled="!canReview" @click="saveSampleRatio">保存</a-button>
+          </div>
+        </div>
       </div>
-      <div class="card pad">
-        <b>抽检比例</b>
-        <div class="muted" style="font-size:12px;margin:4px 0 10px;line-height:1.6">标注员提交后按比例随机抽中进入待审池，未抽中的免检通过；100% 为全检</div>
-        <div class="row" style="gap:10px"><a-input-number v-model:value="rv.sampleRate" :min="10" :max="100" :step="10" addon-after="%" style="width:130px" aria-label="抽检比例" /></div>
+
+      <div v-if="rv.stats?.annotators?.length || rv.stats?.reviewers?.length" class="stat-grid-2" style="margin-top:16px">
+        <div class="card pad">
+          <b>标注员质量统计</b>
+          <table class="stbl" style="margin-top:8px">
+            <thead><tr><th>标注员</th><th>被审</th><th>通过</th><th>驳回</th><th>通过率</th><th>均分</th></tr></thead>
+            <tbody>
+              <tr v-for="a in rv.stats?.annotators || []" :key="a.user_id">
+                <td>{{ a.name || `#${a.user_id}` }}</td>
+                <td class="num">{{ a.reviewed }}</td>
+                <td class="num">{{ a.passed }}</td>
+                <td class="num">{{ a.rejected }}</td>
+                <td class="num">{{ a.pass_rate != null ? Math.round(a.pass_rate) + '%' : '—' }}</td>
+                <td class="num">{{ a.avg_score != null ? a.avg_score.toFixed(1) : '—' }}</td>
+              </tr>
+              <tr v-if="!rv.stats?.annotators?.length"><td colspan="6" class="muted" style="text-align:center">暂无数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card pad">
+          <b>审核员工作量统计</b>
+          <table class="stbl" style="margin-top:8px">
+            <thead><tr><th>审核员</th><th>审核条数</th><th>平均耗时</th></tr></thead>
+            <tbody>
+              <tr v-for="r in rv.stats?.reviewers || []" :key="r.user_id">
+                <td>{{ r.name || `#${r.user_id}` }}</td>
+                <td class="num">{{ r.reviewed }}</td>
+                <td class="num">{{ r.avg_duration_s != null ? r.avg_duration_s + ' s' : '—' }}</td>
+              </tr>
+              <tr v-if="!rv.stats?.reviewers?.length"><td colspan="3" class="muted" style="text-align:center">暂无数据</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </a-spin>
   </template>
 
-  <a-modal v-model:open="issueModal.open" title="标记问题" centered ok-text="确认标记" cancel-text="取消" @ok="saveIssue">
+  <!-- 标记问题弹窗 -->
+  <a-modal v-model:open="issueModal.open" title="标记问题" centered ok-text="确认标记" cancel-text="取消" :confirm-loading="issueModal.saving" @ok="saveIssue">
     <a-form layout="vertical">
       <a-form-item label="切片"><a-input :value="issueModal.seg ? `${issueModal.seg.n} (${issueModal.seg.s}s ~ ${issueModal.seg.e}s)` : ''" disabled /></a-form-item>
       <div class="row" style="gap:12px">
         <a-form-item label="问题类型" style="flex:1"><a-select v-model:value="issueModal.kind" :options="KIND_OPTS" /></a-form-item>
         <a-form-item label="严重度" style="flex:1">
-          <a-radio-group v-model:value="issueModal.severity" button-style="solid"><a-radio-button value="fatal">致命</a-radio-button><a-radio-button value="warn">一般</a-radio-button><a-radio-button value="info">建议</a-radio-button></a-radio-group>
+          <a-radio-group v-model:value="issueModal.severity" button-style="solid">
+            <a-radio-button value="fatal">致命</a-radio-button>
+            <a-radio-button value="normal">一般</a-radio-button>
+            <a-radio-button value="suggest">建议</a-radio-button>
+          </a-radio-group>
         </a-form-item>
       </div>
-      <a-form-item label="说明" required><a-textarea v-model:value="issueModal.desc" :rows="3" placeholder="如：结束时间偏早，需覆盖至开始充气前" :maxlength="100" show-count /></a-form-item>
+      <a-form-item label="说明" required><a-textarea v-model:value="issueModal.desc" :rows="3" placeholder="如：结束时间偏早，需覆盖至开始充气前" :maxlength="200" show-count /></a-form-item>
       <div class="muted" style="font-size:12px">致命：数据不可用（标签错、漏关键动作）；一般：需修改；建议：不影响通过</div>
     </a-form>
   </a-modal>
 
-  <a-modal v-model:open="dec.open" :title="VERDICT[dec.v][1]" centered :ok-text="'确认' + VERDICT[dec.v][1]" cancel-text="取消" :ok-button-props="{ danger: dec.v === 'reject' || dec.v === 'redo' }" @ok="confirmDecision">
+  <!-- 审核决定弹窗 -->
+  <a-modal
+    v-model:open="dec.open"
+    :title="VERDICT[dec.v][1]"
+    centered
+    :ok-text="'确认' + VERDICT[dec.v][1]"
+    cancel-text="取消"
+    :confirm-loading="dec.saving"
+    :ok-button-props="{ danger: dec.v === 'reject' || dec.v === 'redo' }"
+    @ok="confirmDecision"
+  >
     <div class="callout" :class="VERDICT[dec.v][0]" style="margin-bottom:12px"><span>{{ VERDICT[dec.v][2] }}</span></div>
-    <div v-if="dec.v === 'fixpass'" style="margin-bottom:10px;font-size:12.5px">
+    <div v-if="dec.v === 'approve_modified'" style="margin-bottom:10px;font-size:12.5px">
       <div style="font-weight:600;margin-bottom:4px">本次修正（{{ edits.length }} 处）</div>
       <ul style="margin:0;padding-left:18px;color:var(--muted);line-height:1.7"><li v-for="x in edits" :key="x">{{ x }}</li></ul>
     </div>
-    <div v-if="dec.v === 'reject' && edits.length" class="muted" style="font-size:12px;margin-bottom:10px">驳回时会撤销你对切片的修改，由标注员按意见修改。</div>
     <template v-if="dec.v === 'reject' || dec.v === 'redo'">
       <div style="font-weight:600;margin-bottom:6px">原因（可多选）</div>
       <a-checkbox-group v-model:value="dec.reasons" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
-        <a-checkbox v-for="r in REJECT_TPL" :key="r" :value="r">{{ r }}</a-checkbox>
+        <a-checkbox v-for="r in REASON_OPTS" :key="r.value" :value="r.value">{{ r.label }}</a-checkbox>
       </a-checkbox-group>
     </template>
-    <a-textarea v-if="dec.v !== 'pass'" v-model:value="dec.text" :rows="3" :maxlength="200" show-count style="margin-bottom:18px" :placeholder="dec.v === 'fixpass' ? '补充说明（可选）' : '补充说明修改要求'" />
+    <a-textarea v-model:value="dec.text" :rows="3" :maxlength="500" show-count style="margin-bottom:12px" :placeholder="dec.v === 'approve' || dec.v === 'approve_modified' ? '补充说明（可选）' : '补充说明修改要求'" />
+
+    <div style="margin-top:8px">
+      <a-checkbox v-model:checked="dec.enableScore">附带 6 维质量评分（1–5 分，可选）</a-checkbox>
+      <div v-if="dec.enableScore" class="score-grid">
+        <div v-for="dim in DIM_SCORE_DEFS" :key="dim.key" class="score-item">
+          <span class="muted" style="font-size:12px">{{ dim.label }}</span>
+          <a-rate v-model:value="dec.scores[dim.key]" :count="5" style="font-size:14px" />
+        </div>
+      </div>
+    </div>
   </a-modal>
 
   <a-modal v-model:open="shortcutGuideOpen" title="审核快捷键" width="480px" centered :footer="null">
@@ -418,12 +730,11 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
 .work { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px; }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.stbl th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .stbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .stbl tr.sel td { background: var(--accent-soft); }
 .stbl tr.flag td { background: var(--crit-soft); }
 .dot { display: block; width: 10px; height: 10px; border-radius: 3px; }
-
 .vseg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--surface-3); margin-bottom: 8px; }
 .vseg button { flex: 1 1 0; min-width: 0; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .vseg button[aria-selected="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(26,42,77,.12); }
@@ -434,6 +745,7 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
 .claim .grow { flex: 1; min-width: 0; }
 .claim .ct { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .stat-grid { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 16px; align-items: start; }
+.stat-grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: start; }
 .pad { padding: 14px 16px; }
 .bar-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12.5px; }
 .bar-row .bl { width: 84px; color: var(--muted); flex: none; }
@@ -443,15 +755,13 @@ const maxVerdict = computed(() => Math.max(1, ...st.value.verdicts.map((r) => r.
 .bar-row .bt i.good { background: var(--good-solid); }
 .bar-row .bt i.warn { background: var(--warn-solid); }
 .bar-row .bt i.crit { background: var(--crit-solid); }
-
-
 .actbar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; margin-top: 4px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
 kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); }
-
+.score-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px; margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); }
+.score-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .kbd-guide-grid { display: flex; flex-direction: column; gap: 10px; }
 .kbd-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 6px; background: var(--surface-2); }
 .kbd-row .keys { display: flex; gap: 4px; align-items: center; }
 .kbd-row .desc { font-size: 13px; color: var(--text); }
-
-@media (max-width: 900px) { .ann2, .stat-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .ann2, .stat-grid, .stat-grid-2 { grid-template-columns: 1fr; } }
 </style>

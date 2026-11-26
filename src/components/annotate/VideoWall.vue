@@ -1,104 +1,176 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { SCEN } from '@/constants'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import AppIcon from '@/components/AppIcon.vue'
+import type { EpisodePreview, EpisodePreviewVideo } from '@/api'
 import type { Clip } from '@/stores/annotate'
-import { CAM_NAMES, FINGERS, JOINTS, joint, traj } from './motion'
 
-const props = defineProps<{ clip: Clip; t: number; playing: boolean }>()
-const u = computed(() => (props.clip.dur ? props.t / props.clip.dur : 0))
-const isVr = computed(() => (SCEN[props.clip.scen]?.mode ?? '').includes('VR'))
-const names = computed(() => CAM_NAMES[props.clip.scen] ?? CAM_NAMES.qmd)
-const pos = computed(() => traj(u.value, props.clip.scen))
+const props = defineProps<{
+  clip: Clip
+  t: number
+  playing: boolean
+  speed?: number
+  loading?: boolean
+}>()
+const emit = defineEmits<{ refresh: [] }>()
 
-/* 每路相机用不同的观察角度投影末端位置 */
-const cams = computed(() =>
-  names.value.map((name, i) => {
-    const a = (i * 52 + 20) * (Math.PI / 180)
-    const [x, y, z] = pos.value
-    const px = 80 + (x * Math.cos(a) - y * Math.sin(a)) * 78 + (i === 0 ? 0 : (i % 2 ? -6 : 6))
-    const py = 56 - z * 70 + (x * Math.sin(a) + y * Math.cos(a)) * 14
-    const bx = [14, 148, 12, 80, 80, 146][i], by = [84, 84, 84, 8, 8, 84][i]
-    return { name, px: +px.toFixed(1), py: +py.toFixed(1), bx, by, shade: ['#192134', '#1B263B', '#172031', '#1D273D', '#1A2436', '#161E2F'][i] }
-  }),
+const camView = ref<'all' | 'fisheye'>('all')
+const videoEls = new Map<string, HTMLVideoElement>()
+const mediaError = ref(false)
+
+const preview = computed<EpisodePreview | null>(() => props.clip.preview ?? null)
+const allVideos = computed<EpisodePreviewVideo[]>(() => preview.value?.videos ?? [])
+const hasFisheyeSubset = computed(() => {
+  if (allVideos.value.length <= 2) return false
+  return allVideos.value.some((v) => /fisheye|鱼眼/i.test(v.camera + ' ' + v.label))
+})
+const visibleVideos = computed<EpisodePreviewVideo[]>(() => {
+  if (camView.value === 'fisheye' && hasFisheyeSubset.value) {
+    const fisheyes = allVideos.value.filter((v) => /fisheye|鱼眼/i.test(v.camera + ' ' + v.label))
+    return fisheyes.length ? fisheyes : allVideos.value.slice(0, 2)
+  }
+  return allVideos.value
+})
+
+const gridCols = computed(() => {
+  const n = visibleVideos.value.length
+  if (n <= 1) return 1
+  if (n <= 2) return 2
+  if (n <= 4) return 2
+  return 3
+})
+
+function setVideoRef(camera: string, el: any) {
+  if (el && el instanceof HTMLVideoElement) {
+    videoEls.set(camera, el)
+    el.playbackRate = props.speed || 1
+    syncOne(camera, el, true)
+  } else {
+    videoEls.delete(camera)
+  }
+}
+
+function isBlackFrame(v: EpisodePreviewVideo): boolean {
+  const ms = props.t * 1000
+  const start = v.data_start_ms ?? 0
+  const end = v.data_end_ms ?? v.duration_ms ?? props.clip.durationMs
+  return ms < start || ms > end
+}
+
+function syncOne(camera: string, el: HTMLVideoElement, forceSeek = false) {
+  const v = allVideos.value.find((x) => x.camera === camera)
+  if (!v) return
+  const targetSec = Math.max(0, props.t - (v.offset_ms || 0) / 1000)
+  const maxSec = (v.duration_ms || props.clip.durationMs || 0) / 1000
+  const clamped = maxSec > 0 ? Math.min(targetSec, maxSec) : targetSec
+  el.playbackRate = props.speed || 1
+
+  const drift = Math.abs(el.currentTime - clamped)
+  if (forceSeek || (!props.playing && drift > 0.04) || (props.playing && drift > 0.35)) {
+    try {
+      if (el.readyState >= 1) el.currentTime = clamped
+    } catch {
+      /* ignore */
+    }
+  }
+  if (props.playing && !isBlackFrame(v)) {
+    if (el.paused) el.play().catch(() => {})
+  } else if (!el.paused) {
+    el.pause()
+  }
+}
+
+function syncAll(forceSeek = false) {
+  videoEls.forEach((el, camera) => syncOne(camera, el, forceSeek))
+}
+
+watch(() => props.t, () => syncAll(false))
+watch(() => props.playing, () => syncAll(true))
+watch(() => props.speed, () => {
+  videoEls.forEach((el) => { el.playbackRate = props.speed || 1 })
+})
+watch(
+  () => props.clip.numericId,
+  () => {
+    mediaError.value = false
+    camView.value = 'all'
+  }
 )
 
-/* 世界坐标系：等轴测投影 */
-const K = 150
-const proj = (x: number, y: number, z: number): [number, number] => [150 + (x - y) * K * 0.5, 118 + (x + y) * K * 0.28 - z * K * 0.62]
-const N = 60
-const pts = computed(() => Array.from({ length: N + 1 }, (_, i) => proj(...traj(i / N, props.clip.scen))))
-const done = computed(() => pts.value.slice(0, Math.max(1, Math.round(u.value * N) + 1)).map((p) => p.join(',')).join(' '))
-const all = computed(() => pts.value.map((p) => p.join(',')).join(' '))
-const cur = computed(() => proj(...pos.value))
-const axis = [proj(0, 0, 0), proj(0.42, 0, 0), proj(0, 0.42, 0), proj(0, 0, 0.42)]
-const gridLines = computed(() => {
-  const out: [[number, number], [number, number]][] = []
-  for (let i = -3; i <= 3; i++) { out.push([proj(-0.42, i * 0.14, 0), proj(0.42, i * 0.14, 0)]); out.push([proj(i * 0.14, -0.42, 0), proj(i * 0.14, 0.42, 0)]) }
-  return out
+onBeforeUnmount(() => {
+  videoEls.forEach((el) => { if (!el.paused) el.pause() })
+  videoEls.clear()
 })
-const hands = computed(() => [0, 1].map((h) => ({ h, name: h ? '右手' : '左手', fingers: FINGERS.map((f, fi) => ({ f, js: JOINTS.map((j, ji) => ({ j, v: joint(u.value, h, fi, ji) })) })) })))
 </script>
 
 <template>
-  <div class="wall" :class="{ vr: isVr }">
-    <div v-for="(c, i) in cams" :key="i" class="cam wtile">
-      <svg class="scene" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <rect width="160" height="90" :fill="c.shade" /><rect y="68" width="160" height="22" fill="#212d46" />
-        <circle :cx="60 + (i % 3) * 14" cy="52" r="16" fill="none" stroke="#5C6B97" stroke-width="5" /><circle :cx="60 + (i % 3) * 14" cy="52" r="5" fill="#354260" />
-        <path :d="`M${c.bx} ${c.by} L${(c.bx + c.px) / 2} ${Math.min(c.by, c.py) - 6} L${c.px} ${c.py}`" stroke="#51698A" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-        <circle :cx="c.px" :cy="c.py" r="4" fill="#6E8DB3" />
-      </svg>
-      <div class="scan" />
-      <span class="wname">{{ c.name }}</span>
-    </div>
-
-    <div class="wtile traj">
-      <svg viewBox="0 0 300 200" aria-label="世界坐标系轨迹">
-        <rect width="300" height="200" fill="#0D1C30" />
-        <g stroke="#2F3C5A" stroke-width=".8"><line v-for="(g, i) in gridLines" :key="i" :x1="g[0][0]" :y1="g[0][1]" :x2="g[1][0]" :y2="g[1][1]" /></g>
-        <polyline :points="all" fill="none" stroke="#566A97" stroke-width="1.5" stroke-dasharray="3 3" />
-        <polyline :points="done" fill="none" stroke="#2ED3E6" stroke-width="2.4" stroke-linejoin="round" />
-        <line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[1][0]" :y2="axis[1][1]" stroke="#E5534B" stroke-width="1.6" /><line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[2][0]" :y2="axis[2][1]" stroke="#3DBB80" stroke-width="1.6" /><line :x1="axis[0][0]" :y1="axis[0][1]" :x2="axis[3][0]" :y2="axis[3][1]" stroke="#4C8DF0" stroke-width="1.6" />
-        <text :x="axis[1][0] + 4" :y="axis[1][1] + 4" fill="#E5534B" font-size="10">X</text><text :x="axis[2][0] - 12" :y="axis[2][1] + 4" fill="#3DBB80" font-size="10">Y</text><text :x="axis[3][0] + 4" :y="axis[3][1]" fill="#4C8DF0" font-size="10">Z</text>
-        <circle :cx="cur[0]" :cy="cur[1]" r="9" fill="#2ED3E6" opacity=".25" /><circle :cx="cur[0]" :cy="cur[1]" r="4" fill="#fff" />
-      </svg>
-      <span class="wname">世界坐标系 · 末端轨迹</span>
-      <span class="wcoord">X {{ pos[0].toFixed(2) }}  Y {{ pos[1].toFixed(2) }}  Z {{ pos[2].toFixed(2) }} m</span>
-    </div>
-
-    <template v-if="isVr">
-      <div v-for="h in hands" :key="h.h" class="wtile hand">
-        <div class="hname">{{ h.name }}灵巧手 · 关节角度 (°)</div>
-        <div class="fg">
-          <div v-for="f in h.fingers" :key="f.f" class="fing">
-            <div class="bars"><span v-for="j in f.js" :key="j.j" class="bar" :title="f.f + ' ' + j.j + ' ' + j.v + '°'"><i :style="{ height: j.v + '%' }" /></span></div>
-            <b>{{ f.f }}</b><small class="num">{{ f.js.map((j) => j.v).join(' / ') }}</small>
-          </div>
+  <div class="vwall-wrap">
+    <div v-if="allVideos.length" class="vwall-bar">
+      <span class="muted" style="font-size:12px">
+        共 {{ allVideos.length }} 路同步预览视频
+        <template v-if="preview?.expires_at"> · 链接有效至 {{ preview.expires_at.replace('T', ' ').slice(11, 16) }}</template>
+      </span>
+      <div class="row" style="gap:6px">
+        <div v-if="hasFisheyeSubset" class="vseg-mini">
+          <button type="button" :class="{ active: camView === 'all' }" @click="camView = 'all'">全部 ({{ allVideos.length }})</button>
+          <button type="button" :class="{ active: camView === 'fisheye' }" @click="camView = 'fisheye'">仅鱼眼</button>
         </div>
+        <a-button size="small" type="text" @click="mediaError = false; emit('refresh')">
+          <AppIcon name="refresh" size="sm" />刷新预览
+        </a-button>
       </div>
-    </template>
+    </div>
+
+    <div v-if="loading && !allVideos.length" class="vwall-empty">
+      <a-spin />
+      <span class="muted">正在加载多路预览视频…</span>
+    </div>
+
+    <div v-else-if="visibleVideos.length" class="wall" :style="{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }">
+      <div v-for="v in visibleVideos" :key="v.camera + '@' + v.url" class="cam wtile">
+        <video
+          :ref="(el) => setVideoRef(v.camera, el)"
+          :src="v.url"
+          class="vdo"
+          muted
+          playsinline
+          preload="metadata"
+          @loadedmetadata="syncAll(true)"
+          @error="mediaError = true"
+        />
+        <div v-if="isBlackFrame(v)" class="black-mask">该视角当前时刻无画面</div>
+        <span class="wname">{{ v.label || v.camera }}</span>
+        <span class="wmeta mono">{{ v.width }}×{{ v.height }} · {{ Math.round(v.fps) }}fps</span>
+      </div>
+    </div>
+
+    <div v-else class="vwall-empty">
+      <AppIcon name="video" />
+      <span>当前条目暂无可播放的预览视频</span>
+      <a-button size="small" @click="emit('refresh')"><AppIcon name="refresh" size="sm" />尝试刷新预览地址</a-button>
+    </div>
+
+    <div v-if="mediaError" class="callout warn" style="margin-top:8px">
+      <AppIcon name="alert" />
+      <span class="grow">部分视频加载失败，可能是预览签名已过期。</span>
+      <a-button size="small" @click="mediaError = false; emit('refresh')">刷新预览地址</a-button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.wall { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.2fr); gap: 8px; }
-.wtile { position: relative; border-radius: 8px; overflow: hidden; background: #0D1C30; color: #AFC2D9; }
+.vwall-wrap { display: flex; flex-direction: column; gap: 6px; }
+.vwall-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.vseg-mini { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--surface-3); gap: 2px; }
+.vseg-mini button { border: 0; background: none; color: var(--muted); font-size: 11.5px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+.vseg-mini button.active { background: var(--surface); color: var(--text); font-weight: 600; }
+.wall { display: grid; gap: 8px; }
+.wtile { position: relative; border-radius: 8px; overflow: hidden; background: #091322; border: 1px solid var(--line); }
 .wtile.cam { aspect-ratio: 16 / 9; }
-.wname { position: absolute; left: 6px; top: 6px; padding: 1px 7px; border-radius: 4px; background: rgba(16,25,42,.7); color: #DCE8F6; font-size: 11px; }
-.wcoord { position: absolute; left: 8px; bottom: 6px; font: 11px var(--font-mono); color: #9FB6D2; }
-.traj { grid-column: 4; grid-row: 1 / span 2; min-height: 0; }
-.traj svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.hand { grid-column: span 2; background: #192336; padding: 8px 10px 8px; }
-.hname { font-size: 11.5px; color: #DCE8F6; margin-bottom: 6px; }
-.fg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.fing { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.fing b { font-weight: 500; font-size: 11px; color: #C5D5EA; }
-.fing small { font-size: 9.5px; color: #7F95B1; white-space: nowrap; }
-.bars { display: flex; gap: 3px; align-items: flex-end; height: 44px; width: 100%; justify-content: center; }
-.bar { width: 9px; height: 100%; background: #293755; border-radius: 2px; display: flex; align-items: flex-end; overflow: hidden; }
-.bar i { display: block; width: 100%; background: linear-gradient(180deg, #2ED3E6, #1E7F92); transition: height .1s linear; }
-.vr .hand { grid-row: 3; }
-.vr .hand:nth-of-type(1) { }
-.vr .hand { grid-column: span 2; }
-@media (max-width: 900px) { .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); } .traj { grid-column: span 2; grid-row: auto; aspect-ratio: 16 / 9; } .hand { grid-column: span 2 !important; } }
+.vdo { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.black-mask { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(5, 10, 20, 0.86); color: var(--muted); font-size: 12px; pointer-events: none; }
+.wname { position: absolute; left: 6px; top: 6px; padding: 1px 7px; border-radius: 4px; background: rgba(10, 18, 32, 0.78); color: #DCE8F6; font-size: 11px; }
+.wmeta { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(10, 18, 32, 0.72); color: #9FB6D2; font-size: 10.5px; }
+.vwall-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 220px; border-radius: 8px; background: #0B1628; border: 1px dashed var(--line-strong); color: var(--muted); font-size: 13px; }
+@media (max-width: 900px) { .wall { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (max-width: 600px) { .wall { grid-template-columns: 1fr !important; } }
 </style>

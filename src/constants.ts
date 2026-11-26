@@ -42,10 +42,7 @@ export const PAGE_META: Record<PageKey, { title: string; icon: string }> = {
 /** 尚未对接后端接口的页面（左侧菜单名称以红色标识） */
 export const UNWIRED_PAGES: ReadonlySet<PageKey> = new Set<PageKey>([
   'dashboard',
-  'tasks',
   'monitor',
-  'annotate',
-  'review',
   'datasets',
   'storage',
 ])

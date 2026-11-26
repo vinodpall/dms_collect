@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { SCEN } from '@/constants'
 import { CLIP_ST, type Clip } from '@/stores/annotate'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import type { BadgeKind } from '@/constants'
 
-defineProps<{ clips: Clip[]; cur: string | null; filters: [string, string, number][]; filter: string; emptyDesc: string }>()
-const emit = defineEmits<{ pick: [id: string]; 'update:filter': [v: string] }>()
+defineProps<{
+  clips: Clip[]
+  cur: number | null
+  filters: [string, string, number][]
+  filter: string
+  emptyDesc: string
+  loading?: boolean
+}>()
+const emit = defineEmits<{ pick: [id: number]; 'update:filter': [v: string] }>()
 </script>
 <template>
   <div class="clist">
@@ -27,15 +33,18 @@ const emit = defineEmits<{ pick: [id: string]; 'update:filter': [v: string] }>()
       </div>
     </div>
     <div class="cbody">
-      <template v-if="clips.length">
-        <button v-for="c in clips" :key="c.id" type="button" class="clip" :class="{ cur: cur === c.id }" @click="emit('pick', c.id)">
-          <span class="f">{{ c.file }}</span>
+      <div v-if="loading && !clips.length" class="muted" style="text-align:center;padding:36px 12px;font-size:12.5px">
+        <a-spin size="small" style="margin-right:6px" />加载中…
+      </div>
+      <template v-else-if="clips.length">
+        <button v-for="c in clips" :key="c.numericId" type="button" class="clip" :class="{ cur: cur === c.numericId }" @click="emit('pick', c.numericId)">
+          <span class="f" :title="c.file">{{ c.id }} · {{ c.file }}</span>
           <span class="row between">
-            <span class="muted" style="font-size:12px">{{ SCEN[c.scen]?.short ?? c.scen }} · {{ c.dur }} s · {{ c.batch }}</span>
-            <StatusBadge :kind="CLIP_ST[c.status][0] as BadgeKind" :text="CLIP_ST[c.status][1]" />
+            <span class="muted" style="font-size:12px">{{ c.sceneName || c.scen || '—' }} · {{ c.dur ? c.dur.toFixed(1) + 's' : '—' }} · {{ c.batch || '—' }}</span>
+            <StatusBadge :kind="(CLIP_ST[c.status]?.[0] || 'info') as BadgeKind" :text="c.statusLabel || CLIP_ST[c.status]?.[1] || c.status" />
           </span>
           <slot name="meta" :clip="c" />
-          <span v-if="c.status === 'rejected' && c.reject" class="rj">打回：{{ c.reject.reason }}</span>
+          <span v-if="c.status === 'rejected' && c.rejectReason" class="rj">驳回：{{ c.rejectReason }}</span>
         </button>
       </template>
       <EmptyState v-else icon="inbox" title="没有数据" :desc="emptyDesc" />

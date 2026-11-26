@@ -93,8 +93,8 @@ function created(id: string) {
 }
 
 /* ---------- Tab 切换与抽屉状态 ---------- */
-const tab = ref<'tasks' | 'hist' | 'imports'>('tasks')
-const imp = reactive({ open: false, mode: 'video' as ImportMode, jobId: null as number | null })
+const tab = ref<'hist' | 'imports'>('hist')
+const imp = reactive({ open: false, mode: 'umi_server' as ImportMode, jobId: null as number | null })
 const activeEpisodeId = ref<number | null>(null)
 
 function openImportDrawer(mode: ImportMode) {
@@ -341,25 +341,15 @@ onMounted(() => {
   if (!dict.scenes.length) {
     dict.fetchAll()
   }
+  fetchEpisodes()
 })
 </script>
 
 <template>
-  <PageHead title="采集任务" desc="每次采集：设备自检 → 场景复位与采集 → 数据校验 → 入库；支持视频上传、UMI 目录上传与服务器目录导入">
+  <PageHead title="采集数据与导入" desc="采集数据上传至服务器目录后，选择原始文件进行结构完整性校验与预处理，确认入库后自动进入流水线与标注流程">
     <template #desc>
       <div style="margin-top:10px">
-        <div class="cyber-tabs" role="tablist" aria-label="任务视图切换">
-          <button
-            type="button"
-            role="tab"
-            class="cyber-tab-item"
-            :class="{ active: tab === 'tasks' }"
-            :aria-selected="tab === 'tasks'"
-            @click="tab = 'tasks'"
-          >
-            <AppIcon name="task" size="sm" />
-            <span>采集任务</span>
-          </button>
+        <div class="cyber-tabs" role="tablist" aria-label="视图切换">
           <button
             type="button"
             role="tab"
@@ -380,14 +370,13 @@ onMounted(() => {
             @click="tab = 'imports'"
           >
             <AppIcon name="download" size="sm" />
-            <span>导入记录</span>
+            <span>导入与预处理记录</span>
           </button>
         </div>
       </div>
     </template>
-    <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('video')"><AppIcon name="camera" />数据导入</a-button>
-    <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('umi_server')"><AppIcon name="drive" />服务器目录导入</a-button>
-    <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="ui.wizardOpen = true"><AppIcon name="plus" />新建任务</a-button>
+    <a-button :disabled="!mayEdit" :title="dis" @click="openImportDrawer('video')"><AppIcon name="camera" />本地文件导入</a-button>
+    <a-button type="primary" :disabled="!mayEdit" :title="dis" @click="openImportDrawer('umi_server')"><AppIcon name="drive" />服务器目录预处理导入</a-button>
   </PageHead>
 
   <!-- 采集历史：真实 GET /api/v1/episodes -->
