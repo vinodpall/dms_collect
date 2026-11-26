@@ -293,6 +293,7 @@ function splitOrAdd() {
   const c = clip.value
   if (!c || !editable.value) return
 
+  // 1. 若播放头在已有切片内部（距两端 >= 0.3s），直接一分为二
   const seg = c.segs.find((s) => t.value - s.s >= 0.3 && s.e - t.value >= 0.3)
   if (seg) {
     recordHistory()
@@ -310,21 +311,31 @@ function splitOrAdd() {
     seg.e = cut
     c.segs.push(n)
     sel.value = n.id
-    toast(`已在 ${cut}s 处切分切片 [${n.n}]`)
+    toast(`已在 ${cut.toFixed(1)}s 处切分切片 [${n.n}]`)
     return
   }
 
+  // 若播放头落在已有切片内但距边界不足 0.3s，避免重叠创建
+  const insideSeg = c.segs.find((s) => t.value > s.s + 0.001 && t.value < s.e - 0.001)
+  if (insideSeg) {
+    toast('当前位置距切片边界不足 0.3s，无法切分', { type: 'warn' })
+    return
+  }
+
+  // 2. 落在空白区域：从空白起始点（上一切片结束点或 0s）切到当前播放位置
   const sortedSegs = c.segs.slice().sort((a, b) => a.s - b.s)
-  const nextSeg = sortedSegs.find((s) => s.s > t.value)
+  const rawEnd = Math.round(t.value * 10) / 10
+  const prevSeg = sortedSegs.filter((s) => s.e <= rawEnd + 0.001).pop()
+  const nextSeg = sortedSegs.find((s) => s.s >= (prevSeg ? prevSeg.e : 0) + 0.001 && s.s >= rawEnd - 0.001)
+  const curStart = prevSeg ? prevSeg.e : 0
   const maxEnd = nextSeg ? nextSeg.s : c.dur
-  const curStart = Math.round(t.value * 10) / 10
+  const curEnd = Math.round(Math.min(rawEnd, maxEnd) * 10) / 10
 
-  if (maxEnd - curStart < 0.3) {
-    toast('当前位置可用时长过短（小于 0.3s），无法创建切片', { type: 'warn' })
+  if (curEnd - curStart < 0.3) {
+    toast('距空白起始点不足 0.3s，请继续播放后再切片', { type: 'warn' })
     return
   }
 
-  const curEnd = Math.round(Math.min(curStart + 2.5, maxEnd) * 10) / 10
   recordHistory()
   const name = nextName(c)
   const newSeg: Seg = {
@@ -338,7 +349,7 @@ function splitOrAdd() {
   }
   c.segs.push(newSeg)
   sel.value = newSeg.id
-  toast(`已在 ${curStart}s 处新增切片 [${newSeg.n}]`)
+  toast(`已创建切片 [${newSeg.n}] (${curStart.toFixed(1)}s–${curEnd.toFixed(1)}s)`)
 }
 
 function remove(id?: number) {
@@ -912,7 +923,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
     <div class="kbd-guide-grid">
       <div class="kbd-row"><div class="keys"><kbd>Space</kbd></div><div class="desc">播放 / 暂停</div></div>
       <div class="kbd-row"><div class="keys"><kbd>←</kbd> <kbd>→</kbd></div><div class="desc">后退 / 前进 0.1 秒（Shift 2 秒）</div></div>
-      <div class="kbd-row"><div class="keys"><kbd>A</kbd></div><div class="desc">在当前播放头切分或新增切片</div></div>
+      <div class="kbd-row"><div class="keys"><kbd>A</kbd></div><div class="desc">从空白起点切到当前位置，或在已有切片内一分为二</div></div>
       <div class="kbd-row"><div class="keys"><kbd>M</kbd></div><div class="desc">与紧邻下一个切片向下合并</div></div>
       <div class="kbd-row"><div class="keys"><kbd>D</kbd> / <kbd>Del</kbd></div><div class="desc">删除选中或当前播放头所在切片</div></div>
       <div class="kbd-row"><div class="keys"><kbd>Ctrl+Z</kbd></div><div class="desc">撤销上一步编辑</div></div>
