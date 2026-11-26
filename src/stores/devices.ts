@@ -37,8 +37,12 @@ export interface Device {
   vendor: string
   serialNo: string
   fw: string
+  fwType: string
+  fwModel: string
   connIp: string
   connPort: number | null
+  connUsername: string
+  connPassword: string
   occupiedTaskId: number | null
   occupiedTaskCode: string
   calib: { at: string; by: string; items: string[] } | null
@@ -207,8 +211,12 @@ export const useDevices = defineStore('devices', () => {
       vendor: item.vendor || '',
       serialNo: item.serial_no || '',
       fw: item.firmware || '',
+      fwType: item.fw_type || '',
+      fwModel: item.fw_model || '',
       connIp: item.conn_ip || '',
       connPort: item.conn_port ?? null,
+      connUsername: item.conn_username || '',
+      connPassword: item.conn_password || '',
       occupiedTaskId: item.occupied_task_id ?? null,
       occupiedTaskCode: item.occupied_task_code || '',
       calib: item.is_calibrated
@@ -307,8 +315,12 @@ export const useDevices = defineStore('devices', () => {
     vendor?: string
     serialNo?: string
     fw?: string
+    fwType?: string
+    fwModel?: string
     connIp?: string
     connPort?: number | null
+    connUsername?: string
+    connPassword?: string
     cfg?: DevCfg
   }): Promise<Device> {
     const created = await devicesApi.create({
@@ -320,8 +332,12 @@ export const useDevices = defineStore('devices', () => {
       vendor: x.vendor || null,
       serial_no: x.serialNo || null,
       firmware: x.fw || null,
+      fw_type: x.fwType || null,
+      fw_model: x.fwModel || null,
       conn_ip: x.connIp || null,
       conn_port: x.connPort ?? null,
+      conn_username: x.connUsername || null,
+      conn_password: x.connPassword || null,
       config: x.cfg ? { ...x.cfg } : undefined,
     })
     const mapped = mapApiDevice(created)

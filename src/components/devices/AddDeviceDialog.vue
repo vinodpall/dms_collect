@@ -26,8 +26,12 @@ const f = reactive({
   vendor: '',
   serialNo: '',
   fw: '',
+  fwType: '',
+  fwModel: '',
   connIp: '',
   connPort: null as number | null,
+  connUsername: '',
+  connPassword: '',
   e: { name: '', type: '', station: '' },
 })
 
@@ -52,8 +56,12 @@ watch(
         vendor: '',
         serialNo: '',
         fw: '',
+        fwType: '',
+        fwModel: '',
         connIp: '',
         connPort: null,
+        connUsername: '',
+        connPassword: '',
         e: { name: '', type: '', station: '' },
       })
     }
@@ -78,8 +86,12 @@ async function submit() {
       vendor: f.vendor.trim() || undefined,
       serialNo: f.serialNo.trim() || undefined,
       fw: f.fw.trim() || undefined,
+      fwType: f.fwType.trim() || undefined,
+      fwModel: f.fwModel.trim() || undefined,
       connIp: f.connIp.trim() || undefined,
       connPort: f.connPort,
+      connUsername: f.connUsername.trim() || undefined,
+      connPassword: f.connPassword || undefined,
       cfg: f.cfg,
     })
     emit('close')
@@ -94,26 +106,55 @@ async function submit() {
 </script>
 
 <template>
-  <a-modal :open="open" title="新增设备" width="620px" centered ok-text="新增" cancel-text="取消" :confirm-loading="saving" destroy-on-close @ok="submit" @cancel="emit('close')">
+  <a-modal
+    :open="open"
+    title="新增设备"
+    width="680px"
+    centered
+    ok-text="新增"
+    cancel-text="取消"
+    :confirm-loading="saving"
+    destroy-on-close
+    @ok="submit"
+    @cancel="emit('close')"
+  >
     <a-form layout="vertical">
-      <a-form-item label="设备名称" required :validate-status="f.e.name ? 'error' : ''" :help="f.e.name"><a-input v-model:value="f.name" placeholder="如：PICO VR 一体机 #5" :maxlength="40" /></a-form-item>
+      <div class="label-row first">基本信息</div>
+      <a-form-item label="设备名称" required :validate-status="f.e.name ? 'error' : ''" :help="f.e.name">
+        <a-input v-model:value="f.name" placeholder="如：PICO VR 一体机 #5" :maxlength="64" />
+      </a-form-item>
       <div class="two">
-        <a-form-item label="设备类型" required :validate-status="f.e.type ? 'error' : ''" :help="f.e.type"><a-select v-model:value="f.typeCode" placeholder="请选择" :options="typeOpts" /></a-form-item>
-        <a-form-item label="所属工位" required :validate-status="f.e.station ? 'error' : ''" :help="f.e.station" extra="设备按类型匹配任意场景"><a-select v-model:value="f.stationId" placeholder="请选择工位" :options="stationOpts" /></a-form-item>
+        <a-form-item label="设备类型" required :validate-status="f.e.type ? 'error' : ''" :help="f.e.type">
+          <a-select v-model:value="f.typeCode" placeholder="请选择" :options="typeOpts" />
+        </a-form-item>
+        <a-form-item label="所属工位" required :validate-status="f.e.station ? 'error' : ''" :help="f.e.station" extra="设备按类型匹配任意场景">
+          <a-select v-model:value="f.stationId" placeholder="请选择工位" :options="stationOpts" />
+        </a-form-item>
       </div>
       <div class="two">
-        <a-form-item label="安装位置"><a-input v-model:value="f.loc" placeholder="如：工位上方 / 机械臂末端" :maxlength="30" /></a-form-item>
-        <a-form-item label="序列号 (SN)"><a-input v-model:value="f.serialNo" class="mono" placeholder="可选" :maxlength="50" /></a-form-item>
+        <a-form-item label="安装位置"><a-input v-model:value="f.loc" placeholder="如：工位上方 / 机械臂末端" :maxlength="64" /></a-form-item>
+        <a-form-item label="序列号 (SN)"><a-input v-model:value="f.serialNo" class="mono" placeholder="可选" :maxlength="64" /></a-form-item>
       </div>
       <div class="two">
-        <a-form-item label="设备型号"><a-input v-model:value="f.model" placeholder="可选" :maxlength="40" /></a-form-item>
-        <a-form-item label="生产厂商"><a-input v-model:value="f.vendor" placeholder="可选" :maxlength="40" /></a-form-item>
+        <a-form-item label="设备型号"><a-input v-model:value="f.model" placeholder="可选" :maxlength="64" /></a-form-item>
+        <a-form-item label="生产厂商"><a-input v-model:value="f.vendor" placeholder="可选" :maxlength="64" /></a-form-item>
       </div>
+
+      <div class="label-row">固件与网络连接</div>
       <div class="three">
-        <a-form-item label="固件版本" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.fw" class="mono" placeholder="如：5.9.2" :maxlength="20" /></a-form-item>
-        <a-form-item label="连接 IP" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.connIp" class="mono" placeholder="如：192.168.10.21" :maxlength="64" /></a-form-item>
-        <a-form-item label="通信端口" :class="{ 'mb-0': !meta }"><a-input-number v-model:value="f.connPort" :min="1" :max="65535" placeholder="可选" style="width:100%" /></a-form-item>
+        <a-form-item label="固件版本"><a-input v-model:value="f.fw" class="mono" placeholder="如：5.9.2" :maxlength="32" /></a-form-item>
+        <a-form-item label="固件类型"><a-input v-model:value="f.fwType" class="mono" placeholder="可选" :maxlength="32" /></a-form-item>
+        <a-form-item label="固件型号"><a-input v-model:value="f.fwModel" class="mono" placeholder="可选" :maxlength="32" /></a-form-item>
       </div>
+      <div class="two">
+        <a-form-item label="连接 IP"><a-input v-model:value="f.connIp" class="mono" placeholder="如：192.168.10.21" :maxlength="64" /></a-form-item>
+        <a-form-item label="通信端口"><a-input-number v-model:value="f.connPort" :min="0" :max="65535" placeholder="可选" style="width:100%" /></a-form-item>
+      </div>
+      <div class="two">
+        <a-form-item label="连接账号" :class="{ 'mb-0': !meta }"><a-input v-model:value="f.connUsername" class="mono" placeholder="可选" :maxlength="64" autocomplete="off" /></a-form-item>
+        <a-form-item label="连接密码" :class="{ 'mb-0': !meta }"><a-input-password v-model:value="f.connPassword" class="mono" placeholder="可选" :maxlength="128" autocomplete="new-password" /></a-form-item>
+      </div>
+
       <template v-if="meta">
         <div class="label-row">采集参数 <span class="muted">配置一次，后续采集任务沿用</span></div>
         <div class="three">
@@ -131,7 +172,8 @@ async function submit() {
 <style scoped>
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
-.label-row { font-weight: 600; margin: 4px 0 8px; font-size: 13.5px; }
+.label-row { font-weight: 600; margin: 12px 0 8px; font-size: 13.5px; color: var(--text); }
+.label-row.first { margin-top: 2px; }
 .label-row .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 :deep(.mb-0.ant-form-item) { margin-bottom: 0 !important; }
 </style>

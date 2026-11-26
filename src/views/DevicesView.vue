@@ -6,9 +6,10 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import DeviceDrawer from '@/components/devices/DeviceDrawer.vue'
 import AddDeviceDialog from '@/components/devices/AddDeviceDialog.vue'
+import EditDeviceDialog from '@/components/devices/EditDeviceDialog.vue'
 import FaultDialog from '@/components/devices/FaultDialog.vue'
 import { NO_PERM } from '@/constants'
-import { DEV_TYPES, DV_ST, TYPE_LABEL_TO_CODE, useDevices, type DevStatus, type Device } from '@/stores/devices'
+import { DEV_TYPES, DV_ST, TYPE_LABEL_TO_CODE, useDevices, type DevStatus } from '@/stores/devices'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import type { StationCredentials, StationItem } from '@/api'
@@ -20,6 +21,7 @@ const mayEdit = computed(() => session.can('devices'))
 const activeTab = ref<'devices' | 'stations'>('devices')
 
 /* ================= 设备台账相关 ================= */
+const devicePageSize = 8
 const st = reactive({
   s: 'all' as 'all' | DevStatus,
   station: 'all',
@@ -29,6 +31,7 @@ const st = reactive({
   page: 1,
 })
 const drawerId = ref<string | null>(null)
+const editId = ref<string | null>(null)
 const faultOpen = ref(false)
 const addOpen = ref(false)
 
@@ -68,21 +71,23 @@ watch(
 )
 
 const columns = computed(() => [
-  { title: '设备', key: 'name', width: 180, ellipsis: true, align: 'center' as const },
+  { title: '序号', key: 'seq', width: 64, align: 'center' as const },
+  { title: '设备编号', key: 'code', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '设备名称', key: 'name', width: 165, ellipsis: true, align: 'center' as const },
   { title: '类型', dataIndex: 'type', key: 'type', width: 95, ellipsis: true, align: 'center' as const },
-  { title: '型号', key: 'model', width: 120, ellipsis: true, align: 'center' as const },
-  { title: '所属工位', dataIndex: 'station', key: 'station', width: 125, ellipsis: true, align: 'center' as const },
-  { title: '位置', key: 'loc', width: 115, ellipsis: true, align: 'center' as const },
+  { title: '型号', key: 'model', width: 115, ellipsis: true, align: 'center' as const },
+  { title: '所属工位', dataIndex: 'station', key: 'station', width: 120, ellipsis: true, align: 'center' as const },
+  { title: '位置', key: 'loc', width: 110, ellipsis: true, align: 'center' as const },
   { title: '状态', key: 'st', width: 85, align: 'center' as const },
-  { title: '标定', key: 'calib', width: 130, align: 'center' as const },
-  { title: '当前占用', key: 'occ', width: 115, ellipsis: true, align: 'center' as const },
-  { title: '固件', key: 'fw', width: 95, ellipsis: true, align: 'center' as const },
+  { title: '标定', key: 'calib', width: 125, align: 'center' as const },
+  { title: '当前占用', key: 'occ', width: 110, ellipsis: true, align: 'center' as const },
+  { title: '固件', key: 'fw', width: 90, ellipsis: true, align: 'center' as const },
+  { title: '操作', key: 'act', width: 120, align: 'center' as const },
 ])
 
 function onTableChange(p: { current?: number }) {
   st.page = p?.current ?? 1
 }
-const customRow = (r: Device) => ({ class: 'row-click', onClick: () => (drawerId.value = r.id) })
 
 /* ================= 工位配置管理 ================= */
 const stationSearch = ref('')
@@ -336,15 +341,14 @@ async function saveStation() {
         :columns="columns"
         :data-source="rows"
         :loading="store.loading"
-        :scroll="{ x: 1060 }"
-        :custom-row="customRow"
-        :pagination="{ current: st.page, pageSize: 8, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
+        :scroll="{ x: 1290 }"
+        :pagination="{ current: st.page, pageSize: devicePageSize, showSizeChanger: false, hideOnSinglePage: false, showTotal: (n: number) => `共 ${n} 台设备` }"
         @change="onTableChange as never"
       >
-        <template #bodyCell="{ column, record }">
-          <div v-if="column.key === 'name'" class="cell-main">
-            <span :title="record.name">{{ record.name }}</span><small class="mono" :title="record.id">{{ record.id }}</small>
-          </div>
+        <template #bodyCell="{ column, record, index }">
+          <span v-if="column.key === 'seq'" class="num muted">{{ (st.page - 1) * devicePageSize + index + 1 }}</span>
+          <span v-else-if="column.key === 'code'" class="mono muted cell-ellipsis" :title="record.id">{{ record.id }}</span>
+          <span v-else-if="column.key === 'name'" class="cell-ellipsis" :title="record.name">{{ record.name }}</span>
           <span v-else-if="column.key === 'model'" class="muted cell-ellipsis" :title="record.model || ''">{{ record.model || '—' }}</span>
           <span v-else-if="column.key === 'station'" class="cell-ellipsis" :title="record.station || ''">{{ record.station || '—' }}</span>
           <span v-else-if="column.key === 'loc'" class="muted cell-ellipsis" :title="record.loc || ''">{{ record.loc || '—' }}</span>
@@ -362,6 +366,10 @@ async function saveStation() {
             :text="DV_ST[record.st as DevStatus][1]"
           />
           <span v-else-if="column.key === 'fw'" class="mono muted cell-ellipsis" :title="record.fw || ''">{{ record.fw || '—' }}</span>
+          <div v-else-if="column.key === 'act'" class="act-links">
+            <a-button size="small" type="link" @click="drawerId = record.id">详情</a-button>
+            <a-button size="small" type="link" :disabled="!mayEdit" :title="mayEdit ? undefined : NO_PERM" @click="editId = record.id">编辑</a-button>
+          </div>
         </template>
         <template #emptyText>
           <EmptyState icon="cpu" title="没有符合条件的设备" desc="请检查后端设备台账或调整筛选条件" />
@@ -395,61 +403,78 @@ async function saveStation() {
       </div>
 
       <div v-if="paginatedStations.length" class="stations-grid">
-        <div v-for="stn in paginatedStations" :key="stn.id" class="station-card">
+        <div v-for="stn in paginatedStations" :key="stn.id" class="station-card" :class="{ online: stn.is_online }">
           <div class="stn-header">
-            <div>
-              <div class="row center" style="gap:8px">
-                <h3 class="stn-name">{{ stn.name }}</h3>
-                <span class="mono tag">{{ stn.code }}</span>
+            <div class="stn-title-wrap">
+              <span class="stn-ico" :class="{ online: stn.is_online }">
+                <AppIcon name="layers" size="sm" />
+              </span>
+              <div class="stn-title-text">
+                <div class="stn-name-row">
+                  <h3 class="stn-name" :title="stn.name">{{ stn.name }}</h3>
+                  <span class="mono stn-code">{{ stn.code }}</span>
+                </div>
+                <div v-if="stn.remark" class="stn-sub" :title="stn.remark">{{ stn.remark }}</div>
               </div>
-              <small class="muted">MQTT: {{ stn.mqtt_username }} · IP: {{ stn.ip || '—' }}</small>
             </div>
-            <div class="row center" style="gap:8px">
-              <StatusBadge
-                :kind="stn.is_online ? 'good' : 'crit'"
-                :text="stn.is_online ? '在线就绪' : '离线断连'"
-              />
-              <a-button
-                size="small"
-                type="link"
-                :disabled="!mayEdit"
-                :title="mayEdit ? undefined : NO_PERM"
-                @click="openEditStation(stn)"
-              >
-                配置
-              </a-button>
-            </div>
+            <StatusBadge
+              :kind="stn.is_online ? 'good' : 'crit'"
+              :text="stn.is_online ? '在线就绪' : '离线断连'"
+            />
           </div>
 
           <div class="stn-body">
-            <div class="stn-stat-row">
-              <div class="stn-stat">
-                <span class="muted">挂载设备</span>
-                <b>{{ stn.device_count }} 台</b>
+            <div class="stn-kpi-row">
+              <div class="stn-kpi">
+                <span class="stn-kpi-lb">挂载设备</span>
+                <div class="stn-kpi-val num">{{ stn.device_count }}<small>台</small></div>
               </div>
-              <div class="stn-stat">
-                <span class="muted">客户端版本</span>
-                <span class="mono">{{ stn.client_ver || '—' }}</span>
+              <div class="stn-kpi">
+                <span class="stn-kpi-lb">本地剩余存储</span>
+                <div class="stn-kpi-val num">
+                  <template v-if="stn.disk_free_gb !== null && stn.disk_free_gb !== undefined">{{ stn.disk_free_gb }}<small>GB</small></template>
+                  <template v-else>—</template>
+                </div>
               </div>
-              <div class="stn-stat">
-                <span class="muted">本地存储</span>
-                <b>{{ stn.disk_free_gb !== null && stn.disk_free_gb !== undefined ? stn.disk_free_gb + ' GB 剩余' : '—' }}</b>
-              </div>
-              <div class="stn-stat">
-                <span class="muted">最近心跳</span>
-                <span>{{ formatTime(stn.last_seen_at) }}</span>
+              <div class="stn-kpi">
+                <span class="stn-kpi-lb">客户端版本</span>
+                <div class="stn-kpi-val mono">{{ stn.client_ver || '—' }}</div>
               </div>
             </div>
 
-            <div class="stn-endpoint">
-              <span class="muted">边缘 API:</span>
-              <span class="mono url">{{ stn.api_base_url || '未配置 Base URL' }}</span>
-              <span v-if="stn.has_api_token" class="tag good" style="font-size:11px">Token 鉴权已开启</span>
+            <div class="stn-meta">
+              <div class="stn-meta-row">
+                <span class="stn-meta-k">工位 IP</span>
+                <span class="stn-meta-v mono" :title="stn.ip || ''">{{ stn.ip || '—' }}</span>
+              </div>
+              <div class="stn-meta-row">
+                <span class="stn-meta-k">MQTT 账号</span>
+                <span class="stn-meta-v mono" :title="stn.mqtt_username || ''">{{ stn.mqtt_username || '—' }}</span>
+              </div>
+              <div class="stn-meta-row">
+                <span class="stn-meta-k">边缘 API</span>
+                <span class="stn-meta-v stn-api-val">
+                  <span class="mono url" :title="stn.api_base_url || ''">{{ stn.api_base_url || '未配置' }}</span>
+                  <span v-if="stn.has_api_token" class="stn-token-pill">Token</span>
+                </span>
+              </div>
             </div>
+          </div>
 
-            <div v-if="stn.remark" class="stn-desc">
-              {{ stn.remark }}
-            </div>
+          <div class="stn-foot">
+            <span class="stn-beat">
+              <AppIcon name="clock" size="sm" />
+              <span>心跳 {{ formatTime(stn.last_seen_at) }}</span>
+            </span>
+            <a-button
+              size="small"
+              type="link"
+              :disabled="!mayEdit"
+              :title="mayEdit ? undefined : NO_PERM"
+              @click="openEditStation(stn)"
+            >
+              <AppIcon name="settings" size="sm" />配置工位
+            </a-button>
           </div>
         </div>
       </div>
@@ -469,7 +494,8 @@ async function saveStation() {
   </template>
 
   <!-- 对话框与抽屉 -->
-  <AddDeviceDialog :open="addOpen" @close="addOpen = false" @done="(id: string) => (drawerId = id)" />
+  <AddDeviceDialog :open="addOpen" @close="addOpen = false" @done="() => {}" />
+  <EditDeviceDialog :id="editId" @close="editId = null" />
   <DeviceDrawer :id="drawerId" @close="drawerId = null" />
   <FaultDialog :open="faultOpen" :dev-id="null" @close="faultOpen = false" @done="() => {}" />
 
@@ -552,73 +578,209 @@ async function saveStation() {
 <style scoped>
 .stations-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 18px;
+  padding: 18px;
+  align-items: stretch;
 }
 .station-card {
-  background: var(--surface-2);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(20, 36, 58, 0.72) 0%, var(--surface-2) 100%);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 16px 18px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.station-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(148, 163, 184, 0.25);
+}
+.station-card.online::before {
+  background: linear-gradient(90deg, var(--good, #22c55e), var(--accent, #2ed3e6));
+}
+.station-card:hover {
+  border-color: rgba(46, 211, 230, 0.42);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
 }
 .stn-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
+  gap: 12px;
+}
+.stn-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.stn-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.stn-ico.online {
+  color: var(--accent);
+  background: rgba(46, 211, 230, 0.12);
+  border-color: rgba(46, 211, 230, 0.3);
+}
+.stn-title-text {
+  min-width: 0;
+  flex: 1;
+}
+.stn-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .stn-name {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stn-code {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--accent-text, var(--accent));
+  background: var(--accent-soft, rgba(46, 211, 230, 0.12));
+  border: 1px solid rgba(46, 211, 230, 0.22);
+}
+.stn-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .stn-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  flex: 1;
 }
-.stn-stat-row {
+.stn-kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  background: var(--surface);
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
 }
-.stn-stat {
+.stn-kpi {
+  background: rgba(9, 19, 34, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  padding: 9px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
+  gap: 4px;
 }
-.stn-stat span {
+.stn-kpi-lb {
   font-size: 11px;
+  color: var(--muted);
 }
-.stn-endpoint {
+.stn-kpi-val {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stn-kpi-val small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 3px;
+}
+.stn-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(9, 19, 34, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+.stn-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   font-size: 12.5px;
-  background: var(--surface-3);
-  padding: 6px 10px;
-  border-radius: 6px;
 }
-.stn-endpoint .url {
+.stn-meta-k {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.stn-meta-v {
+  min-width: 0;
+  text-align: right;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stn-api-val {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.stn-api-val .url {
   color: var(--accent);
   font-size: 12px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.stn-desc {
-  font-size: 12.5px;
+.stn-token-pill {
+  flex: none;
+  font-size: 10.5px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--good, #22c55e);
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+.stn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.stn-beat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
   color: var(--muted);
-  line-height: 1.4;
 }
 .hint-text {
   font-size: 11.5px;
@@ -630,8 +792,8 @@ async function saveStation() {
   .stations-grid {
     grid-template-columns: 1fr;
   }
-  .stn-stat-row {
-    grid-template-columns: repeat(2, 1fr);
+  .stn-kpi-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>
