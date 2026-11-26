@@ -8,6 +8,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import ClipList from '@/components/annotate/ClipList.vue'
 import VideoWall from '@/components/annotate/VideoWall.vue'
 import SliceTimeline from '@/components/annotate/SliceTimeline.vue'
+import EpisodeWorld3D from '@/components/tasks/EpisodeWorld3D.vue'
 import { fmtT } from '@/components/annotate/motion'
 import {
   CLIP_ST,
@@ -21,7 +22,7 @@ import {
 import { usePipeline } from '@/stores/pipeline'
 import { useDict } from '@/stores/dict'
 import { NO_PERM, type BadgeKind } from '@/constants'
-import type { CheckReportOut } from '@/api'
+import { episodesApi, type CheckReportOut, type EpisodeSignals } from '@/api'
 import { useSession } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import { confirmDlg } from '@/composables/confirm'
@@ -95,13 +96,34 @@ async function loadList(keepCur = true) {
   }
 }
 
+const signals = ref<EpisodeSignals | null>(null)
+const signalsLoading = ref(false)
+let signalReqSeq = 0
+
 async function pick(id: number) {
   store.curId = id
   t.value = 0
   playing.value = false
   sel.value = null
+  signals.value = null
+  const seq = ++signalReqSeq
   try {
-    await store.fetchDetail(id)
+    const detail = await store.fetchDetail(id)
+    if (seq !== signalReqSeq) return
+    if (detail && detail.inPool && detail.preview?.has_signals) {
+      signalsLoading.value = true
+      episodesApi
+        .getSignals(detail.episodeId)
+        .then((s) => {
+          if (seq === signalReqSeq) signals.value = s
+        })
+        .catch(() => {
+          if (seq === signalReqSeq) signals.value = null
+        })
+        .finally(() => {
+          if (seq === signalReqSeq) signalsLoading.value = false
+        })
+    }
   } catch (err: any) {
     toast(err?.message || '加载条目详情失败', { type: 'warn' })
   }
@@ -189,6 +211,9 @@ onMounted(async () => {
 
 function toggle() {
   if (!clip.value || !clip.value.dur) return
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur()
+  }
   if (t.value >= clip.value.dur) t.value = 0
   playing.value = !playing.value
 }
@@ -476,13 +501,15 @@ async function openHistory() {
 const shortcutGuideOpen = ref(false)
 function onKey(e: KeyboardEvent) {
   if (valModal.open || shortcutGuideOpen.value || historyOpen.value) return
-  const el = e.target as HTMLElement
+  const el = e.target as HTMLElement | null
   const tag = el?.tagName
+  const isReadonlyInput = tag === 'INPUT' && (el as HTMLInputElement).readOnly
+  const inOpenSelect = !!el?.closest?.('.ant-select-open')
   if (
-    tag === 'INPUT' ||
+    inOpenSelect ||
+    (tag === 'INPUT' && !isReadonlyInput) ||
     tag === 'SELECT' ||
     tag === 'TEXTAREA' ||
-    el?.closest?.('.ant-select') ||
     el?.closest?.('.ant-input') ||
     el?.closest?.('.ant-input-number') ||
     el?.isContentEditable
@@ -491,12 +518,39 @@ function onKey(e: KeyboardEvent) {
   const k = e.key.toLowerCase()
   const code = e.code
 
-  if (code === 'Space') { e.preventDefault(); toggle(); return }
-  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return }
-  if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); saveDraft(); return }
-  if ((k === 'a' || code === 'KeyA') && !e.ctrlKey && !e.metaKey) { e.preventDefault(); splitOrAdd(); return }
-  if (k === 'd' || code === 'KeyD' || k === 'delete' || k === 'backspace') { e.preventDefault(); remove(); return }
-  if (k === 'm' || code === 'KeyM') { e.preventDefault(); mergeWithNext(); return }
+  if (code === 'Space') {
+    e.preventDefault()
+    if (!e.repeat) toggle()
+    return
+  }
+  if ((e.ctrlKey || e.metaKey) && (k === 'z' || code === 'KeyZ')) {
+    e.preventDefault()
+    undo()
+    return
+  }
+  if ((e.ctrlKey || e.metaKey) && (k === 's' || code === 'KeyS')) {
+    e.preventDefault()
+    saveDraft()
+    return
+  }
+  if ((k === 'a' || code === 'KeyA') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (!editable.value) return
+    e.preventDefault()
+    if (!e.repeat) splitOrAdd()
+    return
+  }
+  if ((k === 'd' || code === 'KeyD' || k === 'delete' || k === 'backspace') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (!editable.value) return
+    e.preventDefault()
+    if (!e.repeat) remove()
+    return
+  }
+  if ((k === 'm' || code === 'KeyM') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (!editable.value) return
+    e.preventDefault()
+    if (!e.repeat) mergeWithNext()
+    return
+  }
   if ((k === 'arrowleft' || code === 'ArrowLeft') && clip.value) {
     e.preventDefault()
     t.value = clamp(+(t.value - (e.shiftKey ? 2.0 : 0.1)).toFixed(2), 0, clip.value.dur)
@@ -573,11 +627,11 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
               <template v-if="clip.checkScore != null"> · 自检 {{ clip.checkScore }} 分</template>
             </div>
           </div>
-          <div class="row" style="gap:6px">
-            <a-button size="small" :disabled="!hasUndo || !editable" @click="undo">
+          <div v-if="!inPool && editable" class="row" style="gap:6px">
+            <a-button size="small" :disabled="!hasUndo" @click="undo">
               <AppIcon name="undo" size="sm" />撤销 <kbd>Ctrl+Z</kbd>
             </a-button>
-            <a-button size="small" :loading="savingDraft" :disabled="!editable" @click="saveDraft">
+            <a-button size="small" :loading="savingDraft" @click="saveDraft">
               <AppIcon name="save" size="sm" />保存草稿 <kbd>Ctrl+S</kbd>
             </a-button>
           </div>
@@ -585,7 +639,7 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <div v-if="inPool" class="callout info">
           <AppIcon name="inbox" />
-          <span class="grow">该数据仍在任务池中，领取后才能标注（领取后其他人不可再领）<template v-if="clip.rejectReason">。上次驳回：{{ clip.rejectReason }}</template></span>
+          <span class="grow">当前为任务池预览模式（仅观看），领取到「我的任务」后即可进行子任务切片标注<template v-if="clip.rejectReason">。上次驳回：{{ clip.rejectReason }}</template></span>
           <a-button size="small" type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条</a-button>
         </div>
         <div v-else-if="clip.owner && !editable && ['todo', 'rejected'].includes(clip.status)" class="callout">
@@ -598,149 +652,179 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 
         <VideoWall :clip="clip" :t="t" :playing="playing" :speed="speed" :loading="store.loadingDetail" @refresh="refreshPreview" />
 
-        <div class="row" style="gap:10px;flex-wrap:wrap">
-          <a-button type="primary" :disabled="!clip.dur" @click="toggle">
-            <AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}
-          </a-button>
-          <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
-          <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
-          <span v-if="nowSeg" class="tag" :style="{ background: colorOf(clip.scen, nowSeg.n), color: '#fff' }">
-            当前：{{ nowSeg.n }}
-          </span>
-          <span class="grow" />
-          <template v-if="editable">
-            <a-dropdown :trigger="['click']">
-              <a-button size="small" :loading="busy"><AppIcon name="bolt" size="sm" />规则预切分</a-button>
-              <template #overlay>
-                <a-menu @click="({ key }: { key: string }) => doPresplit(key as 'seq' | 'force')">
-                  <a-menu-item key="seq">按子任务标准顺序均分</a-menu-item>
-                  <a-menu-item key="force">按夹爪力觉突变点切分</a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
-            <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增切片 <kbd>A</kbd></a-button>
-            <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />向下合并 <kbd>M</kbd></a-button>
-            <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除切片 <kbd>D</kbd></a-button>
-          </template>
-        </div>
-
-        <SliceTimeline v-model:t="t" :clip="clip" :selected="sel" :editable="editable" @select="sel = $event" @changed="changed" />
-
-        <div class="muted hint-row">
-          <template v-if="editable">
-            <span>快捷提示：播放中按 <kbd>A</kbd> 切分/新增；<kbd>M</kbd> 合并；<kbd>D</kbd> 删除；<kbd>←</kbd><kbd>→</kbd> 微调 0.1s；<kbd>Ctrl+S</kbd> 保存草稿</span>
-          </template>
-          <template v-else>
-            <span>只读模式：当前数据处于【{{ clip.statusLabel }}】状态</span>
-          </template>
-          <span class="grow" />
-          <span>覆盖率 <b>{{ coverage }}%</b></span>
-        </div>
-
-        <div class="row between" style="margin-top:6px">
-          <span style="font-weight:600;font-size:13.5px">子任务切片明细 ({{ sorted.length }})</span>
-          <span class="muted" style="font-size:12px">子任务名称来自 <a @click="router.push({ name: 'dict' })">标注字典 {{ dict.version }}</a></span>
-        </div>
-
-        <table class="stbl" aria-label="子任务切片列表">
-          <thead>
-            <tr>
-              <th style="width:26px" />
-              <th>子任务名称</th>
-              <th style="width:120px">开始时间 (s)</th>
-              <th style="width:120px">结束时间 (s)</th>
-              <th style="width:76px">时长</th>
-              <th style="width:120px">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in sorted" :key="s.id" :class="{ sel: sel === s.id, flag: !!s.flag }" @click="sel = s.id">
-              <td><i class="dot" :style="{ background: colorOf(clip.scen, s.n) }" /></td>
-              <td>
-                <a-select
-                  v-if="editable"
-                  v-model:value="s.n"
-                  size="small"
-                  style="width:100%"
-                  aria-label="子任务名称"
-                  :options="subOpts"
-                  @change="onSegLabelChange(s)"
-                />
-                <span v-else>{{ s.n }}</span>
-                <div v-if="s.flag" class="tag crit" style="font-size:11px;margin-top:4px;display:inline-block">审核意见：{{ s.flag }}</div>
-              </td>
-              <td>
-                <a-input-number
-                  v-if="editable"
-                  :value="s.s"
-                  size="small"
-                  :min="0"
-                  :max="clip.dur"
-                  :step="0.1"
-                  style="width:100%"
-                  aria-label="开始时间"
-                  @change="(v: unknown) => setTime(s, 's', v)"
-                />
-                <span v-else class="num">{{ s.s.toFixed(1) }}</span>
-              </td>
-              <td>
-                <a-input-number
-                  v-if="editable"
-                  :value="s.e"
-                  size="small"
-                  :min="0"
-                  :max="clip.dur"
-                  :step="0.1"
-                  style="width:100%"
-                  aria-label="结束时间"
-                  @change="(v: unknown) => setTime(s, 'e', v)"
-                />
-                <span v-else class="num">{{ s.e.toFixed(1) }}</span>
-              </td>
-              <td class="num muted">{{ (s.e - s.s).toFixed(1) }} s</td>
-              <td @click.stop>
-                <div class="row" style="gap:6px">
-                  <a-button size="small" type="text" @click="t = s.s">定位</a-button>
-                  <a-button v-if="editable" size="small" type="text" danger @click="remove(s.id)">删除</a-button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!sorted.length">
-              <td colspan="6" class="muted" style="text-align:center;padding:24px">
-                暂无切片数据{{ editable ? '，可点「规则预切分」自动生成，或在时间轴上拖拽 / 按 A 键新增' : '' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="actbar">
-          <span class="muted grow" style="font-size:12px">
-            <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>A</kbd> 切分/新增　<kbd>M</kbd> 合并　<kbd>D</kbd> 删除　<kbd>Ctrl+S</kbd> 保存
-          </span>
-          <template v-if="clip.status === 'submitted'">
-            <span class="muted" style="font-size:12.5px;margin-right:8px">已提交审核员审核，等待质检结果</span>
-            <a-button :loading="busy" :disabled="!canLabel" @click="withdraw">撤回提交</a-button>
-          </template>
-          <template v-else-if="clip.status === 'approved'">
-            <span style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px">
-              <AppIcon name="check" size="sm" />{{ clip.statusLabel || '已通过审核并归档' }}
-            </span>
-          </template>
-          <template v-else-if="inPool">
-            <a-button type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条</a-button>
-          </template>
-          <template v-else-if="editable">
-            <a-button v-if="clip.status === 'todo'" :loading="busy" @click="doRelease">放回任务池</a-button>
-            <a-button
-              type="primary"
-              :disabled="!canLabel || !clip.segs.length"
-              :title="canLabel ? (clip.segs.length ? undefined : '请先创建至少一个子任务切片') : NO_PERM"
-              @click="checkAndSubmit"
-            >
-              <AppIcon name="check" size="sm" />质量自检并提交审核
+        <!-- 任务池：仅观看模式（播放进度条 + 世界坐标系 3D 轨迹，不显示切片相关功能） -->
+        <template v-if="inPool">
+          <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+            <a-button type="primary" :disabled="!clip.dur" @click="toggle">
+              <AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}
             </a-button>
-          </template>
-        </div>
+            <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
+            <div style="flex:1;min-width:140px">
+              <a-slider
+                :value="t"
+                :min="0"
+                :max="Math.max(clip.dur, 0.1)"
+                :step="0.1"
+                :tooltip-open="false"
+                @change="(v: any) => { t = Number(v) }"
+              />
+            </div>
+            <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
+          </div>
+
+          <EpisodeWorld3D :signals="signals" :current-ms="t * 1000" :loading="signalsLoading" />
+
+          <div class="actbar">
+            <span class="muted grow" style="font-size:12px">
+              <kbd>Space</kbd> 播放/暂停　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>Shift+←/→</kbd> 2s
+            </span>
+            <a-button type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条开始标注</a-button>
+          </div>
+        </template>
+
+        <!-- 我的任务：完整切片标注工作区 -->
+        <template v-else>
+          <div class="row" style="gap:10px;flex-wrap:wrap">
+            <a-button type="primary" :disabled="!clip.dur" @click="toggle">
+              <AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}
+            </a-button>
+            <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
+            <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
+            <span v-if="nowSeg" class="tag" :style="{ background: colorOf(clip.scen, nowSeg.n), color: '#fff' }">
+              当前：{{ nowSeg.n }}
+            </span>
+            <span class="grow" />
+            <template v-if="editable">
+              <a-dropdown :trigger="['click']">
+                <a-button size="small" :loading="busy"><AppIcon name="bolt" size="sm" />规则预切分</a-button>
+                <template #overlay>
+                  <a-menu @click="({ key }: { key: string }) => doPresplit(key as 'seq' | 'force')">
+                    <a-menu-item key="seq">按子任务标准顺序均分</a-menu-item>
+                    <a-menu-item key="force">按夹爪力觉突变点切分</a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+              <a-button size="small" @click="splitOrAdd"><AppIcon name="more" size="sm" />切分/新增切片 <kbd>A</kbd></a-button>
+              <a-button size="small" :disabled="sel === null" @click="mergeWithNext"><AppIcon name="layers" size="sm" />向下合并 <kbd>M</kbd></a-button>
+              <a-button size="small" danger :disabled="sel === null" @click="remove()"><AppIcon name="trash" size="sm" />删除切片 <kbd>D</kbd></a-button>
+            </template>
+          </div>
+
+          <SliceTimeline v-model:t="t" :clip="clip" :selected="sel" :editable="editable" @select="sel = $event" @changed="changed" />
+
+          <div class="muted hint-row">
+            <template v-if="editable">
+              <span>快捷提示：播放中按 <kbd>A</kbd> 切分/新增；<kbd>M</kbd> 合并；<kbd>D</kbd> 删除；<kbd>←</kbd><kbd>→</kbd> 微调 0.1s；<kbd>Ctrl+S</kbd> 保存草稿</span>
+            </template>
+            <template v-else>
+              <span>只读模式：当前数据处于【{{ clip.statusLabel }}】状态</span>
+            </template>
+            <span class="grow" />
+            <span>覆盖率 <b>{{ coverage }}%</b></span>
+          </div>
+
+          <div class="row between" style="margin-top:6px">
+            <span style="font-weight:600;font-size:13.5px">子任务切片明细 ({{ sorted.length }})</span>
+            <span class="muted" style="font-size:12px">子任务名称来自 <a @click="router.push({ name: 'dict' })">标注字典 {{ dict.version }}</a></span>
+          </div>
+
+          <table class="stbl" aria-label="子任务切片列表">
+            <thead>
+              <tr>
+                <th style="width:26px" />
+                <th>子任务名称</th>
+                <th style="width:120px">开始时间 (s)</th>
+                <th style="width:120px">结束时间 (s)</th>
+                <th style="width:76px">时长</th>
+                <th style="width:120px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in sorted" :key="s.id" :class="{ sel: sel === s.id, flag: !!s.flag }" @click="sel = s.id">
+                <td><i class="dot" :style="{ background: colorOf(clip.scen, s.n) }" /></td>
+                <td>
+                  <a-select
+                    v-if="editable"
+                    v-model:value="s.n"
+                    size="small"
+                    style="width:100%"
+                    aria-label="子任务名称"
+                    :options="subOpts"
+                    @change="onSegLabelChange(s)"
+                  />
+                  <span v-else>{{ s.n }}</span>
+                  <div v-if="s.flag" class="tag crit" style="font-size:11px;margin-top:4px;display:inline-block">审核意见：{{ s.flag }}</div>
+                </td>
+                <td>
+                  <a-input-number
+                    v-if="editable"
+                    :value="s.s"
+                    size="small"
+                    :min="0"
+                    :max="clip.dur"
+                    :step="0.1"
+                    style="width:100%"
+                    aria-label="开始时间"
+                    @change="(v: unknown) => setTime(s, 's', v)"
+                  />
+                  <span v-else class="num">{{ s.s.toFixed(1) }}</span>
+                </td>
+                <td>
+                  <a-input-number
+                    v-if="editable"
+                    :value="s.e"
+                    size="small"
+                    :min="0"
+                    :max="clip.dur"
+                    :step="0.1"
+                    style="width:100%"
+                    aria-label="结束时间"
+                    @change="(v: unknown) => setTime(s, 'e', v)"
+                  />
+                  <span v-else class="num">{{ s.e.toFixed(1) }}</span>
+                </td>
+                <td class="num muted">{{ (s.e - s.s).toFixed(1) }} s</td>
+                <td @click.stop>
+                  <div class="row" style="gap:6px">
+                    <a-button size="small" type="text" @click="t = s.s">定位</a-button>
+                    <a-button v-if="editable" size="small" type="text" danger @click="remove(s.id)">删除</a-button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!sorted.length">
+                <td colspan="6" class="muted" style="text-align:center;padding:24px">
+                  暂无切片数据{{ editable ? '，可点「规则预切分」自动生成，或在时间轴上拖拽 / 按 A 键新增' : '' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="actbar">
+            <span class="muted grow" style="font-size:12px">
+              <kbd>Space</kbd> 播放　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>A</kbd> 切分/新增　<kbd>M</kbd> 合并　<kbd>D</kbd> 删除　<kbd>Ctrl+S</kbd> 保存
+            </span>
+            <template v-if="clip.status === 'submitted'">
+              <span class="muted" style="font-size:12.5px;margin-right:8px">已提交审核员审核，等待质检结果</span>
+              <a-button :loading="busy" :disabled="!canLabel" @click="withdraw">撤回提交</a-button>
+            </template>
+            <template v-else-if="clip.status === 'approved'">
+              <span style="color:var(--good-solid);font-weight:600;display:flex;align-items:center;gap:4px">
+                <AppIcon name="check" size="sm" />{{ clip.statusLabel || '已通过审核并归档' }}
+              </span>
+            </template>
+            <template v-else-if="editable">
+              <a-button v-if="clip.status === 'todo'" :loading="busy" @click="doRelease">放回任务池</a-button>
+              <a-button
+                type="primary"
+                :disabled="!canLabel || !clip.segs.length"
+                :title="canLabel ? (clip.segs.length ? undefined : '请先创建至少一个子任务切片') : NO_PERM"
+                @click="checkAndSubmit"
+              >
+                <AppIcon name="check" size="sm" />质量自检并提交审核
+              </a-button>
+            </template>
+          </div>
+        </template>
       </template>
     </div>
   </div>
