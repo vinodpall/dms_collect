@@ -191,12 +191,7 @@ function rebuildTracks() {
 
     const col = new THREE.Color(tr.color)
 
-    // 全程半透明参考轨迹
-    const fullGeo = new THREE.BufferGeometry().setFromPoints(validPts)
-    const fullMat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.25 })
-    trackGroup.add(new THREE.Line(fullGeo, fullMat))
-
-    // 已播放轨迹（动态 drawRange）
+    // 已播放轨迹（动态 drawRange，重播归零时自动清空）
     const positions = new Float32Array(n * 3)
     let lastValid = validPts[0]
     for (let i = 0; i < n; i++) {
@@ -208,9 +203,10 @@ function rebuildTracks() {
     }
     const doneGeo = new THREE.BufferGeometry()
     doneGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    doneGeo.setDrawRange(0, 1)
+    doneGeo.setDrawRange(0, 0)
     const doneMat = new THREE.LineBasicMaterial({ color: col })
     const doneLine = new THREE.Line(doneGeo, doneMat)
+    doneLine.visible = false
     trackGroup.add(doneLine)
 
     // 末端实时标记点 + 局部坐标轴
@@ -256,9 +252,16 @@ function rebuildTracks() {
 
 function updatePlayhead() {
   const idx = currentIndex.value
+  const atStart = props.currentMs <= 0 || idx <= 0
   for (const rt of runtimes) {
-    const count = Math.min(rt.points.length, Math.max(1, idx + 1))
-    rt.doneLine.geometry.setDrawRange(0, count)
+    if (atStart) {
+      rt.doneLine.visible = false
+      rt.doneLine.geometry.setDrawRange(0, 0)
+    } else {
+      const count = Math.min(rt.points.length, idx + 1)
+      rt.doneLine.visible = count >= 2
+      rt.doneLine.geometry.setDrawRange(0, count)
+    }
     const clamped = Math.min(rt.points.length - 1, Math.max(0, idx))
     rt.marker.position.set(
       rt.positions[clamped * 3],
@@ -308,7 +311,7 @@ function initThree() {
 }
 
 watch(tracks, () => rebuildTracks())
-watch(currentIndex, () => updatePlayhead())
+watch([currentIndex, () => props.currentMs], () => updatePlayhead())
 
 onMounted(() => initThree())
 onBeforeUnmount(() => {

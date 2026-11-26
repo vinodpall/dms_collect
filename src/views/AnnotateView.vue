@@ -627,7 +627,10 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
               <template v-if="clip.checkScore != null"> · 自检 {{ clip.checkScore }} 分</template>
             </div>
           </div>
-          <div v-if="!inPool && editable" class="row" style="gap:6px">
+          <div v-if="inPool" class="row" style="gap:8px;flex:none">
+            <a-button type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条</a-button>
+          </div>
+          <div v-else-if="editable" class="row" style="gap:6px;flex:none">
             <a-button size="small" :disabled="!hasUndo" @click="undo">
               <AppIcon name="undo" size="sm" />撤销 <kbd>Ctrl+Z</kbd>
             </a-button>
@@ -637,49 +640,38 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
           </div>
         </div>
 
-        <div v-if="inPool" class="callout info">
-          <AppIcon name="inbox" />
-          <span class="grow">当前为任务池预览模式（仅观看），领取到「我的任务」后即可进行子任务切片标注<template v-if="clip.rejectReason">。上次驳回：{{ clip.rejectReason }}</template></span>
-          <a-button size="small" type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条</a-button>
-        </div>
-        <div v-else-if="clip.owner && !editable && ['todo', 'rejected'].includes(clip.status)" class="callout">
+        <div v-if="!inPool && clip.owner && !editable && ['todo', 'rejected'].includes(clip.status)" class="callout">
           <AppIcon name="user" /><span>由 {{ clip.owner }} 领取，当前只读</span>
         </div>
-        <div v-if="clip.rejectReason && clip.status === 'rejected'" class="callout warn" role="alert">
+        <div v-if="clip.rejectReason && (clip.status === 'rejected' || inPool)" class="callout warn" role="alert">
           <AppIcon name="alert" />
           <span><b>审核驳回：</b>{{ clip.rejectReason }}</span>
         </div>
 
+        <!-- 任务池：顶部播放工具栏（预留更多下方空间给 3D 坐标系） -->
+        <div v-if="inPool" class="pool-playbar">
+          <a-button size="small" type="primary" :disabled="!clip.dur" @click="toggle">
+            <AppIcon :name="playing ? 'pause' : 'play'" size="sm" />{{ playing ? '暂停' : '播放' }}
+          </a-button>
+          <span class="mono num" style="font-size:12.5px;white-space:nowrap">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
+          <div style="flex:1;min-width:140px">
+            <a-slider
+              :value="t"
+              :min="0"
+              :max="Math.max(clip.dur, 0.1)"
+              :step="0.1"
+              :tooltip-open="false"
+              @change="(v: any) => { t = Number(v) }"
+            />
+          </div>
+          <a-select v-model:value="speed" size="small" style="width:72px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
+        </div>
+
         <VideoWall :clip="clip" :t="t" :playing="playing" :speed="speed" :loading="store.loadingDetail" @refresh="refreshPreview" />
 
-        <!-- 任务池：仅观看模式（播放进度条 + 世界坐标系 3D 轨迹，不显示切片相关功能） -->
+        <!-- 任务池：仅观看模式（世界坐标系 3D 轨迹，不显示切片相关功能与底部悬浮栏） -->
         <template v-if="inPool">
-          <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
-            <a-button type="primary" :disabled="!clip.dur" @click="toggle">
-              <AppIcon :name="playing ? 'pause' : 'play'" />{{ playing ? '暂停' : '播放' }}
-            </a-button>
-            <span class="mono num">{{ fmtT(t) }} / {{ fmtT(clip.dur) }}</span>
-            <div style="flex:1;min-width:140px">
-              <a-slider
-                :value="t"
-                :min="0"
-                :max="Math.max(clip.dur, 0.1)"
-                :step="0.1"
-                :tooltip-open="false"
-                @change="(v: any) => { t = Number(v) }"
-              />
-            </div>
-            <a-select v-model:value="speed" size="small" style="width:76px" aria-label="播放速度" :options="[{ value: 0.5, label: '0.5×' }, { value: 1, label: '1×' }, { value: 2, label: '2×' }]" />
-          </div>
-
-          <EpisodeWorld3D :signals="signals" :current-ms="t * 1000" :loading="signalsLoading" />
-
-          <div class="actbar">
-            <span class="muted grow" style="font-size:12px">
-              <kbd>Space</kbd> 播放/暂停　<kbd>←</kbd><kbd>→</kbd> 0.1s　<kbd>Shift+←/→</kbd> 2s
-            </span>
-            <a-button type="primary" :loading="busy" :disabled="!canLabel" @click="doClaim(clip)">领取此条开始标注</a-button>
-          </div>
+          <EpisodeWorld3D class="pool-world3d" :signals="signals" :current-ms="t * 1000" :loading="signalsLoading" />
         </template>
 
         <!-- 我的任务：完整切片标注工作区 -->
@@ -948,6 +940,9 @@ function clearBatch() { router.replace({ name: 'annotate' }) }
 <style scoped>
 .ann2 { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 640px; }
 .work { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pool-playbar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
+.pool-playbar :deep(.ant-slider) { margin: 4px 6px; }
+.pool-world3d { flex: 1; min-height: 360px; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px; }
 .hint-row { display: flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; }
 .stbl { width: 100%; border-collapse: collapse; font-size: 13px; }
